@@ -127,3 +127,20 @@ async def get_budget(
 ) -> dict:
     trip = await trip_service.get_trip(db, trip_id, owner=user.id)
     return budget_service.compute_budget(trip)
+
+
+@router.get("/{trip_id}/plan", summary="行程完整方案（Agent 输出快照）")
+async def get_trip_plan(
+    trip_id: str,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """返回 TripPlan.plan_data（含 days/budget/hotels 候选列表）。
+
+    用于前端展示 Agent 规划时的「酒店推荐」等 plan 级信息；
+    详情页的主数据仍来自 GET /trips/{id}。
+    """
+    plan = await trip_service.get_plan(db, trip_id, owner=user.id)
+    if plan is None:
+        raise NotFoundError("该行程还没有 AI 规划方案", code="trip_plan_not_found")
+    return plan.plan_data

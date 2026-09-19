@@ -169,6 +169,13 @@ async def _persist_trip(
                     description=stop.get("description"),
                     estimated_cost=stop.get("estimated_cost"),
                     estimated_duration_minutes=stop.get("duration_minutes"),
+                    # 保留来源元数据（前端地图/导出可用；将来可扩展富信息）
+                    details={
+                        k: stop.get(k)
+                        for k in ("source", "source_url", "address", "geo", "rating")
+                        if stop.get(k) is not None
+                    }
+                    or None,
                 )
             )
 

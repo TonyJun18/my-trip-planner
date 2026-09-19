@@ -199,6 +199,34 @@ def _collect_list_output(state: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _normalize_hotels(hotels: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把 HotelAgent 采集的原始 POI 规范化为 plan.hotels 统一结构。
+
+    保留 name/坐标/description 等核心字段，丢弃 LLM 无关元数据；
+    高德 POI 的 estimated_cost 恒为 0（tools 未解析价格），保持原样，
+    前端展示时可标注「价格以实际询价为准」。
+    """
+    out: list[dict[str, Any]] = []
+    for h in hotels or []:
+        if not isinstance(h, dict) or not h.get("name"):
+            continue
+        out.append(
+            {
+                "name": h.get("name", ""),
+                "type": "hotel",
+                "lat": h.get("lat"),
+                "lng": h.get("lng"),
+                "estimated_cost": float(h.get("estimated_cost") or 0),
+                "description": (h.get("description") or "")[:500],
+                "address": (h.get("address") or h.get("display_name") or "")[:500],
+                "source": h.get("source"),
+                "source_url": h.get("source_url"),
+                "rating": h.get("rating"),
+            }
+        )
+    return out
+
+
 # ═══════════════════════════════════════════════════════════
 #  AttractionSearchAgent —— 景点搜索专家
 # ═══════════════════════════════════════════════════════════
@@ -489,6 +517,11 @@ async def run_planning_agents(
     # 4) 预算校准：以真实 stops 的 estimated_cost 重新计算（覆盖 LLM 估值）
     all_stops = [s for d in plan.get("days", []) for s in d.get("stops", [])]
     plan["budget"] = agent_tools.compute_budget(all_stops)
+
+    # 5) 酒店候选回填：酒店列表由 HotelAgent 采集（真实数据），由编排层代码
+    #    直接填入 plan.hotels —— 不依赖 LLM 是否把酒店编排进 stops。
+    #    经 PlanSchema 校验时 extra="ignore" 会保留该字段（合法输出不丢数据）。
+    plan["hotels"] = _normalize_hotels(materials.get("hotels") or [])
 
     return {
         "plan": plan,

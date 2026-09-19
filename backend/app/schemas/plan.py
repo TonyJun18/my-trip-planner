@@ -37,6 +37,23 @@ class DaySchema(BaseModel):
     stops: list[StopSchema] = Field(default_factory=list, max_length=20)
 
 
+class HotelSchema(BaseModel):
+    """酒店推荐候选（来自 HotelAgent 搜索结果，随 plan 一并输出/落库）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str = Field(min_length=1, max_length=200)
+    type: Literal["hotel"] = "hotel"
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lng: float | None = Field(default=None, ge=-180, le=180)
+    estimated_cost: float = Field(default=0.0, ge=0)
+    description: str | None = Field(default=None, max_length=1000)
+    address: str | None = Field(default=None, max_length=500)
+    source: str | None = Field(default=None, max_length=50)
+    source_url: str | None = Field(default=None, max_length=500)
+    rating: float | None = Field(default=None, ge=0, le=5)
+
+
 class BudgetSchema(BaseModel):
     """预算汇总。"""
 
@@ -55,6 +72,8 @@ class PlanSchema(BaseModel):
     destination: str = Field(min_length=1, max_length=200)
     days: list[DaySchema] = Field(default_factory=list, min_length=1, max_length=31)
     budget: BudgetSchema = Field(default_factory=BudgetSchema)
+    # 酒店推荐候选（由编排层代码回填，LLM 不需要输出；校验通过后仍保留）
+    hotels: list[HotelSchema] = Field(default_factory=list, max_length=20)
 
 
 def validate_plan(data: dict) -> dict:

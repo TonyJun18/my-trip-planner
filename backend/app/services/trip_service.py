@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundError
-from app.models import Stop, Trip, TripDay
+from app.models import Stop, Trip, TripDay, TripPlan
 from app.schemas import DayIn, StopIn, TripCreate, TripUpdate
 
 # 统一 eager-load 关系，避免序列化时 async lazy load 报 MissingGreenlet
@@ -49,6 +49,13 @@ async def list_trips(
 
 async def get_trip(db: AsyncSession, trip_id: str, *, owner: str | None = None) -> Trip:
     return await _load_trip(db, trip_id, owner=owner)
+
+
+async def get_plan(db: AsyncSession, trip_id: str, *, owner: str | None = None) -> TripPlan | None:
+    """查询行程的 AI 规划方案快照（owner 隔离）。"""
+    await _load_trip(db, trip_id, owner=owner)  # 校验行程存在 + 归属
+    stmt = select(TripPlan).where(TripPlan.trip_id == trip_id).order_by(TripPlan.created_at.desc())
+    return (await db.execute(stmt)).scalars().first()
 
 
 async def create_trip(db: AsyncSession, data: TripCreate, *, owner: str | None = None) -> Trip:
