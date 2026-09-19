@@ -1,0 +1,8 @@
+"""迁移脚本模板说明（由 alembic 自动生成）。"""
+
+# 生成新迁移：
+#   uv run alembic revision --autogenerate -m "add xxx"
+# 应用迁移：
+#   uv run alembic upgrade head
+# 回滚：
+#   uv run alembic downgrade -1
