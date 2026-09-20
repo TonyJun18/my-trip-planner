@@ -1,0 +1,27 @@
+{
+  "night": "2026-09-21",
+  "status": "in_progress",
+  "todo": [
+    "competitive-analysis",
+    "oss-license",
+    "oss-gitignore",
+    "content-readme",
+    "content-article-publish-list",
+    "task-hotel-budget",
+    "task-revise-ux",
+    "task-deploy-pack",
+    "task-trip-share",
+    "task-roadtrip-mode",
+    "content-diff-positioning"
+  ],
+  "completed": [
+    "competitive-analysis",
+    "oss-license"
+  ],
+  "current_index": 2,
+  "issues": [],
+  "branches": [
+    "nightly/2026-09-21/1-competitive-analysis",
+    "nightly/2026-09-21/2-oss-license"
+  ]
+}
