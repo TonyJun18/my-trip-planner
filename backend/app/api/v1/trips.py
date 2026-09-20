@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.models import User
-from app.schemas import DayIn, DayOut, StopIn, StopOut, TripCreate, TripListOut, TripOut, TripUpdate
+from app.schemas import DayIn, DayOut, ReviseOut, ReviseRequest, StopIn, StopOut, TripCreate, TripListOut, TripOut, TripUpdate
 from app.services import budget_service, trip_service
 
 router = APIRouter()
@@ -144,3 +144,23 @@ async def get_trip_plan(
     if plan is None:
         raise NotFoundError("该行程还没有 AI 规划方案", code="trip_plan_not_found")
     return plan.plan_data
+
+
+@router.post("/{trip_id}/revise", response_model=ReviseOut, summary="对话式修订行程（AI 生成 diff，代码执行）")
+async def revise_trip(
+    trip_id: str,
+    data: ReviseRequest,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> ReviseOut:
+    """把用户对行程的自然语言修改请求转成结构化变更并原子应用。"""
+    from app.services import revise_service
+
+    result = await revise_service.revise_trip(
+        db,
+        trip_id,
+        data.message,
+        owner=user.id,
+        provider=data.provider,
+    )
+    return ReviseOut(**result)

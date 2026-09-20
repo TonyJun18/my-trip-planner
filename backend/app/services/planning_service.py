@@ -86,6 +86,7 @@ class PlanningExecutor:
                     request_data,
                     provider=provider,
                     max_corrections=settings.AGENT_MAX_CORRECTIONS,
+                    max_review_rounds=settings.AGENT_MAX_REVIEW_ROUNDS,
                 )
             except Exception as exc:
                 logger.exception("Agent 执行失败 task_id=%s", task_id)

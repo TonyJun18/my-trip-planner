@@ -1,0 +1,125 @@
+/* ─────────────────────────────────────────────
+   my-trip-planner 全局设计令牌（C 端旅行视觉）
+   基于 Airbnb 式设计语言：纯白画布 + 暖珊瑚红强调 + 近黑文字 + 大圆角 + 三层柔和阴影
+   覆盖 Element Plus 主题变量
+   ───────────────────────────────────────────── */
+:root {
+  /* 品牌色 */
+  --brand: #ff385c;
+  --brand-dark: #e00b41;
+  --brand-soft: #fff0f3;
+
+  /* 中性色（Airbnb 暖色系） */
+  --ink: #222222;          /* 主文字：暖近黑 */
+  --ink-2: #4a4a4a;        /* 次级文字 */
+  --muted: #6a6a6a;        /* 说明文字 */
+  --faint: #929292;        /* 弱化文字 */
+  --line: #ebebeb;         /* 边框 */
+  --surface: #ffffff;      /* 卡片表面 */
+  --canvas: #fafafa;       /* 页面背景（暖白） */
+  --fill: #f7f7f7;         /* 凹陷填充 */
+
+  /* 语义色 */
+  --success: #0d8a5f;
+  --warning: #c2410c;
+  --danger: #c13515;
+
+  /* 三层柔和阴影 */
+  --shadow-card: 0 0 0 1px rgba(0, 0, 0, 0.02), 0 2px 6px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-hover: 0 0 0 1px rgba(0, 0, 0, 0.03), 0 6px 16px rgba(0, 0, 0, 0.08), 0 10px 28px rgba(0, 0, 0, 0.08);
+  --shadow-pop: 0 4px 12px rgba(0, 0, 0, 0.12), 0 12px 32px rgba(0, 0, 0, 0.14);
+
+  /* 圆角 */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 999px;
+
+  /* 排版 */
+  --font-sans: 'PingFang SC', 'Helvetica Neue', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+  --heading-weight: 600;
+  --heading-tracking: -0.01em;
+
+  /* ── 覆盖 Element Plus ── */
+  --el-color-primary: #ff385c;
+  --el-color-primary-light-3: #ff6f89;
+  --el-color-primary-light-5: #ff9db0;
+  --el-color-primary-light-7: #ffc6d0;
+  --el-color-primary-light-8: #ffdbe0;
+  --el-color-primary-light-9: #fff0f3;
+  --el-color-primary-dark-2: #e00b41;
+
+  --el-color-success: var(--success);
+  --el-color-warning: var(--warning);
+  --el-color-danger: var(--danger);
+
+  --el-text-color-primary: var(--ink);
+  --el-text-color-regular: var(--ink-2);
+  --el-text-color-secondary: var(--muted);
+  --el-text-color-placeholder: var(--faint);
+  --el-text-color-disabled: var(--faint);
+
+  --el-border-color: var(--line);
+  --el-border-color-light: #f0f0f0;
+  --el-border-color-lighter: #f5f5f5;
+  --el-border-color-extra-light: #f7f7f7;
+
+  --el-fill-color: var(--fill);
+  --el-fill-color-light: #fbfbfb;
+  --el-fill-color-lighter: var(--fill);
+  --el-fill-color-blank: #fff;
+
+  --el-bg-color: #fff;
+  --el-bg-color-page: var(--canvas);
+  --el-bg-color-overlay: #fff;
+
+  --el-border-radius-base: 10px;
+  --el-border-radius-small: 8px;
+  --el-border-radius-round: var(--radius-full);
+
+  --el-box-shadow: var(--shadow-card);
+  --el-box-shadow-light: var(--shadow-card);
+  --el-box-shadow-lighter: 0 0 0 1px rgba(0,0,0,0.02), 0 2px 6px rgba(0,0,0,0.04);
+
+  --el-font-family: var(--font-sans);
+}
+
+/* 全局基础 */
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+
+::selection { background: var(--brand); color: #fff; }
+
+/* Element Plus 细节润色 */
+.el-button { font-weight: 500; }
+.el-button--primary { box-shadow: 0 2px 8px rgba(255, 56, 92, 0.25); }
+.el-button--primary:hover { box-shadow: 0 4px 14px rgba(255, 56, 92, 0.35); }
+.el-card {
+  --el-card-border-color: var(--line);
+  border-radius: var(--radius-lg);
+}
+.el-dialog { border-radius: var(--radius-xl); }
+.el-message-box { border-radius: var(--radius-lg); }
+.el-input__wrapper, .el-textarea__inner { border-radius: var(--radius-sm); }
+.el-date-editor { --el-input-border-radius: var(--radius-sm); }
+.el-table { --el-table-border-color: var(--line); }
+.el-tag { border-radius: 6px; font-weight: 500; }
+
+/* 滚动条润色 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #ddd; border-radius: 5px; border: 2px solid var(--canvas); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* 动效：尊重系统减弱动态偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

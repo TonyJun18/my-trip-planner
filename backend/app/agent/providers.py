@@ -23,6 +23,9 @@ from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 
 from app.common.config import settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class LLMProviderError(Exception):
@@ -167,49 +170,134 @@ _circuit_breaker = LLMCircuitBreaker(
 )
 
 
+def available_provider_chain(preferred: str | None = None) -> list[BaseLLMProvider]:
+    """按优先级返回可用 provider 实例列表（用于兜底链）。
+
+    - ``preferred`` 非空且可用 → 放首位（主路径）
+    - 其余按 auto 探测顺序（deepseek → openai → ollama）
+    - ollama 会做 healthcheck，不可达自动跳过
+    """
+    chain: list[BaseLLMProvider] = []
+    seen: set[str] = set()
+
+    order = [preferred] if preferred and preferred != "auto" else []
+    order += [
+        name
+        for name in _probe_available_providers()
+        if not order or name != order[0]
+    ]
+    for name in order:
+        if name in seen:
+            continue
+        try:
+            prov = get_provider(name)
+        except LLMProviderError:
+            continue  # ollama 不可达 / 未知名 → 跳过，继续下一个
+        seen.add(name)
+        chain.append(prov)
+    return chain
+
+
 async def invoke_with_resilience(
     provider: BaseLLMProvider,
     messages: list[Any],
     *,
     temperature: float = 0.2,
     tools: list[Any] | None = None,
+    providers: list[BaseLLMProvider] | None = None,
 ) -> AIMessage:
-    """带重试 + 熔断的 LLM 调用。
+    """带重试 + 熔断 + Provider 兜底链的 LLM 调用。
 
     - 熔断打开 → 直接抛 ``LLMCircuitOpenError``（不发起网络请求）
     - 瞬时错误（TimeoutError / ConnectionError / 5xx / 限流）→ 指数退避重试
+    - 主 provider 整链失败 → 依次尝试 ``providers`` 中的下一个（兜底链）
     - 成功 → 记录成功并返回
     - ``tools`` 非空时先 bind_tools（Agent 场景必须传入，否则 LLM 不知道可用工具）
+
+    返回的 AIMessage 附 ``observation`` 元数据（response_metadata）：
+    ``{"latency_ms", "attempts", "provider_chain", "token_usage", "cost_usd"}``，
+    供调用方做结构化观测（每次 Agent 调用一条日志）。
     """
-    if not _circuit_breaker.allow():
-        raise LLMCircuitOpenError(
-            f"LLM 熔断已打开（{settings.LLM_BREAKER_FAILURE_THRESHOLD} 次失败），"
-            f"冷却 {settings.LLM_BREAKER_RECOVERY_TIMEOUT}s 后自动试探"
-        )
-
-    model = provider.get_chat_model(temperature=temperature)
-    if tools:
-        model = model.bind_tools(tools)
+    chain = providers or [provider]
     last_error: Exception | None = None
+    used_chain: list[str] = []
+    total_attempts = 0
 
-    for attempt in range(1, settings.LLM_MAX_RETRIES + 1):
-        try:
-            response = await model.ainvoke(messages)
-            _circuit_breaker.record_success()
-            return response
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
-            is_transient = _is_transient_error(exc)
-            if not is_transient or attempt == settings.LLM_MAX_RETRIES:
-                break
-            delay = min(
-                settings.LLM_RETRY_BASE_DELAY * (2 ** (attempt - 1)),
-                settings.LLM_RETRY_MAX_DELAY,
+    for idx, prov in enumerate(chain):
+        used_chain.append(prov.name)
+        if not _circuit_breaker.allow():
+            raise LLMCircuitOpenError(
+                f"LLM 熔断已打开（{settings.LLM_BREAKER_FAILURE_THRESHOLD} 次失败），"
+                f"冷却 {settings.LLM_BREAKER_RECOVERY_TIMEOUT}s 后自动试探"
             )
-            await asyncio.sleep(delay)
 
-    _circuit_breaker.record_failure()
-    raise LLMProviderError(f"LLM 调用失败（provider={provider.name}, attempts={settings.LLM_MAX_RETRIES}）: {last_error}") from last_error
+        model = prov.get_chat_model(temperature=temperature)
+        if tools:
+            model = model.bind_tools(tools)
+        start = time.monotonic()
+
+        for attempt in range(1, settings.LLM_MAX_RETRIES + 1):
+            total_attempts += 1
+            try:
+                response = await model.ainvoke(messages)
+                _circuit_breaker.record_success()
+                latency_ms = int((time.monotonic() - start) * 1000)
+                obs = _extract_observation(response, prov, latency_ms, used_chain, total_attempts)
+                response.response_metadata = {**(getattr(response, "response_metadata", None) or {}), **obs}
+                return response
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                is_transient = _is_transient_error(exc)
+                if not is_transient or attempt == settings.LLM_MAX_RETRIES:
+                    break
+                delay = min(
+                    settings.LLM_RETRY_BASE_DELAY * (2 ** (attempt - 1)),
+                    settings.LLM_RETRY_MAX_DELAY,
+                )
+                await asyncio.sleep(delay)
+
+        _circuit_breaker.record_failure()
+        # 该 provider 已彻底失败 → 换下一个兜底 provider（若有），否则抛出
+        if idx < len(chain) - 1:
+            logger.warning("LLM provider=%s 失败，切换到下一个: %s", prov.name, chain[idx + 1].name)
+            continue
+        break
+
+    raise LLMProviderError(
+        f"LLM 调用失败（chain={used_chain}, attempts={total_attempts}）: {last_error}"
+    ) from last_error
+
+
+def _extract_observation(
+    response: AIMessage,
+    provider: BaseLLMProvider,
+    latency_ms: int,
+    provider_chain: list[str],
+    attempts: int,
+) -> dict[str, Any]:
+    """从响应元数据提取结构化观测字段（token 用量/粗略成本）。"""
+    meta = getattr(response, "response_metadata", None) or {}
+    token_usage = meta.get("token_usage") or meta.get("usage") or {}
+    prompt_tokens = int(token_usage.get("prompt_tokens") or token_usage.get("input_tokens") or 0)
+    completion_tokens = int(token_usage.get("completion_tokens") or token_usage.get("output_tokens") or 0)
+    total_tokens = prompt_tokens + completion_tokens
+
+    # 粗略成本估算（美元）：仅在配置了单价时计算；否则 0（表示未核算）
+    cost = 0.0
+    in_rate = getattr(settings, "LLM_INPUT_PRICE_PER_1K", None)
+    out_rate = getattr(settings, "LLM_OUTPUT_PRICE_PER_1K", None)
+    if in_rate and out_rate:
+        cost = round((prompt_tokens / 1000) * float(in_rate) + (completion_tokens / 1000) * float(out_rate), 6)
+
+    return {
+        "latency_ms": latency_ms,
+        "attempts": attempts,
+        "provider_chain": provider_chain,
+        "provider": provider.name,
+        "model": provider.model_id,
+        "token_usage": {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": total_tokens},
+        "cost_usd": cost,
+    }
 
 
 def _is_transient_error(exc: Exception) -> bool:

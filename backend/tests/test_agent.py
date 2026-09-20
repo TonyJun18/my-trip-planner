@@ -45,6 +45,14 @@ class FakeLLM:
     async def ainvoke(self, messages):
         # 根据消息历史里出现的工具调用名，判断当前角色
         text = "\n".join(getattr(m, "content", "") or "" for m in messages)
+        if "待审查行程 JSON" in text:
+            # TravelCriticAgent：输出质检报告（通过）
+            return AIMessage(
+                content=json.dumps(
+                    {"score": 90, "passed": True, "issues": [], "summary": "行程整体合理，通过"},
+                    ensure_ascii=False,
+                )
+            )
         if "search_attractions" in text and "search_hotels" in text:
             # Planner：已被注入所有材料，直接输出 plan
             return AIMessage(content=json.dumps(self.plan, ensure_ascii=False))
@@ -280,6 +288,280 @@ async def test_planner_agent_correction(monkeypatch):
     assert result["plan"]["days"][0]["stops"][0]["type"] == "attraction"
     assert result["corrections"] == 2
     PROVIDER_REGISTRY.pop("fake-planner", None)
+
+
+# ── TravelCriticAgent（Evaluator-Optimizer 评审循环） ─────────
+def _install_offline_tools(monkeypatch):
+    """统一替换外部工具为离线假实现（含 food，避免真网络）。"""
+    from app.agent import agents as agents_mod
+    from app.agent import tools as tools_mod
+
+    async def _fake_search(city, *, query=None, limit=8, want_type="attraction"):
+        return {"city": city, "count": 1, "results": [
+            {"name": "西湖", "type": want_type, "lat": 30.245, "lng": 120.15,
+             "estimated_cost": 0, "duration_minutes": 180, "description": "环湖",
+             "source": "fake", "source_url": "", "geocoded": True}
+        ]}
+
+    async def _fake_search_hotels(city, *, query=None, limit=6):
+        return {"city": city, "count": 1, "results": [
+            {"name": "西湖大酒店", "type": "hotel", "lat": 30.25, "lng": 120.16,
+             "estimated_cost": 300, "duration_minutes": None, "description": "近西湖",
+             "source": "fake", "source_url": "", "geocoded": True}
+        ]}
+
+    async def _fake_weather(city, *, days=3):
+        return {"city": city, "days": [
+            {"date": "2026-10-01", "text_day": "晴", "temp_max": "25", "temp_min": "16", "humidity": "40"}
+        ], "count": 1, "source": "fake"}
+
+    async def _fake_foods(city, *, query=None, limit=8):
+        return {"city": city, "count": 1, "results": [
+            {"name": "楼外楼", "type": "food", "lat": 30.25, "lng": 120.14,
+             "estimated_cost": 200, "duration_minutes": 90, "description": "杭帮菜",
+             "source": "fake", "source_url": "", "geocoded": True}
+        ]}
+
+    monkeypatch.setattr(tools_mod, "search_attractions", _fake_search)
+    monkeypatch.setattr(tools_mod, "search_hotels", _fake_search_hotels)
+    monkeypatch.setattr(tools_mod, "search_foods", _fake_foods)
+    monkeypatch.setattr(tools_mod, "query_weather", _fake_weather)
+    # agents.py 通过 agent_tools.* 引用同一模块对象，无需重复 patch
+
+
+def _critic_plan(stops: list[dict]) -> dict:
+    return {
+        "destination": "杭州",
+        "days": [{"day_number": 1, "date": "2026-10-01", "theme": "西湖",
+                  "stops": stops}],
+        "budget": {"total_estimated": 0.0, "by_type": {}, "currency": "CNY"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_planning_agents_critic_revision_loop(monkeypatch):
+    """Planner 首版不过审 → Critic 给出问题 → Planner 带反馈修订 → 二版通过。"""
+    from app.agent import agents as agents_mod
+    from app.agent.providers import PROVIDER_REGISTRY
+
+    _install_offline_tools(monkeypatch)
+
+    stops_v1 = [
+        {"name": "西湖", "type": "attraction", "lat": 30.245, "lng": 120.15,
+         "estimated_cost": 0, "duration_minutes": 180, "description": "环湖"},
+        {"name": "灵隐寺", "type": "attraction", "lat": 30.24, "lng": 120.10,
+         "estimated_cost": 75, "duration_minutes": 120, "description": "古刹"},
+    ]
+    stops_v2 = [stops_v1[0]]  # 修订版：删掉"绕路"的灵隐寺
+
+    class _CriticLoopLLM:
+        _llm_type = "fake-critic-loop"
+
+        def __init__(self):
+            self.planner_calls = 0
+            self.critic_calls = 0
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            sys_prompt = next((getattr(m, "content", "") or "" for m in messages
+                               if getattr(m, "type", "") == "system"), "")
+            if "行程质检专家" in sys_prompt:
+                self.critic_calls += 1
+                if self.critic_calls == 1:
+                    return AIMessage(content=json.dumps({
+                        "score": 60, "passed": False,
+                        "issues": [{"severity": "critical", "category": "geography",
+                                    "message": "西湖 与 灵隐寺 相距过远，同一天安排绕路",
+                                    "suggestion": "把灵隐寺移到第二天或删除", "day_number": 1}],
+                        "summary": "第一天路线不合理",}, ensure_ascii=False))
+                return AIMessage(content=json.dumps({
+                    "score": 92, "passed": True, "issues": [], "summary": "修订后通过"},
+                    ensure_ascii=False))
+            if "行程规划专家" in sys_prompt:
+                self.planner_calls += 1
+                stops = stops_v1 if self.planner_calls == 1 else stops_v2
+                return AIMessage(content=json.dumps(_critic_plan(stops), ensure_ascii=False))
+            if "景点搜索专家" in sys_prompt:
+                return AIMessage(content="Thought: 搜索景点。",
+                                 tool_calls=[{"name": "search_attractions", "args": {"city": "杭州", "query": "自然风光"},
+                                              "id": "a1", "type": "tool_call"}])
+            if "酒店推荐专家" in sys_prompt:
+                return AIMessage(content="Thought: 查询酒店。",
+                                 tool_calls=[{"name": "search_hotels", "args": {"city": "杭州", "query": "经济酒店"},
+                                              "id": "h1", "type": "tool_call"}])
+            return AIMessage(content='{"error": "unknown role"}')
+
+    class _FakeProvider:
+        name = "fake-critic"
+        model_id = "m"
+
+        def __init__(self):
+            self._llm = _CriticLoopLLM()
+
+        def get_chat_model(self, temperature=0.2):
+            return self._llm
+
+    PROVIDER_REGISTRY["fake-critic"] = _FakeProvider()  # type: ignore[assignment]
+    try:
+        result = await agents_mod.run_planning_agents(
+            {"destination": "杭州", "start_date": "2026-10-01", "end_date": "2026-10-01",
+             "travelers": 2, "budget": 2000, "preferences": ["自然风光"]},
+            provider="fake-critic", max_review_rounds=2,
+        )
+        assert result["status"] == "completed"
+        # Planner 生成 2 次（首版 + 修订），Critic 评审 2 次（失败 1 + 通过 1）
+        assert result["review_rounds"] == 2
+        assert len(result["review_history"]) == 2
+        assert result["review_history"][0]["passed"] is False
+        assert result["review_history"][1]["passed"] is True
+        # 定稿应是修订版（只保留西湖）
+        assert len(result["plan"]["days"][0]["stops"]) == 1
+        assert result["plan"]["days"][0]["stops"][0]["name"] == "西湖"
+        # trace 含质检专家
+        critic_steps = [s for s in result["trace"] if s.get("agent") == "TravelCriticAgent"]
+        assert len(critic_steps) == 2
+    finally:
+        PROVIDER_REGISTRY.pop("fake-critic", None)
+
+
+@pytest.mark.asyncio
+async def test_run_planning_agents_critic_forced_finalize(monkeypatch):
+    """Critic 永不通过 → 达到最大评审轮数 → 强制定稿（任务有界，不无限循环）。"""
+    from app.agent import agents as agents_mod
+    from app.agent.providers import PROVIDER_REGISTRY
+
+    _install_offline_tools(monkeypatch)
+
+    class _NeverPassLLM:
+        _llm_type = "fake-critic-never"
+
+        def __init__(self):
+            self.planner_calls = 0
+            self.critic_calls = 0
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            sys_prompt = next((getattr(m, "content", "") or "" for m in messages
+                               if getattr(m, "type", "") == "system"), "")
+            if "行程质检专家" in sys_prompt:
+                self.critic_calls += 1
+                return AIMessage(content=json.dumps({
+                    "score": 50, "passed": False,
+                    "issues": [{"severity": "critical", "category": "schedule",
+                                "message": "站点过多", "suggestion": "减少站点", "day_number": 1}],
+                    "summary": "永远过不了",}, ensure_ascii=False))
+            if "行程规划专家" in sys_prompt:
+                self.planner_calls += 1
+                return AIMessage(content=json.dumps(_critic_plan([
+                    {"name": "西湖", "type": "attraction", "lat": 30.245, "lng": 120.15,
+                     "estimated_cost": 0, "duration_minutes": 180, "description": "环湖"}]),
+                    ensure_ascii=False))
+            if "景点搜索专家" in sys_prompt:
+                return AIMessage(content="Thought: 搜索景点。",
+                                 tool_calls=[{"name": "search_attractions", "args": {"city": "杭州", "query": "自然风光"},
+                                              "id": "a1", "type": "tool_call"}])
+            if "酒店推荐专家" in sys_prompt:
+                return AIMessage(content="Thought: 查询酒店。",
+                                 tool_calls=[{"name": "search_hotels", "args": {"city": "杭州", "query": "经济酒店"},
+                                              "id": "h1", "type": "tool_call"}])
+            return AIMessage(content='{"error": "unknown role"}')
+
+    class _FakeProvider:
+        name = "fake-critic-never"
+        model_id = "m"
+
+        def __init__(self):
+            self._llm = _NeverPassLLM()
+
+        def get_chat_model(self, temperature=0.2):
+            return self._llm
+
+    PROVIDER_REGISTRY["fake-critic-never"] = _FakeProvider()  # type: ignore[assignment]
+    try:
+        result = await agents_mod.run_planning_agents(
+            {"destination": "杭州", "start_date": "2026-10-01", "end_date": "2026-10-01",
+             "travelers": 1, "budget": 2000, "preferences": []},
+            provider="fake-critic-never", max_review_rounds=2,
+        )
+        # 有界：即便 Critic 永不通过，也会强制定稿返回 completed
+        assert result["status"] == "completed"
+        assert result["plan"] is not None
+        assert result["review_rounds"] == 3  # 3 次生成（第 3 代强制终止）
+        finalize_steps = [s for s in result["trace"]
+                          if s.get("agent") == "TravelCriticAgent" and "强制定稿" in (s.get("observation") or "")]
+        assert len(finalize_steps) == 1
+    finally:
+        PROVIDER_REGISTRY.pop("fake-critic-never", None)
+
+
+@pytest.mark.asyncio
+async def test_run_planning_agents_critic_degraded(monkeypatch):
+    """Critic 调用抛异常 → 降级「通过」，主流程仍完成（质检绝不阻断）。"""
+    from app.agent import agents as agents_mod
+    from app.agent.providers import PROVIDER_REGISTRY
+
+    _install_offline_tools(monkeypatch)
+
+    class _CriticBrokenLLM:
+        _llm_type = "fake-critic-broken"
+
+        def __init__(self):
+            self.critic_calls = 0
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            sys_prompt = next((getattr(m, "content", "") or "" for m in messages
+                               if getattr(m, "type", "") == "system"), "")
+            if "行程质检专家" in sys_prompt:
+                self.critic_calls += 1
+                raise RuntimeError("Critic LLM 崩溃")
+            if "行程规划专家" in sys_prompt:
+                return AIMessage(content=json.dumps(_critic_plan([
+                    {"name": "西湖", "type": "attraction", "lat": 30.245, "lng": 120.15,
+                     "estimated_cost": 0, "duration_minutes": 180, "description": "环湖"}]),
+                    ensure_ascii=False))
+            if "景点搜索专家" in sys_prompt:
+                return AIMessage(content="Thought: 搜索景点。",
+                                 tool_calls=[{"name": "search_attractions", "args": {"city": "杭州", "query": "自然风光"},
+                                              "id": "a1", "type": "tool_call"}])
+            if "酒店推荐专家" in sys_prompt:
+                return AIMessage(content="Thought: 查询酒店。",
+                                 tool_calls=[{"name": "search_hotels", "args": {"city": "杭州", "query": "经济酒店"},
+                                              "id": "h1", "type": "tool_call"}])
+            return AIMessage(content='{"error": "unknown role"}')
+
+    class _FakeProvider:
+        name = "fake-critic-broken"
+        model_id = "m"
+
+        def __init__(self):
+            self._llm = _CriticBrokenLLM()
+
+        def get_chat_model(self, temperature=0.2):
+            return self._llm
+
+    PROVIDER_REGISTRY["fake-critic-broken"] = _FakeProvider()  # type: ignore[assignment]
+    try:
+        result = await agents_mod.run_planning_agents(
+            {"destination": "杭州", "start_date": "2026-10-01", "end_date": "2026-10-01",
+             "travelers": 1, "budget": 2000, "preferences": []},
+            provider="fake-critic-broken", max_review_rounds=2,
+        )
+        assert result["status"] == "completed"
+        assert result["plan"] is not None
+        critic_steps = [s for s in result["trace"] if s.get("agent") == "TravelCriticAgent"]
+        assert len(critic_steps) == 1
+        assert critic_steps[0]["status"] == "degraded"
+        # 降级放行后 review_history 存的是「通过」报告
+        assert result["review_history"][0]["passed"] is True
+    finally:
+        PROVIDER_REGISTRY.pop("fake-critic-broken", None)
 
 
 # ── 编排 ───────────────────────────────────────────────────

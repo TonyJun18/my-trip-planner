@@ -214,6 +214,14 @@ async def test_planner_async_task_flow(client, auth_user, monkeypatch):
         async def ainvoke(self, messages):
             sys_prompt = next((getattr(m, "content", "") or "" for m in messages
                                if getattr(m, "type", "") == "system"), "")
+            # 行程质检专家：输出通过报告
+            if "行程质检专家" in sys_prompt:
+                return AIMessage(
+                    content=json.dumps(
+                        {"score": 90, "passed": True, "issues": [], "summary": "行程整体合理，通过"},
+                        ensure_ascii=False,
+                    )
+                )
             # 行程规划专家：system 提示里含【行程规划专家】（也含"景点搜索专家"字样），必须先判断
             if "行程规划专家" in sys_prompt:
                 plan = {
@@ -328,6 +336,223 @@ async def test_owner_isolation(client):
     trip_id = (await client.get("/api/v1/trips", headers=headers_a)).json()["items"][0]["id"]
     resp = await client.get(f"/api/v1/trips/{trip_id}", headers=headers_b)
     assert resp.status_code == 404
+
+
+# ── 对话式修订行程（方案 B） ─────────────────────────────────
+async def test_revise_trip_flow(client, auth_user, monkeypatch):
+    """POST /trips/{id}/revise：AI 生成 diff → 代码原子应用 → 落库生效。"""
+    from langchain_core.messages import AIMessage
+
+    from app.agent import tools as agent_tools
+    from app.agent.providers import PROVIDER_REGISTRY
+
+    _, headers = auth_user
+    today = date.today()
+
+    # 1) 建行程 + Day + 两个站点
+    resp = await client.post("/api/v1/trips", json={
+        "title": "杭州一日",
+        "destination": "杭州",
+        "start_date": today.isoformat(),
+        "end_date": today.isoformat(),
+        "travelers": 1,
+        "budget": 2000,
+    }, headers=headers)
+    trip_id = resp.json()["id"]
+
+    resp = await client.post(f"/api/v1/trips/{trip_id}/days", json={"day_number": 1, "note": "第一天"}, headers=headers)
+    assert resp.status_code == 201, resp.text
+    day_id = resp.json()["id"]
+
+    resp = await client.post(f"/api/v1/trips/days/{day_id}/stops", json={
+        "name": "西湖", "stop_type": "attraction", "lat": 30.245, "lng": 120.15,
+        "estimated_cost": 0, "estimated_duration_minutes": 180, "description": "环湖",
+    }, headers=headers)
+    assert resp.status_code == 201
+    resp = await client.post(f"/api/v1/trips/days/{day_id}/stops", json={
+        "name": "楼外楼", "stop_type": "food", "lat": 30.25, "lng": 120.14,
+        "estimated_cost": 200, "estimated_duration_minutes": 90, "description": "杭帮菜",
+    }, headers=headers)
+    assert resp.status_code == 201
+
+    # 2) FakeProvider：PlanReviseAgent 返回「西湖改半天 + 新增晚餐」diff
+    class _ReviseLLM:
+        _llm_type = "fake-revise"
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            sys_prompt = next((getattr(m, "content", "") or "" for m in messages
+                               if getattr(m, "type", "") == "system"), "")
+            if "行程修订专家" in sys_prompt:
+                return AIMessage(content=json.dumps({
+                    "actions": [
+                        {"op": "replace", "day_number": 1,
+                         "target": {"name": "西湖"},
+                         "fields": {"duration_minutes": 90, "description": "半日西湖"}},
+                        {"op": "add", "day_number": 1, "index": 3,
+                         "fields": {"name": "知味观", "stop_type": "food",
+                                    "estimated_cost": 150, "duration_minutes": 60}},
+                    ],
+                    "summary": "西湖改为半天，新增知味观晚餐",
+                }, ensure_ascii=False))
+            return AIMessage(content='{"error": "unknown role"}')
+
+    class _ReviseProvider:
+        name = "deepseek"
+        model_id = "fake-revise-model"
+
+        def __init__(self):
+            self._llm = _ReviseLLM()
+
+        def get_chat_model(self, temperature=0.2):
+            return self._llm
+
+    PROVIDER_REGISTRY["deepseek"] = _ReviseProvider()  # type: ignore[assignment]
+    try:
+        # 3) 调用 revise
+        resp = await client.post(f"/api/v1/trips/{trip_id}/revise", json={
+            "message": "西湖只留半天，晚上再加一个知味观",
+            "provider": "deepseek",
+        }, headers=headers)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["summary"] == "西湖改为半天，新增知味观晚餐"
+        assert body["plan"]["days"][0]["stops"][0]["duration_minutes"] == 90
+        assert body["plan"]["days"][0]["stops"][0]["description"] == "半日西湖"
+        assert body["plan"]["days"][0]["stops"][2]["name"] == "知味观"
+        assert body["trace"][0]["thought"] == "PlanReviseAgent"
+
+        # 4) 落库可读回
+        resp = await client.get(f"/api/v1/trips/{trip_id}", headers=headers)
+        assert resp.status_code == 200
+        stops = resp.json()["days"][0]["stops"]
+        assert len(stops) == 3
+        assert stops[2]["name"] == "知味观"
+        assert stops[0]["estimated_duration_minutes"] == 90
+    finally:
+        PROVIDER_REGISTRY.pop("deepseek", None)
+
+
+async def test_revise_trip_target_not_found(client, auth_user, monkeypatch):
+    """修订目标不存在 → 原子失败，不落库任何变更。"""
+    from langchain_core.messages import AIMessage
+
+    from app.agent.providers import PROVIDER_REGISTRY
+
+    _, headers = auth_user
+    today = date.today()
+    resp = await client.post("/api/v1/trips", json={
+        "title": "杭州一日", "destination": "杭州",
+        "start_date": today.isoformat(), "end_date": today.isoformat(),
+    }, headers=headers)
+    trip_id = resp.json()["id"]
+    resp = await client.post(f"/api/v1/trips/{trip_id}/days", json={"day_number": 1}, headers=headers)
+    day_id = resp.json()["id"]
+    resp = await client.post(f"/api/v1/trips/days/{day_id}/stops", json={
+        "name": "西湖", "stop_type": "attraction",
+    }, headers=headers)
+    assert resp.status_code == 201
+
+    class _BadLLM:
+        _llm_type = "fake-revise-bad"
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            sys_prompt = next((getattr(m, "content", "") or "" for m in messages
+                               if getattr(m, "type", "") == "system"), "")
+            if "行程修订专家" in sys_prompt:
+                return AIMessage(content=json.dumps({
+                    "actions": [
+                        {"op": "remove", "day_number": 1, "target": {"name": "不存在的景点"}},
+                    ],
+                    "summary": "删掉不存在的景点",
+                }, ensure_ascii=False))
+            return AIMessage(content='{"error": "unknown role"}')
+
+    class _BadProvider:
+        name = "deepseek"
+        model_id = "m"
+        _llm = _BadLLM()
+
+        def get_chat_model(self, temperature=0.2):
+            return self._llm
+
+    PROVIDER_REGISTRY["deepseek"] = _BadProvider()  # type: ignore[assignment]
+    try:
+        resp = await client.post(f"/api/v1/trips/{trip_id}/revise", json={
+            "message": "删掉一个不存在的景点", "provider": "deepseek",
+        }, headers=headers)
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["error"]["code"] == "revise_target_not_found"
+
+        # 原行程未被破坏
+        resp = await client.get(f"/api/v1/trips/{trip_id}", headers=headers)
+        stops = resp.json()["days"][0]["stops"]
+        assert len(stops) == 1
+        assert stops[0]["name"] == "西湖"
+    finally:
+        PROVIDER_REGISTRY.pop("deepseek", None)
+
+
+async def test_revise_trip_requires_plan(client, auth_user, monkeypatch):
+    """行程还没有 AI 规划方案（TripPlan）时，revise 仍可工作（基于 trip 数据）。"""
+    from langchain_core.messages import AIMessage
+
+    from app.agent.providers import PROVIDER_REGISTRY
+
+    _, headers = auth_user
+    today = date.today()
+    resp = await client.post("/api/v1/trips", json={
+        "title": "杭州一日", "destination": "杭州",
+        "start_date": today.isoformat(), "end_date": today.isoformat(),
+    }, headers=headers)
+    trip_id = resp.json()["id"]
+    resp = await client.post(f"/api/v1/trips/{trip_id}/days", json={"day_number": 1}, headers=headers)
+    day_id = resp.json()["id"]
+    await client.post(f"/api/v1/trips/days/{day_id}/stops", json={
+        "name": "西湖", "stop_type": "attraction",
+    }, headers=headers)
+
+    class _LLM:
+        _llm_type = "fake-revise-no-plan"
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            sys_prompt = next((getattr(m, "content", "") or "" for m in messages
+                               if getattr(m, "type", "") == "system"), "")
+            if "行程修订专家" in sys_prompt:
+                return AIMessage(content=json.dumps({
+                    "actions": [
+                        {"op": "add", "day_number": 1,
+                         "fields": {"name": "灵隐寺", "stop_type": "attraction"}},
+                    ],
+                    "summary": "新增灵隐寺",
+                }, ensure_ascii=False))
+            return AIMessage(content='{"error": "unknown role"}')
+
+    class _Provider:
+        name = "deepseek"
+        model_id = "m"
+        _llm = _LLM()
+
+        def get_chat_model(self, temperature=0.2):
+            return self._llm
+
+    PROVIDER_REGISTRY["deepseek"] = _Provider()  # type: ignore[assignment]
+    try:
+        resp = await client.post(f"/api/v1/trips/{trip_id}/revise", json={
+            "message": "加一个灵隐寺", "provider": "deepseek",
+        }, headers=headers)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["plan"]["days"][0]["stops"][1]["name"] == "灵隐寺"
+    finally:
+        PROVIDER_REGISTRY.pop("deepseek", None)
 
 
 # ── 参数校验 ─────────────────────────────────────────────────

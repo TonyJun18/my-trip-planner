@@ -38,7 +38,7 @@ from langchain_core.tools import tool as lc_tool
 from app.agent import tools as agent_tools
 from app.agent.providers import get_provider, invoke_with_resilience
 from app.core.logging import get_logger
-from app.schemas.plan import validate_plan
+from app.schemas.plan import validate_critique, validate_plan
 
 logger = get_logger(__name__)
 
@@ -149,6 +149,40 @@ PLANNER_SYSTEM_PROMPT = """你是旅行规划团队中的【行程规划专家�
     "currency": "CNY"
   }
 }"""
+
+
+CRITIC_SYSTEM_PROMPT = """你是旅行规划团队中的【行程质检专家】。你的唯一任务：审查 Planner 生成的行程 JSON，找出业务合理性问题。
+
+你将收到：
+1. 用户原始需求（目的地/日期/人数/预算/偏好）
+2. Planner 生成的完整行程 JSON（含 days / budget / hotels）
+
+审查维度（按重要性排序）：
+1. schedule（日程合理性）：日期是否连续、与用户日期一致；站点时间是否冲突；每天是否过满（>6 个站点）；闭馆日/淡旺季常识性错误
+2. budget（预算）：total 是否与 by_type 吻合；是否超出用户预算；估算是否明显离谱
+3. geography（地理路线）：同一天站点是否在地理上严重绕路（跨城/相距极远）；坐标是否缺失或异常
+4. logistics（内容完整性）：是否有"编造"的、不在给定列表中的具体地点；酒店/餐厅是否缺失；关键字段是否为空
+
+输出规则：
+1. 只输出一个 JSON 对象，不要任何多余文字（不要 ``` 代码块）
+2. JSON 结构：
+{
+  "score": 82,
+  "passed": true,
+  "issues": [
+    {
+      "severity": "critical|warning|info",
+      "category": "schedule|budget|geography|logistics|info",
+      "message": "具体问题描述",
+      "suggestion": "建议的修改方向（可选）",
+      "day_number": 1
+    }
+  ],
+  "summary": "一句话总结"
+}
+3. severity 语义：critical=必须修改 / warning=建议修改 / info=提示
+4. 评分建议：>=80 为 passed=true 可通过；70-79 有 warning；<70 有 critical
+5. 只审查你实际看到的问题；没有就列空 issues，不要为了凑数编造问题"""
 
 
 # ═══════════════════════════════════════════════════════════
@@ -388,14 +422,19 @@ async def planner_agent(
     *,
     provider: str = "auto",
     max_corrections: int = 3,
+    review_feedback: str | None = None,
 ) -> dict[str, Any]:
     """整合所有材料，输出最终行程 JSON。
 
     materials: {"attractions": [...], "hotels": [...], "foods": [...], "weather": {...}}
+    review_feedback: 可选；TravelCriticAgent 的修改反馈（Evaluator-Optimizer 第二轮起传入），
+                     为空表示首次生成。
     """
     prov = get_provider(provider)
     messages: list[Any] = [SystemMessage(content=PLANNER_SYSTEM_PROMPT)]
     messages.append(HumanMessage(content=_planner_user_text(request, materials)))
+    if review_feedback:
+        messages.append(SystemMessage(content=review_feedback))
 
     corrections = 0
     last_error: str | None = None
@@ -420,7 +459,11 @@ async def planner_agent(
 
 
 def _planner_user_text(request: dict[str, Any], materials: dict[str, Any]) -> str:
-    """把用户需求 + 团队材料组装成给 Planner 的完整上下文。"""
+    """把用户需求 + 团队材料组装成给 Planner 的完整上下文。
+
+    注意：规划往返期间的往返提示（评审反馈）由外层 caller 负责拼进消息，
+    本函数只负责"第一版"的上下文（不含评审历史）。
+    """
     lines: list[str] = []
     lines.append("【用户原始需求】")
     lines.append(
@@ -429,9 +472,18 @@ def _planner_user_text(request: dict[str, Any], materials: dict[str, Any]) -> st
         f"偏好：{', '.join(request.get('preferences') or []) or '无'}"
     )
 
+    # 采集失败的源：明确告知 Planner，让它仍然能编排（部分失败 → 优雅降级）
+    failed_sources = materials.get("failed_sources") or []
+    if failed_sources:
+        lines.append("\n【采集告警】以下信息来源失败（不要编造替代数据，但可以给出合理通用描述，并在对应位置标注降级）：")
+        lines.append("、".join(failed_sources))
+
     attractions = materials.get("attractions") or []
     lines.append(f"\n【景点列表】（{len(attractions)} 个，来自景点搜索专家）")
-    lines.append(json.dumps(attractions, ensure_ascii=False)[:4000])
+    if attractions:
+        lines.append(json.dumps(attractions, ensure_ascii=False)[:4000])
+    else:
+        lines.append("（空：景点搜索失败或未返回结果）")
 
     weather = materials.get("weather") or {}
     lines.append("\n【天气预报】（来自天气查询专家）")
@@ -439,7 +491,10 @@ def _planner_user_text(request: dict[str, Any], materials: dict[str, Any]) -> st
 
     hotels = materials.get("hotels") or []
     lines.append(f"\n【酒店列表】（{len(hotels)} 个，来自酒店推荐专家）")
-    lines.append(json.dumps(hotels, ensure_ascii=False)[:4000])
+    if hotels:
+        lines.append(json.dumps(hotels, ensure_ascii=False)[:4000])
+    else:
+        lines.append("（空：酒店搜索失败或未返回结果，可给出通用住宿建议）")
 
     foods = materials.get("foods") or []
     if foods:
@@ -451,21 +506,224 @@ def _planner_user_text(request: dict[str, Any], materials: dict[str, Any]) -> st
 
 
 # ═══════════════════════════════════════════════════════════
-#  编排：并行采集 → 补餐厅 → Planner 整合 → 预算校准
+#  TravelCriticAgent —— 行程质检专家（Evaluator，无工具）
+# ═══════════════════════════════════════════════════════════
+# 质检通过线：score >= 80 视为通过（与 Critic prompt 内评分建议一致）
+CRITIC_PASS_SCORE = 80
+
+
+async def critic_agent(
+    request: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    provider: str = "auto",
+    max_corrections: int = 2,
+) -> dict[str, Any]:
+    """审查一份行程 JSON，输出结构化质检报告。
+
+    无工具调用（Evaluator 不修改任何东西，只评估）；输出经
+    ``CritiqueSchema`` 强校验 + 有限自纠正。失败时返回降级报告
+    （``{"status": "degraded", "critique": {...pass 默认通过...}}``），
+    保证调用方永远能得到一份可消费的报告——质检绝不能阻断主流程。
+    """
+    prov = get_provider(provider)
+    messages: list[Any] = [SystemMessage(content=CRITIC_SYSTEM_PROMPT)]
+    messages.append(
+        HumanMessage(
+            content=(
+                f"【用户原始需求】目的地：{request.get('destination', '')}；"
+                f"日期：{request.get('start_date', '')} 至 {request.get('end_date', '')}；"
+                f"人数：{request.get('travelers', 1)}；预算：{request.get('budget', '未指定')} 元；"
+                f"偏好：{', '.join(request.get('preferences') or []) or '无'}\n\n"
+                f"【待审查行程 JSON】\n{json.dumps(plan, ensure_ascii=False)[:6000]}\n\n"
+                "请审查并输出质检报告 JSON。"
+            )
+        )
+    )
+
+    corrections = 0
+    last_error: str | None = None
+    for _ in range(max_corrections + 1):
+        try:
+            response = await invoke_with_resilience(prov, messages)
+        except Exception as exc:  # noqa: BLE001 — LLM 调用失败也要降级，绝不阻断主流程
+            logger.warning("Critic 调用失败，降级放行: %s", exc)
+            return {"status": "degraded", "critique": _pass_critique("质检调用失败，按通过处理"), "corrections": corrections}
+        content = str(getattr(response, "content", ""))
+        parsed = _extract_json(content)
+        if not isinstance(parsed, dict):
+            corrections += 1
+            last_error = "未找到合法 JSON"
+            messages.append(SystemMessage(content="你的输出中未找到合法的质检 JSON。请只输出一个 JSON 对象，不要解释。"))
+            continue
+        try:
+            clean = validate_critique(parsed)
+            # 归一化 passed：以 score 为准（>=80），避免 LLM 自相矛盾
+            clean["passed"] = clean["score"] >= CRITIC_PASS_SCORE
+            return {"status": "completed", "critique": clean, "corrections": corrections}
+        except Exception as exc:  # noqa: BLE001 — Pydantic ValidationError
+            corrections += 1
+            last_error = str(exc)
+            logger.info("Critic 校验失败 (correction=%d): %s", corrections, exc)
+            messages.append(SystemMessage(content=_validation_feedback(exc)))
+
+    logger.warning("Critic 多次校验失败，降级放行: %s", last_error)
+    return {"status": "degraded", "critique": _pass_critique("质检报告生成失败，按通过处理"), "corrections": corrections}
+
+
+def _pass_critique(summary: str) -> dict[str, Any]:
+    """构造一份「通过」的默认质检报告（用于 Critic 降级）。"""
+    return {
+        "score": CRITIC_PASS_SCORE,
+        "passed": True,
+        "issues": [],
+        "summary": summary,
+    }
+
+
+# ═══════════════════════════════════════════════════════════
+#  PlanReviseAgent —— 行程修订专家（方案 B：对话改行程）
+# ═══════════════════════════════════════════════════════════
+REVISE_SYSTEM_PROMPT = """你是旅行规划团队中的【行程修订专家】。你的唯一任务：把用户对已生成行程的修改请求，转成结构化的变更指令（diff）。
+
+你将收到：
+1. 用户原始需求（目的地 / 预算）+ 新的修改消息
+2. 当前行程 JSON（days / budget）
+
+规则：
+1. 不要直接修改行程，只输出变更指令（diff）—— 由编排层代码执行
+2. 只对「当前行程里真实存在」的目标做操作；找不到就报错，不要编造
+3. 支持的操作：
+   - replace：修改某个现有站点的字段（target 用 name 或 index）
+   - add：新增一个站点（day_number + fields.name + 可选 index）
+   - remove：删除一个站点（target 用 name 或 index）
+   - reorder：调整站点顺序（target + index）
+4. 字段白名单：name / stop_type / lat / lng / description / estimated_cost / estimated_duration_minutes
+5. stop_type 只能是 attraction / food / hotel
+6. 一次消息里有多件事 → 生成多个 actions；无法理解 → 输出空 actions + 说明
+7. 日期、人数、预算等行程级变更 → 用 replace 改 day 或整体（暂不支持改行程元信息，说明不支持即可）
+8. summary：一句给用户看的变更摘要
+
+输出 JSON（不要 ``` 代码块）：
+{
+  "actions": [
+    {
+      "op": "replace|add|remove|reorder",
+      "day_number": 1,
+      "target": {"name": "西湖"} 或 {"index": 1},
+      "fields": {"name": "...", "stop_type": "food", "estimated_cost": 80, "estimated_duration_minutes": 90},
+      "index": 2
+    }
+  ],
+  "summary": "已把第三天西湖调整为半天，新增楼外楼晚餐"
+}"""
+
+
+async def plan_revise_agent(
+    request: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    provider: str = "auto",
+    max_corrections: int = 3,
+) -> dict[str, Any]:
+    """用户消息 + 当前行程 → 结构化变更 diff。
+
+    输出经 ``ReviseDiff`` 强校验 + 自纠正；失败返回明确错误（调用方
+    转成 4xx，不产生任何落库变更）。
+    """
+    from app.schemas import ReviseDiff
+
+    prov = get_provider(provider)
+    messages: list[Any] = [SystemMessage(content=REVISE_SYSTEM_PROMPT)]
+    messages.append(
+        HumanMessage(
+            content=(
+                f"【用户原始需求】目的地：{request.get('destination', '')}；"
+                f"预算：{request.get('budget', '未指定')} 元\n"
+                f"【用户本次修改请求】{request.get('message', '')}\n\n"
+                f"【当前行程 JSON】\n{json.dumps(plan, ensure_ascii=False)[:5000]}\n\n"
+                "请输出修订 diff JSON。"
+            )
+        )
+    )
+
+    corrections = 0
+    last_error: str | None = None
+    for _ in range(max_corrections + 1):
+        response = await invoke_with_resilience(prov, messages)
+        content = str(getattr(response, "content", ""))
+        parsed = _extract_json(content)
+        if not isinstance(parsed, dict):
+            corrections += 1
+            last_error = "未找到合法 JSON"
+            messages.append(SystemMessage(content="你的输出中未找到合法的修订 JSON。请只输出一个 JSON 对象，不要解释。"))
+            continue
+        try:
+            clean = ReviseDiff.model_validate(parsed).model_dump(mode="json")
+            return {
+                "status": "completed",
+                "diff": clean,
+                "corrections": corrections,
+                "trace": [{
+                    "agent": "PlanReviseAgent",
+                    "action": "revise",
+                    "observation": f"{len(clean.get('actions') or [])} 条变更指令 · {clean.get('summary') or ''}",
+                    "status": "completed",
+                }],
+                "provider": prov.name,
+                "model": prov.model_id,
+            }
+        except Exception as exc:  # noqa: BLE001 — Pydantic ValidationError
+            corrections += 1
+            last_error = str(exc)
+            logger.info("ReviseAgent 校验失败 (correction=%d): %s", corrections, exc)
+            messages.append(SystemMessage(content=_validation_feedback(exc)))
+
+    return {"status": "failed", "error": f"修订指令解析多次失败: {last_error}", "diff": None}
+
+
+def _critic_feedback(critique: dict[str, Any]) -> str:
+    """把质检报告转成给 Planner 的修改指令（只含未通过项，避免信息过载）。"""
+    issues = critique.get("issues") or []
+    actionable = [i for i in issues if i.get("severity") in ("critical", "warning")]
+    if not actionable:
+        return "质检通过，无需修改。"
+
+    lines = ["【行程质检报告】以下问题需要你修改后重新输出完整行程 JSON（不要解释，只输出新的 JSON）："]
+    for i, issue in enumerate(actionable, start=1):
+        loc = f"（Day {issue.get('day_number')}）" if issue.get("day_number") else ""
+        lines.append(
+            f"{i}. [{issue.get('severity', 'warning')}/{issue.get('category', 'info')}]{loc} "
+            f"{issue.get('message', '')}"
+        )
+        if issue.get("suggestion"):
+            lines.append(f"   建议：{issue['suggestion']}")
+    lines.append("请基于以上反馈修正行程并重新输出完整 JSON，不要解释。")
+    return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════════════
+#  编排：并行采集 → 补餐厅 → Planner 整合 → 质检评审 → 预算校准
 # ═══════════════════════════════════════════════════════════
 async def run_planning_agents(
     request: dict[str, Any],
     *,
     provider: str = "auto",
     max_corrections: int = 3,
+    max_review_rounds: int = 2,
 ) -> dict[str, Any]:
-    """多 Agent 全流程：采集 → 整合 → 输出 {plan, trace, status, error, agents}。
+    """多 Agent 全流程：采集 → 整合 → 质检评审 → 输出 {plan, trace, status, error, agents}。
+
+    Evaluator-Optimizer：Planner 生成后交给 TravelCriticAgent 评审，
+    未通过则带反馈重生成，最多 ``max_review_rounds`` 轮后强制定稿
+    （任务有界，不会无限循环）。Critic 自身失败时降级「通过」，绝不阻断。
 
     trace 每步标注 agent 名，前端可展示“哪个专家在做什么”。
     """
     city = request.get("destination", "")
     prefs = request.get("preferences") or []
     trace: list[dict[str, Any]] = []
+    review_history: list[dict[str, Any]] = []  # 每次评审的报告（给 Planner 作为上下文）
 
     # 1) 三个采集 Agent 并行
     attraction_task = attraction_agent(city, prefs, provider=provider)
@@ -496,32 +754,79 @@ async def run_planning_agents(
                       "observation": f"餐厅搜索失败: {exc}", "status": "failed"})
         logger.warning("餐饮搜索失败 city=%s err=%s", city, exc)
 
-    # 3) Planner 整合（无工具）
+    # 3) Planner 整合（无工具），Evaluator-Optimizer 评审循环
     materials = {
         "attractions": a_res.get("pois", []),
         "hotels": h_res.get("pois", []),
         "foods": foods,
         "weather": (w_res.get("weather") or {}),
     }
-    planner = await planner_agent(request, materials, provider=provider, max_corrections=max_corrections)
-    trace.append({"agent": "PlannerAgent", "action": "integrate",
-                  "observation": f"整合 {len(materials['attractions'])} 景点 / {len(materials['hotels'])} 酒店 / {len(foods)} 餐厅",
-                  "status": planner.get("status")})
+    plan: dict[str, Any] | None = None
+    review_rounds = 0
 
-    if planner.get("status") != "completed" or planner.get("plan") is None:
+    for round_idx in range(max_review_rounds + 1):
+        review_feedback = _critic_feedback(review_history[-1]) if review_history else None
+        planner = await planner_agent(
+            request, materials, provider=provider, max_corrections=max_corrections,
+            review_feedback=review_feedback,
+        )
+        trace.append({
+            "agent": "PlannerAgent",
+            "action": "integrate" if round_idx == 0 else f"revise (round {round_idx})",
+            "observation": (
+                f"整合 {len(materials['attractions'])} 景点 / {len(materials['hotels'])} 酒店 / {len(foods)} 餐厅"
+                + (f"；按评审意见修订" if round_idx > 0 else "")
+            ),
+            "status": planner.get("status"),
+        })
+        if planner.get("status") != "completed" or planner.get("plan") is None:
+            return {"plan": None, "trace": trace, "status": "failed",
+                    "error": planner.get("error") or "Planner 未能生成行程", "agents": {},
+                    "review_rounds": review_rounds}
+
+        candidate = planner["plan"]
+        review_rounds += 1
+
+        # 预算校准前置：先以真实 stops 计算预算（覆盖 LLM 估值），再交给质检
+        all_stops = [s for d in candidate.get("days", []) for s in d.get("stops", [])]
+        candidate["budget"] = agent_tools.compute_budget(all_stops)
+        candidate["hotels"] = _normalize_hotels(materials.get("hotels") or [])
+
+        # 交给 TravelCriticAgent 评审（最后一代无需再评：强制定稿）
+        if round_idx >= max_review_rounds:
+            plan = candidate
+            trace.append({"agent": "TravelCriticAgent", "action": "review",
+                          "observation": f"达到最大评审轮数（{max_review_rounds}），强制定稿", "status": "completed"})
+            break
+
+        critic = await critic_agent(request, candidate, provider=provider)
+        critique = critic.get("critique") or _pass_critique("质检未返回报告，按通过处理")
+        review_history.append(critique)
+        n_issues = len(critique.get("issues") or [])
+        trace.append({
+            "agent": "TravelCriticAgent",
+            "action": "review",
+            "observation": (
+                f"评分 {critique.get('score')}/100 · {len([i for i in critique.get('issues') or [] if i.get('severity') in ('critical', 'warning')])} 个待修改项"
+                + (f"（{critique.get('summary') or ''}）" if critique.get("summary") else "")
+            ),
+            "status": "completed" if critic.get("status") == "completed" else "degraded",
+        })
+
+        if critique.get("passed") or n_issues == 0 or not _has_actionable_issues(critique):
+            plan = candidate
+            break  # 质检通过 / 无待修改项 → 定稿
+
+        logger.info("行程评审未通过 round=%d score=%s issues=%d，进入下一轮修订",
+                    round_idx + 1, critique.get("score"), n_issues)
+
+    # 兜底：若循环异常退出（理论上不会），仍保留最后一代
+    if plan is None:
         return {"plan": None, "trace": trace, "status": "failed",
-                "error": planner.get("error") or "Planner 未能生成行程", "agents": {}}
+                "error": "质检循环异常退出", "agents": {}, "review_rounds": review_rounds}
 
-    plan = planner["plan"]
-
-    # 4) 预算校准：以真实 stops 的 estimated_cost 重新计算（覆盖 LLM 估值）
-    all_stops = [s for d in plan.get("days", []) for s in d.get("stops", [])]
-    plan["budget"] = agent_tools.compute_budget(all_stops)
-
-    # 5) 酒店候选回填：酒店列表由 HotelAgent 采集（真实数据），由编排层代码
-    #    直接填入 plan.hotels —— 不依赖 LLM 是否把酒店编排进 stops。
-    #    经 PlanSchema 校验时 extra="ignore" 会保留该字段（合法输出不丢数据）。
-    plan["hotels"] = _normalize_hotels(materials.get("hotels") or [])
+    # 质检摘要注入 plan.quality（随 plan JSON 落库，前端可直接消费）
+    plan["quality"] = _plan_quality(review_history, review_rounds, max_review_rounds)
 
     return {
         "plan": plan,
@@ -530,6 +835,8 @@ async def run_planning_agents(
         "error": None,
         "provider": get_provider(provider).name,
         "model": get_provider(provider).model_id,
+        "review_rounds": review_rounds,
+        "review_history": review_history,
         "agents": {
             "attractions": a_res.get("status"),
             "weather": w_res.get("status"),
@@ -537,6 +844,55 @@ async def run_planning_agents(
             "planner": planner.get("status"),
         },
     }
+
+
+def _has_actionable_issues(critique: dict[str, Any]) -> bool:
+    """质检报告里是否有需要 Planner 修改的（critical/warning）问题。"""
+    return any(i.get("severity") in ("critical", "warning") for i in (critique.get("issues") or []))
+
+
+def _plan_quality(
+    review_history: list[dict[str, Any]],
+    rounds: int,
+    max_rounds: int,
+) -> dict[str, Any]:
+    """把评审过程归纳成给前端展示的 plan.quality 摘要。
+
+    结构：
+    {
+      "score": 92,          # 最终评分（最后一次评审；无评审为 None）
+      "passed": true,       # 是否最终通过
+      "rounds": 2,          # 实际评审轮数
+      "max_rounds": 2,      # 配置的最大评审轮数
+      "finalized": false,   # 是否因达上限强制定稿
+      "issues": [...],      # 最后一次评审的问题列表
+      "summary": "..."      # 最后一次评审总结
+    }
+    """
+    base = {
+        "score": None,
+        "passed": True,
+        "rounds": 0,
+        "max_rounds": max_rounds,
+        "finalized": False,
+        "issues": [],
+        "summary": None,
+    }
+    if not review_history:
+        return base
+    last = review_history[-1]
+    base.update(
+        {
+            "score": last.get("score"),
+            "passed": bool(last.get("passed", True)),
+            "rounds": len(review_history),
+            # 达上限仍不通过 → 强制定稿
+            "finalized": bool(len(review_history) >= max_rounds and not last.get("passed", True)),
+            "issues": last.get("issues") or [],
+            "summary": last.get("summary"),
+        }
+    )
+    return base
 
 
 def _accommodation_hints(request: dict[str, Any]) -> list[str]:

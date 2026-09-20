@@ -14,9 +14,13 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import pytest_asyncio
+from dotenv import load_dotenv
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+# 从 backend/.env 加载 DATABASE_URL（直接命令行 pytest 时无需手动 export）
+load_dotenv()
 
 
 # ── 测试库连接配置 ─────────────────────────────────────────

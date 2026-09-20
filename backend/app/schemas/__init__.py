@@ -101,6 +101,48 @@ class PlanRequest(BaseModel):
     provider: Literal["auto", "openai", "deepseek", "ollama"] = "auto"
 
 
+# ── 行程修订（方案 B：对话改行程） ─────────────────────────────
+class ReviseRequest(BaseModel):
+    """用户对已生成行程的自然语言修改请求。"""
+
+    message: str = Field(min_length=2, max_length=500, description="修改意图，如「第三天太赶了，西湖只留半天，晚上想吃楼外楼」")
+    provider: Literal["auto", "openai", "deepseek", "ollama"] = "auto"
+
+
+class ReviseAction(BaseModel):
+    """一条结构化行程变更指令（由 AI 生成，编排层代码执行）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    op: Literal["replace", "add", "remove", "reorder"]
+    """replace=改字段 / add=新增站点 / remove=删除站点 / reorder=调整顺序。"""
+    day_number: int = Field(ge=1)
+    target: dict = Field(default_factory=dict, description="定位目标：{name} 或 {index}（1-based）")
+    fields: dict = Field(default_factory=dict, description="replace 时的新字段 / add 时的站点字段")
+    index: int | None = Field(default=None, ge=1, description="add 或 reorder 的目标位置（1-based）")
+
+
+class ReviseDiff(BaseModel):
+    """行程修订 diff：AI 只生成指令，不直接改库。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    actions: list[ReviseAction] = Field(default_factory=list, min_length=1, max_length=10)
+    summary: str = Field(default=None, max_length=300)
+    """给用户看的变更摘要（如「已把第三天西湖调整为半天，新增楼外楼晚餐」）。"""
+
+
+class ReviseOut(BaseModel):
+    """修订结果：新行程 + 摘要。"""
+
+    trip_id: str
+    summary: str
+    plan: dict
+    trace: list[AgentTraceStep]
+    provider: str | None = None
+    model: str | None = None
+
+
 class AgentTraceStep(BaseModel):
     thought: str
     action: str

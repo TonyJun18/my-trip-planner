@@ -74,6 +74,35 @@ class PlanSchema(BaseModel):
     budget: BudgetSchema = Field(default_factory=BudgetSchema)
     # 酒店推荐候选（由编排层代码回填，LLM 不需要输出；校验通过后仍保留）
     hotels: list[HotelSchema] = Field(default_factory=list, max_length=20)
+    # 降级/告警信息：如"酒店搜索失败，已用通用描述替代"
+    warnings: list[str] = Field(default_factory=list, max_length=20)
+
+
+class CritiqueIssueSchema(BaseModel):
+    """质检发现的一个具体问题。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    severity: Literal["critical", "warning", "info"] = "warning"
+    """critical=必须修改 / warning=建议修改 / info=提示。"""
+    category: Literal["schedule", "budget", "geography", "logistics", "info"] = "info"
+    """问题类别：时间日程 / 预算 / 地理路线 / 内容完整性 / 一般信息。"""
+    message: str = Field(min_length=1, max_length=500)
+    suggestion: str | None = Field(default=None, max_length=500)
+    day_number: int | None = Field(default=None, ge=1)
+
+
+class CritiqueSchema(BaseModel):
+    """行程质检报告（TravelCriticAgent 输出）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    score: int = Field(ge=0, le=100)
+    """综合评分（0-100）。"""
+    passed: bool = False
+    """score >= 80 视为通过。"""
+    issues: list[CritiqueIssueSchema] = Field(default_factory=list, max_length=20)
+    summary: str | None = Field(default=None, max_length=300)
 
 
 def validate_plan(data: dict) -> dict:
@@ -83,4 +112,14 @@ def validate_plan(data: dict) -> dict:
         pydantic.ValidationError: 校验失败（调用方决定如何反馈/重试）。
     """
     validated = PlanSchema.model_validate(data)
+    return validated.model_dump(mode="json")
+
+
+def validate_critique(data: dict) -> dict:
+    """校验 TravelCriticAgent 输出的质检报告。
+
+    Raises:
+        pydantic.ValidationError: 校验失败（调用方决定如何反馈/重试）。
+    """
+    validated = CritiqueSchema.model_validate(data)
     return validated.model_dump(mode="json")

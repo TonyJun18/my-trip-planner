@@ -82,7 +82,25 @@ class Settings(BaseSettings):
     AGENT_MAX_ITERATIONS: int = 10
     AGENT_MAX_CORRECTIONS: int = 3
     """LLM 输出 schema 校验失败后，允许的最大自纠正次数。"""
+    AGENT_MAX_REVIEW_ROUNDS: int = 2
+    """行程质检（Evaluator-Optimizer）最大评审轮次：Planner 生成后由
+    TravelCriticAgent 评审，不通过则带反馈重生成，最多评审该轮数后
+    强制定稿（确保任务有界，不会无限循环）。"""
     DEFAULT_LLM_PROVIDER: str = "auto"
+
+    # ── 任务可靠性（超时 / 恢复） ─────────────────────────────
+    TASK_EXECUTION_TIMEOUT: int = 180
+    """单个规划任务的最长执行秒数；超时标记 failed_timeout，避免卡死 worker 队列。"""
+    TASK_STALE_RUNNING_SECONDS: int = 300
+    """启动恢复扫描：running 超过该秒数视为进程崩溃遗留，标记为失败。"""
+    ENABLE_PROVIDER_FALLBACK: bool = True
+    """主 LLM provider 失败后是否自动切换兜底 provider（deepseek → openai → ollama）。"""
+
+    # ── LLM 成本核算（USD） ──────────────────────────────────
+    LLM_INPUT_PRICE_PER_1K: float | None = None
+    """每 1K 输入 token 成本（美元）；配置后每次调用会估算 cost_usd。"""
+    LLM_OUTPUT_PRICE_PER_1K: float | None = None
+    """每 1K 输出 token 成本（美元）。"""
 
     # ── LLM 容错（重试 / 熔断） ─────────────────────────────
     LLM_MAX_RETRIES: int = 3

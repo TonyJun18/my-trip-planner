@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from typing import Any
 
 import httpx
@@ -44,6 +45,54 @@ class WeatherServiceError(Exception):
 # ── Tavily Search ───────────────────────────────────────
 _TAVILY_ENDPOINT = "https://api.tavily.com/search"
 _SEARCH_TIMEOUT = 15.0
+
+# ── 外部数据源运行时降级（进程级滑动窗口） ───────────────
+class _SourceCircuit:
+    """记录某个外部数据源的连续失败；连续失败 ≥ 阈值时暂时禁用，过冷却期恢复。"""
+
+    def __init__(self, name: str, threshold: int = 2, recovery: float = 60.0) -> None:
+        self.name = name
+        self.threshold = threshold
+        self.recovery = recovery
+        self._fails: list[float] = []
+        self._blocked_until: float = 0.0
+
+    def ok(self) -> bool:
+        return time.monotonic() >= self._blocked_until
+
+    def record_failure(self) -> None:
+        now = time.monotonic()
+        self._fails = [t for t in self._fails if now - t < 60.0]
+        self._fails.append(now)
+        if len(self._fails) >= self.threshold:
+            self._blocked_until = now + self.recovery
+            logger.warning("数据源 %s 连续失败 %d 次，降级 %s 秒", self.name, self.threshold, self.recovery)
+
+    def record_success(self) -> None:
+        self._fails.clear()
+
+
+_source_circuits = {
+    "amap": _SourceCircuit("amap"),
+    "tavily": _SourceCircuit("tavily"),
+    "nominatim": _SourceCircuit("nominatim"),
+    "wttr": _SourceCircuit("wttr"),
+}
+
+
+def _source_available(name: str) -> bool:
+    return _source_circuits[name].ok()
+
+
+async def _run_source(name: str, fn, *args, **kwargs):
+    """执行带熔断的外部调用；失败计数并抛原始异常。"""
+    try:
+        result = await fn(*args, **kwargs)
+        _source_circuits[name].record_success()
+        return result
+    except Exception:
+        _source_circuits[name].record_failure()
+        raise
 
 
 def _tavily_headers() -> dict[str, str] | None:
@@ -328,25 +377,54 @@ async def search_pois_amap(
 async def search_attractions(city: str, *, query: str | None = None, limit: int = 8) -> dict[str, Any]:
     """搜索某城市的推荐景点/餐厅，返回结构化 POI 列表。
 
-    真实数据：优先高德 POI（AMAP_API_KEY），未配置降级 Tavily + Nominatim。
+    真实数据：优先高德 POI（AMAP_API_KEY），未配置或高德连续失败时降级 Tavily + Nominatim。
     """
-    if settings.AMAP_API_KEY:
-        return await search_pois_amap(city, query=query, limit=limit, want_type="attraction")
-    return await _search_pois_tavily(city, query=query, limit=limit, want_type="attraction")
+    primary = search_pois_amap if settings.AMAP_API_KEY else None
+    return await _search_with_fallback(
+        city, query=query, limit=limit, want_type="attraction",
+        primary=primary, fallback=_search_pois_tavily,
+    )
 
 
 async def search_hotels(city: str, *, query: str | None = None, limit: int = 8) -> dict[str, Any]:
     """搜索某城市符合需求的酒店，返回结构化 POI 列表（type=hotel）。"""
-    if settings.AMAP_API_KEY:
-        return await search_pois_amap(city, query=query, limit=limit, want_type="hotel")
-    return await _search_pois_tavily(city, query=query, limit=limit, want_type="hotel")
+    primary = search_pois_amap if settings.AMAP_API_KEY else None
+    return await _search_with_fallback(
+        city, query=query, limit=limit, want_type="hotel",
+        primary=primary, fallback=_search_pois_tavily,
+    )
+
+
+async def _search_with_fallback(
+    city: str,
+    *,
+    query: str | None,
+    limit: int,
+    want_type: str,
+    primary: Any | None,
+    fallback: Any,
+) -> dict[str, Any]:
+    """带数据源熔断的搜索：主源可用则试主源，失败/熔断则自动切备源。
+
+    - 主源未配置（primary=None）→ 直接用备源
+    - 主源连续失败触发熔断 → 跳过主源直接走备源
+    - 主源一次失败 → 记录并降级到备源（本次用备源成功则平滑恢复）
+    """
+    if primary is not None and _source_available("amap"):
+        try:
+            return await _run_source("amap", primary, city, query=query, limit=limit, want_type=want_type)
+        except Exception as exc:
+            logger.warning("高德 POI 搜索失败，降级 Tavily (city=%s): %s", city, exc)
+    return await _run_source("tavily", fallback, city, query=query, limit=limit, want_type=want_type)
 
 
 async def search_foods(city: str, *, query: str | None = None, limit: int = 8) -> dict[str, Any]:
     """搜索某城市的美食/餐厅，返回结构化 POI 列表（type=food）。"""
-    if settings.AMAP_API_KEY:
-        return await search_pois_amap(city, query=query, limit=limit, want_type="food")
-    return await _search_pois_tavily(city, query=query, limit=limit, want_type="food")
+    primary = search_pois_amap if settings.AMAP_API_KEY else None
+    return await _search_with_fallback(
+        city, query=query, limit=limit, want_type="food",
+        primary=primary, fallback=_search_pois_tavily,
+    )
 
 
 # ── 天气查询 ─────────────────────────────────────────────
@@ -357,16 +435,16 @@ _WTTR_ENDPOINT = "https://wttr.in"
 async def query_weather(city: str, *, days: int = 3) -> dict[str, Any]:
     """查询某城市未来几天的天气预报。
 
-    真实数据：优先高德天气（AMAP_API_KEY，按 adcode），未配置降级 wttr.in。
+    真实数据：优先高德天气（AMAP_API_KEY，按 adcode），未配置/高德连续失败降级 wttr.in。
     返回结构：{"city", "days": [{"date","text_day","temp_min","temp_max","humidity"}],
               "count", "source"}
     """
-    if settings.AMAP_API_KEY:
+    if settings.AMAP_API_KEY and _source_available("amap"):
         try:
-            return await _weather_amap(city, days=days)
+            return await _run_source("amap", _weather_amap, city, days=days)
         except SearchServiceError as exc:
             logger.warning("高德天气失败，降级 wttr.in city=%s err=%s", city, exc)
-    return await _weather_wttr(city, days=days)
+    return await _run_source("wttr", _weather_wttr, city, days=days)
 
 
 async def _weather_amap(city: str, *, days: int = 3) -> dict[str, Any]:
