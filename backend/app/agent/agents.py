@@ -237,8 +237,8 @@ def _normalize_hotels(hotels: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """把 HotelAgent 采集的原始 POI 规范化为 plan.hotels 统一结构。
 
     保留 name/坐标/description 等核心字段，丢弃 LLM 无关元数据；
-    高德 POI 的 estimated_cost 恒为 0（tools 未解析价格），保持原样，
-    前端展示时可标注「价格以实际询价为准」。
+    estimated_cost 由编排层工具用「城市基准价×档位倍率」代码估算（见
+    budget_service.estimate_hotel_cost），前端展示时标注「参考价，以实际询价为准」。
     """
     out: list[dict[str, Any]] = []
     for h in hotels or []:

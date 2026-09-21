@@ -30,6 +30,7 @@ import httpx
 
 from app.common.config import settings
 from app.core.logging import get_logger
+from app.services.budget_service import estimate_hotel_cost
 
 logger = get_logger(__name__)
 
@@ -358,12 +359,17 @@ async def search_pois_amap(
         except (KeyError, ValueError, IndexError):
             lat = lng = None
         # 高德 name 规整；type 字段形如 "景点;公园"，取第一段
+        # 估算费用：酒店用城市基准价×档位倍率（代码确定性估算，补竞品缺口），
+        # 其他类型 0（景点门票等实际价格高德不返回，前端标注"以实际为准"）
+        est_cost = 0.0
+        if want_type == "hotel":
+            est_cost = estimate_hotel_cost(item.get("name"), city)
         pois.append({
             "name": item.get("name", ""),
             "type": want_type,
             "lat": lat,
             "lng": lng,
-            "estimated_cost": 0.0,
+            "estimated_cost": est_cost,
             "duration_minutes": None,
             "description": (item.get("address") or item.get("type") or "")[:200],
             "source": "amap",
