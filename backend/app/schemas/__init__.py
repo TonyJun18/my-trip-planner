@@ -231,6 +231,12 @@ class TokenOut(BaseModel):
     user: UserMeOut
 
 
+class GoogleLoginIn(BaseModel):
+    """Google 登录：前端传回的 ID Token（Google Identity Services 的 credential）。"""
+
+    id_token: str = Field(min_length=20, max_length=8192, description="Google ID Token (JWT)")
+
+
 class UserCreateOut(UserMeOut):
     """（预留）管理员创建用户响应。"""
 

@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 天
     AUTH_TOKEN_PREFIX: str = "Bearer"
 
+    # ── Google OAuth（登录） ────────────────────────────────
+    GOOGLE_CLIENT_ID: str | None = None
+    """Google 控制台 Web 应用 OAuth Client ID（Google 登录：ID Token 校验 aud）。"""
+    GOOGLE_CLIENT_SECRET: str | None = None
+    """Google 控制台 Web 应用 OAuth Client Secret（当前 ID Token 流程可留空，预留给 code flow）。"""
+
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen2.5:7b"
 
