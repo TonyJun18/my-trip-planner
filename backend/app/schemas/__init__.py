@@ -138,6 +138,7 @@ class ReviseOut(BaseModel):
     trip_id: str
     summary: str
     plan: dict
+    diff: list[dict] = Field(default_factory=list, description="人类可读的变更动作列表（op/day/站点/字段）")
     trace: list[AgentTraceStep]
     provider: str | None = None
     model: str | None = None

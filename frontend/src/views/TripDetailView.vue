@@ -22,6 +22,25 @@ const exportEl = ref(null)
 const reviseMsg = ref('')
 const revising = ref(false)
 const lastReviseSummary = ref('')
+const lastReviseDiff = ref([])
+
+// diff 动作 → 人类可读文案（后端已给 op_label/target_name/day_number/fields）
+const diffLabel = {
+  replace: '修改',
+  add: '新增',
+  remove: '删除',
+  reorder: '调整顺序',
+}
+function diffText(a) {
+  const day = a.day_number ? `Day${a.day_number} · ` : ''
+  const target = a.target_name || ''
+  if (a.op === 'reorder') {
+    return `${day}调整站点顺序（移至第 ${(a.index ?? 0) + 1} 位）`
+  }
+  const fieldKeys = Object.keys(a.fields || {})
+  const fieldText = fieldKeys.length ? `（${fieldKeys.join('、')}）` : ''
+  return `${day}${diffLabel[a.op] || a.op}「${target}」${fieldText}`
+}
 
 async function revise() {
   const msg = reviseMsg.value.trim()
@@ -30,16 +49,19 @@ async function revise() {
     return
   }
   revising.value = true
+  lastReviseDiff.value = []
   try {
     const r = await api.reviseTrip(route.params.id, { message: msg, provider: 'auto' })
     lastReviseSummary.value = r.summary || ''
+    lastReviseDiff.value = Array.isArray(r.diff) ? r.diff : []
     ElMessage.success(r.summary || '行程已更新')
     reviseMsg.value = ''
     budget.value = null
     await load()
   } catch (e) {
-    // api 拦截器已 toast 错误；这里补充人工可读提示
-    ElMessage.error('调整失败，请换一种说法试试')
+    // api 拦截器已 toast 具体错误；补充可操作的下一步提示
+    lastReviseSummary.value = ''
+    ElMessage.error('调整失败：请确认描述里的站点名称与当前行程一致后重试')
   } finally {
     revising.value = false
   }
@@ -315,6 +337,19 @@ onMounted(load)
               {{ lastReviseSummary }}
             </div>
           </transition>
+          <!-- 变更动作预览（diff 列表） -->
+          <transition name="el-fade-in">
+            <div v-if="lastReviseDiff.length" class="revise-diff">
+              <div class="revise-diff-head">
+                <span class="revise-diff-title"><el-icon style="margin-right: 5px"><List /></el-icon>本次改动</span>
+                <span class="revise-diff-count">{{ lastReviseDiff.length }} 项</span>
+              </div>
+              <div v-for="(a, i) in lastReviseDiff" :key="i" class="revise-diff-item" :class="'op-' + (a.op || '')">
+                <el-icon class="revise-diff-icon"><template v-if="a.op === 'add'"><Plus /></template><template v-else-if="a.op === 'remove'"><Minus /></template><template v-else><Edit /></template></el-icon>
+                <span class="revise-diff-text">{{ diffText(a) }}</span>
+              </div>
+            </div>
+          </transition>
         </div>
 
         <!-- 生成时的 AI 质检报告 -->
@@ -540,6 +575,30 @@ onMounted(load)
   border-radius: var(--radius-sm);
   display: inline-flex; align-items: center;
 }
+.revise-diff {
+  margin-top: 10px; background: #fff; border: 1px solid var(--line);
+  border-radius: var(--radius-md); padding: 10px 12px;
+}
+.revise-diff-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.revise-diff-title { font-size: 13px; font-weight: 600; color: var(--ink); display: inline-flex; align-items: center; }
+.revise-diff-count { font-size: 12px; color: var(--faint); }
+.revise-diff-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: var(--radius-sm);
+  font-size: 13px; color: var(--ink-2);
+}
+.revise-diff-item + .revise-diff-item { margin-top: 2px; }
+.revise-diff-item.op-add { background: rgba(16,185,129,.07); }
+.revise-diff-item.op-remove { background: rgba(239,68,68,.07); }
+.revise-diff-item.op-replace { background: rgba(250,204,21,.10); }
+.revise-diff-icon { font-size: 14px; flex-shrink: 0; }
+.revise-diff-item.op-add .revise-diff-icon { color: var(--success); }
+.revise-diff-item.op-remove .revise-diff-icon { color: #ef4444; }
+.revise-diff-item.op-replace .revise-diff-icon { color: #d97706; }
+.revise-diff-text { line-height: 1.45; }
 .detail-quality { margin-top: 4px; }
 
 /* ── 每日行程 ── */
