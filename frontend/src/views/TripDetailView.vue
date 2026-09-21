@@ -150,6 +150,26 @@ async function doExportPdf() {
   }
 }
 
+// ── 分享（只读链接） ─────────────────────────────────────
+const sharing = ref(false)
+async function doShare() {
+  sharing.value = true
+  try {
+    const r = await api.createShare(trip.value.id)
+    const url = r.share_url
+    try {
+      await navigator.clipboard.writeText(url)
+      ElMessage.success('分享链接已复制，持链接者可只读查看行程')
+    } catch {
+      ElMessage.success(`分享链接：${url}`)
+    }
+  } catch (e) {
+    ElMessage.error('生成分享链接失败')
+  } finally {
+    sharing.value = false
+  }
+}
+
 // ── 编辑行程基本信息 ───────────────────────
 function openEditTrip() {
   tripForm.value = {
@@ -244,6 +264,9 @@ onMounted(load)
         <el-icon><ArrowLeft /></el-icon> 我的行程
       </button>
       <div class="topbar-actions">
+        <el-button type="success" plain :loading="sharing" @click="doShare">
+          <el-icon style="margin-right: 4px"><Share /></el-icon>分享行程
+        </el-button>
         <el-button @click="openEditTrip">编辑基本信息</el-button>
         <el-button type="danger" plain @click="removeTrip">删除行程</el-button>
       </div>

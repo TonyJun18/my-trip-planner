@@ -80,9 +80,18 @@ class TripOut(BaseModel):
     travelers: int
     budget: float | None
     status: str
+    share_token: str | None = None
     created_at: datetime
     updated_at: datetime
     days: list[DayOut] = []
+
+
+class ShareOut(BaseModel):
+    """行程分享：返回只读浏览令牌（前端拼分享链接）。"""
+
+    trip_id: str
+    share_token: str
+    share_url: str
 
 
 class TripListOut(BaseModel):

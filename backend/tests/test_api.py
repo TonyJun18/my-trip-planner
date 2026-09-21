@@ -561,3 +561,86 @@ async def test_plan_validation_error(client, auth_user):
     resp = await client.post("/api/v1/planner/plan", json={"destination": ""}, headers=headers)
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "validation_error"
+
+
+# ── 行程分享（只读链接） ─────────────────────────────────────
+async def _make_trip_with_day(client, headers, title="杭州一日", destination="杭州"):
+    today = date.today()
+    resp = await client.post("/api/v1/trips", json={
+        "title": title, "destination": destination,
+        "start_date": today.isoformat(), "end_date": today.isoformat(),
+        "travelers": 2, "budget": 1000,
+    }, headers=headers)
+    assert resp.status_code == 201, resp.text
+    trip = resp.json()
+    resp = await client.post(f"/api/v1/trips/{trip['id']}/days", json={"day_number": 1, "note": "第一天"}, headers=headers)
+    assert resp.status_code == 201, resp.text
+    day_id = resp.json()["id"]
+    await client.post(f"/api/v1/trips/days/{day_id}/stops", json={
+        "name": "西湖", "stop_type": "attraction", "lat": 30.245, "lng": 120.15,
+        "estimated_cost": 0, "description": "环湖",
+    }, headers=headers)
+    return trip["id"]
+
+
+async def test_share_link_flow(client, auth_user):
+    """生成分享链接 → 匿名可读（含站点） → share_token 幂等复用。"""
+    _, headers = auth_user
+    trip_id = await _make_trip_with_day(client, headers)
+
+    # 首次生成
+    resp = await client.post(f"/api/v1/trips/{trip_id}/share", headers=headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    token = body["share_token"]
+    assert len(token) >= 32
+    assert body["trip_id"] == trip_id
+    assert body["share_url"].endswith(f"/share/{token}")
+
+    # 幂等：再次生成复用同一 token
+    resp2 = await client.post(f"/api/v1/trips/{trip_id}/share", headers=headers)
+    assert resp2.json()["share_token"] == token
+
+    # 公开 GET 返回行程详情（无需 auth header）
+    resp = await client.get(f"/api/v1/trips/share/{token}")
+    assert resp.status_code == 200, resp.text
+    shared = resp.json()
+    assert shared["id"] == trip_id
+    assert shared["destination"] == "杭州"
+    assert len(shared["days"]) == 1
+    assert shared["days"][0]["stops"][0]["name"] == "西湖"
+
+    # TripOut 携带 share_token（前端可判断已分享）
+    resp = await client.get(f"/api/v1/trips/{trip_id}", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["share_token"] == token
+
+
+async def test_share_requires_auth_and_valid_token(client):
+    """分享生成需登录；无效/不存在 token → 404。"""
+    resp = await client.post("/api/v1/trips/any/share")
+    assert resp.status_code == 401
+
+    resp = await client.get("/api/v1/trips/share/not-a-real-token")
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "share_token_invalid"
+
+
+async def test_share_owner_isolation(client):
+    """用户 B 不能为 A 的行程生成分享链接（404）；匿名也读不到未分享行程。"""
+    ea = _rand_email()
+    ra = await client.post("/api/v1/auth/register", json={"email": ea, "password": "test1234"})
+    headers_a = {"Authorization": f"Bearer {ra.json()['access_token']}"}
+    eb = _rand_email()
+    rb = await client.post("/api/v1/auth/register", json={"email": eb, "password": "test1234"})
+    headers_b = {"Authorization": f"Bearer {rb.json()['access_token']}"}
+
+    trip_id = await _make_trip_with_day(client, headers_a, title="A 的行程")
+
+    # B 给 A 的行程生成分享 → 404（视为不存在）
+    resp = await client.post(f"/api/v1/trips/{trip_id}/share", headers=headers_b)
+    assert resp.status_code == 404
+
+    # 匿名访问未分享行程 → 404
+    resp = await client.get(f"/api/v1/trips/share/whatever")
+    assert resp.status_code == 404
