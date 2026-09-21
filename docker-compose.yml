@@ -1,0 +1,63 @@
+# ── my-trip-planner · Docker Compose ─────────────────────────
+# 一键本地部署：Postgres + 后端 + 前端
+# 用法：在仓库根目录执行  docker compose up -d --build
+# 生产请复制 .env.example → .env 并填写所有 KEY（JWT_SECRET 必须改）
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: my_trip_planner
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d my_trip_planner"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # 仅开发时暴露便于本地调试（默认 5433，避免与本机已有 Postgres 5432 冲突）；生产可移除
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      ENV: prod
+      DEBUG: "false"
+      LOG_LEVEL: INFO
+      HOST: 0.0.0.0
+      PORT: 8090
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/my_trip_planner
+      CORS_ORIGINS: '["http://localhost:8080"]'
+      # 容器内代理变量（若走代理镜像）通常不需要
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8090/api/v1/health',timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    # 不暴露 8090 端口：只由前端 nginx 反代访问（生产更安全）
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+
+volumes:
+  pgdata:

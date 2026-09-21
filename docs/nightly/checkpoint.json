@@ -17,13 +17,22 @@
   "completed": [
     "competitive-analysis",
     "oss-license",
-    "oss-gitignore"
+    "oss-gitignore",
+    "content-readme",
+    "content-article-publish-list",
+    "task-hotel-budget",
+    "task-revise-ux",
+    "task-deploy-pack"
   ],
-  "current_index": 3,
+  "current_index": 8,
   "issues": [],
   "branches": [
     "nightly/2026-09-21/1-competitive-analysis",
     "nightly/2026-09-21/2-oss-license",
-    "nightly/2026-09-21/3-oss-gitignore"
+    "nightly/2026-09-21/3-oss-gitignore",
+    "nightly/2026-09-21/4-content-readme",
+    "nightly/2026-09-21/6-task-hotel-budget",
+    "nightly/2026-09-21/7-task-revise-ux",
+    "nightly/2026-09-21/8-task-deploy-pack"
   ]
 }
