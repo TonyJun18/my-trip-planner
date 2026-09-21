@@ -1,0 +1,15 @@
+# ── my-trip-planner · 后端 .dockerignore ─────────────────────
+# 减少构建上下文体积 + 避免把敏感文件打进镜像
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.env
+.env.*
+!.env.example
+tests/
+dist/
+build/
+*.log
