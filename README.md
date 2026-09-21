@@ -80,6 +80,16 @@ backend/
 frontend/                    # Vue3 + Vite + Element Plus + Leaflet
 ```
 
+## 技术文章
+
+这套多 Agent 工程化经验已沉淀为系列文章（`docs/articles/`），发布在掘金/知乎/公众号，欢迎交流：
+
+| 文章 | 话题 | 适合谁 |
+|---|---|---|
+| [多 Agent 编排不是堆 Agent](docs/articles/01-multi-agent-orchestration.md) | 单一职责拆分、并行采集、编排层补位 | 用 LangGraph/LangChain 做多 Agent 的工程师 |
+| [让 Agent 稳定输出：Pydantic 强校验 + 失败自纠正](docs/articles/02-structured-output-validation.md) | LLM 输出不可信，schema 才可信，错误摘要回喂自纠正 | 被 LLM 输出 flaky 折磨的人 |
+| [Agent 的容错工程：重试、熔断、降级、FakeLLM](docs/articles/03-resilience-engineering.md) | 指数退避重试、滑动窗口熔断、多源降级、不耗 token 的测试 | 要把 Agent 放进生产的工程师 |
+
 ## 快速启动
 
 ### 1. 数据库（Docker）
