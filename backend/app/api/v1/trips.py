@@ -1,16 +1,25 @@
 """行程 CRUD + 日程/站点管理（支持 owner 用户隔离）。"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.models import User
-from app.schemas import DayIn, DayOut, ReviseOut, ReviseRequest, StopIn, StopOut, TripCreate, TripListOut, TripOut, TripUpdate
+from app.schemas import DayIn, DayOut, ReviseOut, ReviseRequest, ShareOut, StopIn, StopOut, TripCreate, TripListOut, TripOut, TripUpdate
 from app.services import budget_service, trip_service
 
 router = APIRouter()
+
+
+@router.get("/share/{token}", response_model=TripOut, summary="按分享令牌只读查看行程（免登录）")
+async def get_shared_trip(
+    token: str,
+    db: AsyncSession = Depends(get_session),
+) -> TripOut:
+    """持分享令牌即可免登录查看行程（只读语义，无写接口）。"""
+    return await trip_service.get_trip_by_share_token(db, token)
 
 
 @router.get("", response_model=TripListOut, summary="行程列表")
@@ -60,6 +69,19 @@ async def delete_trip(
 ) -> Response:
     await trip_service.delete_trip(db, trip_id, owner=user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{trip_id}/share", response_model=ShareOut, summary="生成行程分享链接")
+async def create_share(
+    trip_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> ShareOut:
+    """为行程生成只读分享令牌（幂等：已生成则复用），返回完整分享 URL。"""
+    token = await trip_service.create_share_token(db, trip_id, owner=user.id)
+    base = str(request.base_url).rstrip("/")
+    return ShareOut(trip_id=trip_id, share_token=token, share_url=f"{base}/share/{token}")
 
 
 @router.post("/{trip_id}/days", response_model=DayOut, status_code=status.HTTP_201_CREATED, summary="添加日程")

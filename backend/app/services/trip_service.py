@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
+from secrets import token_urlsafe
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,6 +57,29 @@ async def get_plan(db: AsyncSession, trip_id: str, *, owner: str | None = None) 
     await _load_trip(db, trip_id, owner=owner)  # 校验行程存在 + 归属
     stmt = select(TripPlan).where(TripPlan.trip_id == trip_id).order_by(TripPlan.created_at.desc())
     return (await db.execute(stmt)).scalars().first()
+
+
+# ── 分享（只读链接） ────────────────────────────────────────
+async def create_share_token(db: AsyncSession, trip_id: str, *, owner: str | None = None) -> str:
+    """为行程生成（或复用）只读分享令牌。需要行程归属校验。"""
+    trip = await _load_trip(db, trip_id, owner=owner)
+    if not trip.share_token:
+        trip.share_token = token_urlsafe(32)
+        await db.flush()
+    return trip.share_token
+
+
+async def get_trip_by_share_token(db: AsyncSession, token: str) -> Trip:
+    """按分享令牌读取行程（免登录只读，持令牌即视为授权——与 git secret link 同语义）。
+
+    - 不存在的令牌 → 404（避免泄露行程是否存在）
+    - 任何人都可查询，不做 owner 校验（分享的语义就是跨用户只读）
+    """
+    stmt = select(Trip).options(*_TRIP_LOADS).where(Trip.share_token == token)
+    trip = (await db.execute(stmt)).scalar_one_or_none()
+    if trip is None:
+        raise NotFoundError("分享链接无效或已失效", code="share_token_invalid")
+    return trip
 
 
 async def create_trip(db: AsyncSession, data: TripCreate, *, owner: str | None = None) -> Trip:
