@@ -74,6 +74,7 @@ async def revise_trip(
         "trip_id": trip.id,
         "summary": diff.get("summary") or "行程已更新",
         "plan": new_plan,
+        "diff": _describe_actions(diff),
         "trace": _normalize_trace(revise.get("trace") or []),
         "provider": revise.get("provider"),
         "model": revise.get("model"),
@@ -144,6 +145,40 @@ def _plan_snapshot(trip: Trip) -> dict[str, Any]:
 
 
 # ── 内部：应用 diff（原子） ─────────────────────────────────
+_OP_LABEL = {
+    "replace": "修改",
+    "add": "新增",
+    "remove": "删除",
+    "reorder": "调整顺序",
+}
+
+
+def _describe_actions(diff: dict[str, Any]) -> list[dict[str, Any]]:
+    """把 AI 生成的 diff.actions 转成人类可读的预览列表（供前端展示）。
+
+    每个动作保留结构化字段（op / day / 目标 / 新值），前端可用图标 + 文案渲染；
+    不做任何落库副作用。
+    """
+    out: list[dict[str, Any]] = []
+    for action in diff.get("actions") or []:
+        op = action.get("op", "")
+        day_number = action.get("day_number")
+        target = action.get("target") or {}
+        fields = action.get("fields") or {}
+        name = target.get("name") or fields.get("name") or ""
+        item: dict[str, Any] = {
+            "op": op,
+            "op_label": _OP_LABEL.get(op, op),
+            "day_number": day_number,
+            "target_name": name,
+            "fields": fields,
+        }
+        if op == "reorder":
+            item["index"] = action.get("index")
+        out.append(item)
+    return out
+
+
 def _apply_diff(trip: Trip, diff: dict[str, Any]) -> None:
     """按顺序应用 diff 的所有动作。
 
