@@ -64,4 +64,8 @@ export const getPlanTask = (taskId) => http.get(`/planner/tasks/${taskId}`).then
 // ── 对话式修订行程（方案 B） ──────────────────────────────
 export const reviseTrip = (tripId, data) => http.post(`/trips/${tripId}/revise`, data).then((r) => r.data)
 
+// ── 行程分享（只读链接） ──────────────────────────────────
+export const createShare = (tripId) => http.post(`/trips/${tripId}/share`).then((r) => r.data)
+export const getSharedTrip = (token) => http.get(`/trips/share/${token}`).then((r) => r.data)
+
 export default http
