@@ -368,3 +368,9 @@ uv run alembic downgrade -1                        # 回滚
 | LLM 规划质量受模型能力上限约束 | 复杂定制（如"避开周一闭馆"）可能不完美 | ✅ **方案 A 缓解**：TravelCriticAgent 四维质检 + 反馈重生成，业务不合理问题可被拦截修正 |
 | 多 Agent 编排是"管道式"（pipeline），非"协商式" | Agent 间不互相质疑/讨论 | ✅ **方案 A 部分解决**：plan-then-review 闭环，Critic 会质疑 Planner 的产出 |
 | 行程是静态快照，旅游中不可交互 | 用户无法实时改路线 | ✅ **方案 B 缓解**：详情页"让 AI 调整行程"对话式修订（AI 出 diff，代码原子执行） |
+
+## 开源许可
+
+本项目采用 [MIT License](LICENSE) 开源。欢迎 fork、提 issue、提 PR。
+
+> 说明：本项目处于快速迭代期，功能与接口可能频繁变动；如要基于本项目二次开发，建议锁定 commit 或与我们同步跟进。
