@@ -22,9 +22,10 @@
     "content-article-publish-list",
     "task-hotel-budget",
     "task-revise-ux",
-    "task-deploy-pack"
+    "task-deploy-pack",
+    "task-trip-share"
   ],
-  "current_index": 8,
+  "current_index": 9,
   "issues": [],
   "branches": [
     "nightly/2026-09-21/1-competitive-analysis",
@@ -33,6 +34,7 @@
     "nightly/2026-09-21/4-content-readme",
     "nightly/2026-09-21/6-task-hotel-budget",
     "nightly/2026-09-21/7-task-revise-ux",
-    "nightly/2026-09-21/8-task-deploy-pack"
+    "nightly/2026-09-21/8-task-deploy-pack",
+    "nightly/2026-09-21/9-task-trip-share"
   ]
 }
