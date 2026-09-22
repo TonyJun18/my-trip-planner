@@ -1,40 +1,24 @@
 {
-  "night": "2026-09-21",
+  "night": "2026-09-22",
   "status": "in_progress",
   "todo": [
     "competitive-analysis",
-    "oss-license",
-    "oss-gitignore",
-    "content-readme",
-    "content-article-publish-list",
-    "task-hotel-budget",
-    "task-revise-ux",
-    "task-deploy-pack",
-    "task-trip-share",
     "task-roadtrip-mode",
-    "content-diff-positioning"
+    "content-diff-positioning",
+    "task-google-auth-frontend",
+    "task-i18n-base",
+    "task-active-questions",
+    "task-user-profile-memory",
+    "content-map-edit-paradigms"
   ],
   "completed": [
-    "competitive-analysis",
-    "oss-license",
-    "oss-gitignore",
-    "content-readme",
-    "content-article-publish-list",
-    "task-hotel-budget",
-    "task-revise-ux",
-    "task-deploy-pack",
-    "task-trip-share"
+    "competitive-analysis"
   ],
-  "current_index": 9,
-  "issues": [],
+  "current_index": 1,
+  "issues": [
+    "docs/night-build-todo.md 与 checkpoint 不同步：用户白天追加的 task-google-auth-frontend/task-i18n-base 在 checkpoint.todo 中但不在 todo 文件中（night-start 重建时被截断？）。本次仅在 todo 文件追加了新行动项，未覆盖删除 checkpoint 中的任务。建议用户 review 时确认 todo 文件完整性。"
+  ],
   "branches": [
-    "nightly/2026-09-21/1-competitive-analysis",
-    "nightly/2026-09-21/2-oss-license",
-    "nightly/2026-09-21/3-oss-gitignore",
-    "nightly/2026-09-21/4-content-readme",
-    "nightly/2026-09-21/6-task-hotel-budget",
-    "nightly/2026-09-21/7-task-revise-ux",
-    "nightly/2026-09-21/8-task-deploy-pack",
-    "nightly/2026-09-21/9-task-trip-share"
+    "nightly/2026-09-22/1-competitive-analysis"
   ]
 }
