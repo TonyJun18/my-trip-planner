@@ -112,4 +112,5 @@ async def _belongs_to_trip(db, stop_id, trip_id) -> Stop:
 ---
 
 *项目源码：github.com/TonyJun18/my-trip-planner（FastAPI + LangGraph + Vue3，MIT License）*
-*相关文章：[《多 Agent 编排不是堆 Agent》](./01-multi-agent-orchestration.md) · [《让 Agent 稳定输出：Pydantic 强校验 + 失败自纠正》](./02-structured-output-validation.md) · [《Agent 的容错工程》](./03-resilience-engineering.md) · [《为什么 AI 行程工具应该把「修订」做成一等公民》](./04-diff-positioning.md)*
+*相关文章：[《多 Agent 编排不是堆 Agent》](./01-multi-agent-orchestration.md) · [《让 Agent 稳定输出：Pydantic 强校验 + 失败自纠正》](./02-structured-output-validation.md) · [《Agent 的容错工程》](./03-resilience-engineering.md)*
+*姊妹篇《为什么 AI 行程工具应该把「修订」做成一等公民》作为系列文章④随夜间流水线同步发布（本分支未包含，合并后链接补齐）。*
