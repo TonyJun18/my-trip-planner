@@ -62,7 +62,16 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
-        return _error_response(422, "validation_error", "请求参数校验失败", {"errors": exc.errors()[:5]})
+        # Pydantic v2 错误 ctx 可能携带不可 JSON 序列化的异常对象（如 ValueError），
+        # 直接塞进响应体会导致 500 —— 统一转成字符串再返回。
+        def _safe(e: dict) -> dict:
+            e = dict(e)
+            ctx = e.get("ctx")
+            if ctx:
+                e["ctx"] = {k: (str(v) if isinstance(v, BaseException) else v) for k, v in ctx.items()}
+            return e
+
+        return _error_response(422, "validation_error", "请求参数校验失败", {"errors": [_safe(e) for e in exc.errors()[:5]]})
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_error_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:
