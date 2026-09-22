@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.models import User
-from app.schemas import DayIn, DayOut, ReviseOut, ReviseRequest, ShareOut, StopIn, StopOut, TripCreate, TripListOut, TripOut, TripUpdate
+from app.schemas import DayIn, DayOut, ReviseOut, ReviseRequest, ShareOut, StopIn, StopOrderIn, StopOut, StopUpdate, TripCreate, TripListOut, TripOut, TripUpdate
 from app.services import budget_service, trip_service
 
 router = APIRouter()
@@ -118,6 +118,29 @@ async def add_stop(
     user: User = Depends(get_current_user),
 ) -> StopOut:
     return await trip_service.add_stop(db, day_id, data, owner=user.id)
+
+
+@router.patch("/days/{day_id}/stops/{stop_id}", response_model=StopOut, summary="编辑站点（手动细粒度编辑）")
+async def update_stop(
+    day_id: str,
+    stop_id: str,
+    data: StopUpdate,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> StopOut:
+    """手动编辑单个站点字段：仅更新传入字段，其余保持原值（与 AI 修订并存）。"""
+    return await trip_service.update_stop(db, day_id, stop_id, data, owner=user.id)
+
+
+@router.put("/days/{day_id}/stops/order", response_model=list[StopOut], summary="重排整日站点顺序")
+async def reorder_stops(
+    day_id: str,
+    data: StopOrderIn,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> list[StopOut]:
+    """按给定顺序重排该日全部站点（用于前端上移/下移/拖拽）。"""
+    return await trip_service.reorder_stops(db, day_id, data.order, owner=user.id)
 
 
 @router.delete("/days/{day_id}", status_code=status.HTTP_204_NO_CONTENT, summary="删除日程（级联站点）")
