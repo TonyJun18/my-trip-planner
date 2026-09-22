@@ -4,12 +4,20 @@
   "todo": [
     "competitive-analysis",
     "task-roadtrip-mode",
-    "content-diff-positioning"
+    "content-diff-positioning",
+    "task-trip-collab-vote",
+    "content-planning-vs-booking",
+    "task-manual-edit"
   ],
-  "completed": [],
-  "current_index": 0,
+  "completed": [
+    "competitive-analysis"
+  ],
+  "current_index": 1,
   "issues": [
-    "09-22 夜的工作（nightly/2026-09-22/1-competitive-analysis 国内OTA竞品分析、2-fe-frontend-adaptation 前端适配）仍在未合并分支上；其 todo 追加项（task-google-auth-frontend/task-i18n-base/task-active-questions/task-user-profile-memory/content-map-edit-paradigms）尚未进入 main 的 docs/night-build-todo.md。本次 night-start 按 main 事实源重建（competitive-analysis + 09-21 遗留未完成项 task-roadtrip-mode/content-diff-positioning），09-22 分支待用户 review 合并后再并入队列。"
+    "09-22 夜的工作（nightly/2026-09-22/1-competitive-analysis 国内OTA竞品分析、2-fe-frontend-adaptation 前端适配）仍在未合并分支上；其 todo 追加项（task-google-auth-frontend/task-i18n-base/task-active-questions/task-user-profile-memory/content-map-edit-paradigms）尚未进入 main 的 docs/night-build-todo.md。本夜按 main 事实源重建（competitive-analysis + 09-21 遗留未完成项 task-roadtrip-mode/content-diff-positioning），09-22 分支待用户 review 合并后再并入队列。",
+    "web_extract 在 cron 沙箱被网络策略拦截（目标解析为内网地址），与 09-21/09-22 记录一致；竞品分析基于 web_search 摘要完成，价格/功能以官网为准。"
   ],
-  "branches": []
+  "branches": [
+    "nightly/2026-09-23/1-competitive-analysis"
+  ]
 }
