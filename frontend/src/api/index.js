@@ -68,4 +68,11 @@ export const reviseTrip = (tripId, data) => http.post(`/trips/${tripId}/revise`,
 export const createShare = (tripId) => http.post(`/trips/${tripId}/share`).then((r) => r.data)
 export const getSharedTrip = (token) => http.get(`/trips/share/${token}`).then((r) => r.data)
 
+// ── 分享页协作（评论 / 站点投票，免登录，凭 share_token） ──
+export const getSharedTripComments = (token) => http.get(`/trips/share/${token}/comments`).then((r) => r.data)
+export const postSharedTripComment = (token, data) => http.post(`/trips/share/${token}/comments`, data).then((r) => r.data)
+export const getSharedTripVotes = (token) => http.get(`/trips/share/${token}/votes`).then((r) => r.data)
+export const castSharedTripVote = (token, stopId, value) =>
+  http.post(`/trips/share/${token}/votes/${stopId}`, { value }).then((r) => r.data)
+
 export default http
