@@ -15,7 +15,7 @@ def _uuid() -> str:
 
 
 class User(Base):
-    """系统用户（owner）—— 邮箱或手机号注册。"""
+    """系统用户（owner）—— 邮箱/手机号密码注册，或 Google OAuth 登录。"""
 
     __tablename__ = "users"
 
@@ -23,6 +23,10 @@ class User(Base):
     # 登录标识：邮箱 或 手机号（两者至少一个）
     email: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True, index=True)
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True, index=True)
+    # Google 账号唯一标识（sub）—— 登录绑定用；同一 Google 账号始终映射同一用户
+    google_sub: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    # Google 用户头像（可选，前端展示）
+    avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # 显示名（可选，默认取 email/phone 前缀）
     display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # 密码哈希（PBKDF2-SHA256，不存明文）。未设置密码（如仅手机号验证码登录）可为空
