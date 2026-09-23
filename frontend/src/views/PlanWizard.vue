@@ -33,6 +33,42 @@ const form = reactive({
   provider: 'auto',
 })
 
+// ── 主动提问（马蜂窝 AI 路书差异化：规划前动态追问需求澄清） ──
+// 每题：question / options / answer。未回答的问题提交时直接忽略，
+// 后端只把有答案的 Q&A 并入规划上下文；客户端也无需强制填写。
+const questions = reactive([
+  {
+    question: '这次是和谁一起出行？',
+    options: ['情侣', '亲子', '朋友结伴', '独自一人', '公司团建'],
+    answer: '',
+  },
+  {
+    question: '更倾向什么节奏？',
+    options: ['紧凑打卡', '适中', '慢节奏深度游'],
+    answer: '',
+  },
+  {
+    question: '需要避开人流高峰吗？',
+    options: ['尽量避开', '无所谓', '哪里热闹去哪里'],
+    answer: '',
+  },
+  {
+    question: '有备选目的地或特殊要求吗？',
+    options: [],
+    answer: '',
+  },
+])
+
+function pickQuestion(q, option) {
+  q.answer = q.answer === option ? '' : option
+}
+
+function answeredQuestions() {
+  return questions
+    .filter((q) => (q.answer || '').trim())
+    .map((q) => ({ question: q.question, options: q.options, answer: q.answer.trim() }))
+}
+
 function defaultDates() {
   const fmt = (d) => d.toISOString().slice(0, 10)
   const start = new Date()
@@ -74,7 +110,11 @@ async function submit() {
   activeStep.value = 1
   taskStatus.value = 'running'
   try {
-    const task = await api.planTrip({ ...form })
+    const payload = {
+      ...form,
+      questions: answeredQuestions(),
+    }
+    const task = await api.planTrip(payload)
     pollTask(task.task_id)
   } catch (e) {
     submitting.value = false
@@ -245,6 +285,34 @@ function goDetail() {
               <span class="pref-check" v-if="form.preferences.includes(p)">✓</span>
               {{ p }}
             </button>
+          </div>
+        </div>
+
+        <!-- 主动提问：规划前需求澄清（可选，未答不提交） -->
+        <div class="field qa-field">
+          <label class="field-label">
+            再回答几个小问题，行程会更合你心意
+            <span class="qa-tip">（可选，不答也不影响规划）</span>
+          </label>
+          <div class="qa-list">
+            <div v-for="q in questions" :key="q.question" class="qa-item">
+              <div class="qa-q">{{ q.question }}</div>
+              <div v-if="q.options.length" class="qa-opts">
+                <button v-for="opt in q.options" :key="opt"
+                        class="chip" :class="{ picked: q.answer === opt }"
+                        @click="pickQuestion(q, opt)">
+                  <span v-if="q.answer === opt" style="margin-right: 4px">✓</span>{{ opt }}
+                </button>
+              </div>
+              <el-input
+                v-else
+                v-model="q.answer"
+                size="default"
+                placeholder="选填：如「想顺路去乌镇」「对海鲜过敏」「尽量住地铁口」"
+                clearable
+                class="qa-input"
+              />
+            </div>
           </div>
         </div>
 
@@ -469,6 +537,15 @@ function goDetail() {
 .pref-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .adv-collapse { margin-bottom: 20px; border: none; }
 .adv-collapse :deep(.el-collapse-item__header) { border: none; font-size: 13px; color: var(--muted); }
+
+/* ── 主动提问（需求澄清） ── */
+.qa-field { background: var(--fill); border-radius: var(--radius-lg); padding: 16px 18px; }
+.qa-tip { font-size: 12px; color: var(--faint); font-weight: 400; margin-left: 4px; }
+.qa-list { display: flex; flex-direction: column; gap: 14px; }
+.qa-item { display: flex; flex-direction: column; gap: 8px; }
+.qa-q { font-size: 14px; font-weight: 600; color: var(--ink); }
+.qa-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.qa-input { max-width: 480px; }
 
 .btn-primary {
   display: inline-flex; align-items: center; justify-content: center;
