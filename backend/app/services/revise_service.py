@@ -63,6 +63,9 @@ async def revise_trip(
     except Exception as exc:  # noqa: BLE001
         raise AppError(f"行程修订应用失败: {exc}", code="revise_apply_failed") from exc
 
+    # 2.5) 自驾约束门（DrivingGate）：修订后站点组合超距/超时 → 整体拒绝
+    _enforce_driving_constraints(trip)
+
     # 3) 落库 + 预算重算
     await db.flush()
     await _recompute_budget(db, trip)
@@ -322,9 +325,33 @@ def _renumber(day: TripDay) -> None:
 
 
 # ── 内部：预算重算 ──────────────────────────────────────────
+def _enforce_driving_constraints(trip: Trip) -> None:
+    """自驾约束门：修订后的行程若产生超距/超时的站点组合，整体拒绝。
+
+    与规划编排的 DrivingGate 使用同一套确定性校验（driving_service），
+    保证「AI 修订加了一个远距站点」这类动作不会静默落库。
+
+    Raises:
+        AppError: 存在 critical 自驾问题（400 + detail 列出具体问题）。
+    """
+    from app.services.driving_service import check_plan_driving
+
+    plan_snapshot = _plan_snapshot(trip)
+    driving = check_plan_driving(plan_snapshot)
+    if driving["passed"]:
+        return
+    messages = [i.get("message", "") for i in driving["issues"] if i.get("severity") == "critical"]
+    raise AppError(
+        "修订后的行程存在自驾路线问题（超距/超时），已拒绝本次修改",
+        code="revise_driving_violation",
+        detail={"issues": messages[:5], "driving": driving},
+    )
+
+
 async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
     """修订后由代码重算 TripPlan.plan_data.budget（有快照则同步更新）。"""
     from app.agent.tools import compute_budget
+    from app.services.driving_service import check_plan_driving
 
     all_stops = [
         {"name": s.name, "type": s.stop_type, "estimated_cost": float(s.estimated_cost or 0)}
@@ -333,6 +360,10 @@ async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
     ]
     budget = compute_budget(all_stops)
 
+    # 自驾报告随修订一并写回 plan 快照（前端可在修订响应 plan.driving 里看到里程/时长）
+    new_days = _plan_snapshot(trip)["days"]
+    driving = check_plan_driving({"days": new_days})
+
     # 更新最新 TripPlan 快照（若无则跳过；前端详情页主数据来自 trip 本身）
     stmt = select(TripPlan).where(TripPlan.trip_id == trip.id).order_by(TripPlan.created_at.desc())
     plan = (await db.execute(stmt)).scalars().first()
@@ -340,5 +371,6 @@ async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
         plan.plan_data = {
             **plan.plan_data,
             "budget": budget,
-            "days": _plan_snapshot(trip)["days"],
+            "days": new_days,
+            "driving": driving,
         }
