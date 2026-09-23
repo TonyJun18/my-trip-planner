@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
@@ -10,7 +10,13 @@ const auth = useAuthStore()
 
 const mode = ref('login')
 const loading = ref(false)
+const googleLoading = ref(false)
 const formRef = ref(null)
+
+// Google 登录：client id 从环境变量注入（.env.local / .env.development）
+// 未配置时不渲染按钮，不影响邮箱/手机号登录
+const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
+const showGoogleLogin = computed(() => !!googleClientId)
 
 const form = reactive({
   account: '',
@@ -66,6 +72,65 @@ function switchMode() {
   mode.value = mode.value === 'login' ? 'register' : 'login'
   formRef.value?.clearValidate()
 }
+
+/* ── Google Identity Services 登录 ───────────────────────── */
+// 1) 懒加载 GIS 脚本（仅当配置了 client id）
+// 2) credential 回调 → POST /auth/google → 复用 setSession（与邮箱登录同一会话体系）
+function loadGsiScript() {
+  return new Promise((resolve, reject) => {
+    if (window.google?.accounts) {
+      resolve()
+      return
+    }
+    const existing = document.getElementById('gsi-script')
+    if (existing) {
+      existing.addEventListener('load', resolve, { once: true })
+      existing.addEventListener('error', reject, { once: true })
+      return
+    }
+    const script = document.createElement('script')
+    script.id = 'gsi-script'
+    script.src = 'https://accounts.google.com/gsi/client'
+    script.async = true
+    script.defer = true
+    script.addEventListener('load', resolve, { once: true })
+    script.addEventListener('error', reject, { once: true })
+    document.head.appendChild(script)
+  })
+}
+
+async function handleGoogleCredential(credential) {
+  googleLoading.value = true
+  try {
+    await auth.loginWithGoogle(credential)
+    ElMessage.success('Google 登录成功，欢迎回来！')
+    const redirect = route.query.redirect || '/'
+    router.push(redirect)
+  } catch {
+    // 错误已由拦截器提示；页面保留在原处
+  } finally {
+    googleLoading.value = false
+  }
+}
+
+async function initGoogleButton() {
+  if (!showGoogleLogin.value) return
+  try {
+    await loadGsiScript()
+    window.google.accounts.id.initialize({
+      client_id: googleClientId,
+      callback: (resp) => handleGoogleCredential(resp.credential),
+    })
+    window.google.accounts.id.renderButton(
+      document.getElementById('google-login-btn'),
+      { theme: 'outline', size: 'large', shape: 'pill', width: 260, text: 'continue_with' },
+    )
+  } catch (e) {
+    console.warn('[auth] Google Identity Services 加载失败：', e)
+  }
+}
+
+onMounted(initGoogleButton)
 </script>
 
 <template>
@@ -141,6 +206,12 @@ function switchMode() {
           {{ mode === 'login' ? '还没有账号？' : '已有账号？' }}
           <a class="switch-link" @click="switchMode">{{ mode === 'login' ? '去注册' : '去登录' }}</a>
         </div>
+
+        <!-- Google 登录（仅登录模式展示；client id 未配置时不渲染） -->
+        <template v-if="showGoogleLogin && mode === 'login'">
+          <div class="google-divider"><span>或</span></div>
+          <div id="google-login-btn" class="google-btn-wrap" v-loading="googleLoading"></div>
+        </template>
       </el-card>
     </div>
   </div>
@@ -220,6 +291,18 @@ function switchMode() {
 .switch-line { margin-top: 18px; text-align: center; font-size: 14px; color: var(--ink-2); }
 .switch-link { color: var(--brand); cursor: pointer; font-weight: 500; }
 .switch-link:hover { text-decoration: underline; }
+
+/* ── Google 登录 ── */
+.google-divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 18px 0 14px; color: var(--faint); font-size: 12px;
+}
+.google-divider::before,
+.google-divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.google-btn-wrap {
+  display: flex; justify-content: center; min-height: 44px;
+}
+.google-btn-wrap:empty { display: none; }
 
 /* 响应式 */
 @media (max-width: 860px) {
