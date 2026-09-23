@@ -16,19 +16,22 @@
     "competitive-analysis",
     "task-share-edit",
     "content-open-planning-layer",
-    "task-active-questions"
+    "task-active-questions",
+    "task-user-profile-memory"
   ],
-  "current_index": 4,
+  "current_index": 5,
   "issues": [
     "09-24 跨夜重建：09-22/09-23 全部分支已由用户合并进 main；todo 从 main 的 docs/night-build-todo.md 重建（含 09-24 竞品分析新追加 task-share-edit/content-open-planning-layer）。种子任务 oss-license/oss-gitignore/task-hotel-budget/task-revise-ux/task-deploy-pack/task-trip-share/task-roadtrip-mode/content-diff-positioning/content-planning-vs-booking/task-trip-collab-vote/task-manual-edit/content-article-publish-list 均已合并完成，不再入队。",
     "web_extract 在 cron 沙箱被网络策略拦截（连续多夜），竞品分析基于 web_search 摘要完成，价格/功能以官网为准。",
     "content-readme（README 增加夜间流水线小节）产物缺失，待白天/后续夜补；README 现有 385 行无夜间流水线说明。",
-    "worker-4（content-open-planning-layer）：09-24 竞品分析追加段（task-share-edit/content-open-planning-layer）只存在于 worker-1 分支 nightly/2026-09-24/1-competitive-analysis 的 docs/night-build-todo.md 中，main 上尚未同步（与 09-23 worker-7 记录同源问题）；已从分支1取任务描述执行，todo 勾选保留在分支1版本，任务完成状态以 checkpoint 为准。wiki 分支2/后续分支的 checkpoint 文件仍停在 09-23 旧版（worker-1 checkpoint 重建未合并进后续分支），本夜 checkpoint 已完成链式推进（本分支基于 worker-1 checkpoint 重建值）。"
+    "worker-4（content-open-planning-layer）：09-24 竞品分析追加段（task-share-edit/content-open-planning-layer）只存在于 worker-1 分支 nightly/2026-09-24/1-competitive-analysis 的 docs/night-build-todo.md 中，main 上尚未同步（与 09-23 worker-7 记录同源问题）；已从分支1取任务描述执行，todo 勾选保留在分支1版本，任务完成状态以 checkpoint 为准。wiki 分支2/后续分支的 checkpoint 文件仍停在 09-23 旧版（worker-1 checkpoint 重建未合并进后续分支），本夜 checkpoint 已完成链式推进（本分支基于 worker-1 checkpoint 重建值）。",
+    "worker-5（task-user-profile-memory）：alembic 链双头状态为既有问题（e5302ddbcdd2 与 c35e3c0ec0fb 均指向 2299e3a984cd，09-23 链修复 e048544 未进入本 worker 链）；新迁移 a1f2b3c4d5e6 挂在 c35e3c0ec0fb 下游可追踪，本任务未做链修复（超出范围）。测试走 create_all + truncate 不受影响。"
   ],
   "branches": [
     "nightly/2026-09-24/1-competitive-analysis",
     "nightly/2026-09-24/2-task-share-edit",
     "nightly/2026-09-24/4-content-open-planning-layer",
-    "nightly/2026-09-24/5-task-active-questions"
+    "nightly/2026-09-24/5-task-active-questions",
+    "nightly/2026-09-24/6-task-user-profile-memory"
   ]
 }
