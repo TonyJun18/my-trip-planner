@@ -25,7 +25,7 @@
 
 - [ ] task-active-questions: 主动提问/需求挖掘——规划提交后、执行前动态追问 1-3 个问题（出行人群/节奏/避峰需求/备选方案偏好），答案并入规划上下文（马蜂窝 AI 路书「主动提问」差异化）（验收：后端规划请求支持 questions 字段 + 前端追问交互 + 测试覆盖）
 - [ ] task-user-profile-memory: 跨会话用户画像记忆——用户偏好画像表（人群/节奏/预算档/常去城市）+ 规划时注入画像摘要（同程记忆关联性、飞猪微细分、Layla 个性化）（验收：画像 CRUD API + 规划注入 + 测试覆盖；不读 .env、不需要新 API key）
-- [ ] content-map-edit-paradigms: 文章《表单、对话、地图拖拽：三种行程修订范式的工程代价》——对比携程地图拖拽编辑/我们 AI diff 原子应用/表单生成三种修订范式的体验与工程代价，为 task-map-drag-edit 铺路（验收：docs/articles/05-map-edit-paradigms.md 存在且内容完整，代码引用与仓库实际一致）
+- [x] content-map-edit-paradigms: 文章《表单、对话、地图拖拽：三种行程修订范式的工程代价》——对比携程地图拖拽编辑/我们 AI diff 原子应用/表单生成三种修订范式的体验与工程代价，为 task-map-drag-edit 铺路（验收：docs/articles/05-map-edit-paradigms.md 存在且内容完整，代码引用与仓库实际一致）
 - 注（backlog，不单独建任务）：行程备选方案（Plan B）待 task-roadtrip-mode 完成后评估；多语种攻略输出并入 task-i18n-base 范围
 
 ## 2026-09-23 竞品分析追加（格局快照：预订闭环 vs 规划层）
