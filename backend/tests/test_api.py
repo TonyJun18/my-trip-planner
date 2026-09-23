@@ -644,3 +644,133 @@ async def test_share_owner_isolation(client):
     # 匿名访问未分享行程 → 404
     resp = await client.get(f"/api/v1/trips/share/whatever")
     assert resp.status_code == 404
+
+# ── 手动细粒度编辑（task-manual-edit） ───────────────────────
+async def _make_day_with_stops(client, headers, n=2):
+    """建行程 + Day1 + n 个站点，返回 (trip_id, day_id, stop_ids)。"""
+    today = date.today()
+    resp = await client.post("/api/v1/trips", json={
+        "title": "手动编辑测试", "destination": "杭州",
+        "start_date": today.isoformat(), "end_date": today.isoformat(),
+    }, headers=headers)
+    trip_id = resp.json()["id"]
+    resp = await client.post(f"/api/v1/trips/{trip_id}/days", json={"day_number": 1}, headers=headers)
+    day_id = resp.json()["id"]
+    ids = []
+    for name in ["西湖", "灵隐寺", "楼外楼"][:n]:
+        resp = await client.post(f"/api/v1/trips/days/{day_id}/stops", json={
+            "name": name, "stop_type": "attraction",
+        }, headers=headers)
+        assert resp.status_code == 201, resp.text
+        ids.append(resp.json()["id"])
+    return trip_id, day_id, ids
+
+
+async def test_update_stop_manual_edit(client, auth_user):
+    """PATCH 编辑站点：只改传入字段，其余保持原值。"""
+    _, headers = auth_user
+    trip_id, day_id, ids = await _make_day_with_stops(client, headers, n=1)
+    stop_id = ids[0]
+
+    resp = await client.patch(f"/api/v1/trips/days/{day_id}/stops/{stop_id}", json={
+        "name": "西湖（半日）", "estimated_cost": 50, "stop_type": "food",
+    }, headers=headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["name"] == "西湖（半日）"
+    assert body["estimated_cost"] == 50
+    assert body["stop_type"] == "food"
+
+    # 未传字段保持原值（description 原为 None，lat/lng 原为 None）
+    assert body["description"] is None
+    # 落库可读回
+    resp = await client.get(f"/api/v1/trips/{trip_id}", headers=headers)
+    stops = resp.json()["days"][0]["stops"]
+    assert stops[0]["name"] == "西湖（半日）"
+    assert stops[0]["estimated_cost"] == 50
+
+
+async def test_update_stop_clear_nullable(client, auth_user):
+    """显式传 null 可清空可空字段（lat/lng/description）。"""
+    _, headers = auth_user
+    trip_id, day_id, ids = await _make_day_with_stops(client, headers, n=1)
+    stop_id = ids[0]
+    # 先写入 lat/lng/description
+    await client.patch(f"/api/v1/trips/days/{day_id}/stops/{stop_id}", json={
+        "lat": 30.245, "lng": 120.15, "description": "环湖",
+    }, headers=headers)
+    # 再清空
+    resp = await client.patch(f"/api/v1/trips/days/{day_id}/stops/{stop_id}", json={
+        "lat": None, "lng": None, "description": None,
+    }, headers=headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["lat"] is None
+    assert body["lng"] is None
+    assert body["description"] is None
+
+
+async def test_update_stop_validation(client, auth_user):
+    """空名称 → 422；ge=0 约束 → 422。"""
+    _, headers = auth_user
+    trip_id, day_id, ids = await _make_day_with_stops(client, headers, n=1)
+    stop_id = ids[0]
+    resp = await client.patch(f"/api/v1/trips/days/{day_id}/stops/{stop_id}", json={"name": ""}, headers=headers)
+    assert resp.status_code == 422
+    resp = await client.patch(f"/api/v1/trips/days/{day_id}/stops/{stop_id}", json={"estimated_cost": -1}, headers=headers)
+    assert resp.status_code == 422
+
+
+async def test_reorder_stops(client, auth_user):
+    """PUT order：重排后 order_index 按序更新，读回顺序正确。"""
+    _, headers = auth_user
+    trip_id, day_id, ids = await _make_day_with_stops(client, headers, n=3)
+    # 逆序重排 [楼外楼, 灵隐寺, 西湖]
+    resp = await client.put(f"/api/v1/trips/days/{day_id}/stops/order", json={"order": list(reversed(ids))}, headers=headers)
+    assert resp.status_code == 200, resp.text
+    ordered = resp.json()
+    assert [s["id"] for s in ordered] == list(reversed(ids))
+    assert [s["order_index"] for s in ordered] == [1, 2, 3]
+
+    resp = await client.get(f"/api/v1/trips/{trip_id}", headers=headers)
+    stops = resp.json()["days"][0]["stops"]
+    assert [s["name"] for s in stops] == ["楼外楼", "灵隐寺", "西湖"]
+
+
+async def test_reorder_stops_invalid(client, auth_user):
+    """缺漏/多传/乱传 id → 400；空列表 → 422。"""
+    _, headers = auth_user
+    trip_id, day_id, ids = await _make_day_with_stops(client, headers, n=2)
+
+    # 缺一个
+    resp = await client.put(f"/api/v1/trips/days/{day_id}/stops/order", json={"order": [ids[0]]}, headers=headers)
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "stop_order_invalid"
+    # 多一个不存在的
+    resp = await client.put(f"/api/v1/trips/days/{day_id}/stops/order", json={"order": [ids[0], ids[1], "no-such-id"]}, headers=headers)
+    assert resp.status_code == 400
+    # 空列表
+    resp = await client.put(f"/api/v1/trips/days/{day_id}/stops/order", json={"order": []}, headers=headers)
+    assert resp.status_code == 422
+
+
+async def test_manual_edit_owner_isolation(client):
+    """B 不能编辑/重排 A 的站点（404）。"""
+    ea = _rand_email()
+    ra = await client.post("/api/v1/auth/register", json={"email": ea, "password": "test1234"})
+    headers_a = {"Authorization": f"Bearer {ra.json()['access_token']}"}
+    eb = _rand_email()
+    rb = await client.post("/api/v1/auth/register", json={"email": eb, "password": "test1234"})
+    headers_b = {"Authorization": f"Bearer {rb.json()['access_token']}"}
+
+    trip_id, day_id, ids = await _make_day_with_stops(client, headers_a, n=1)
+    stop_id = ids[0]
+
+    resp = await client.patch(f"/api/v1/trips/days/{day_id}/stops/{stop_id}", json={"name": "被篡改"}, headers=headers_b)
+    assert resp.status_code == 404
+    resp = await client.put(f"/api/v1/trips/days/{day_id}/stops/order", json={"order": [stop_id]}, headers=headers_b)
+    assert resp.status_code == 404
+
+    # 未登录 → 401
+    resp = await client.patch(f"/api/v1/trips/days/{day_id}/stops/{stop_id}", json={"name": "x"})
+    assert resp.status_code == 401

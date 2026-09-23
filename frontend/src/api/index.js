@@ -52,6 +52,8 @@ export const addDay = (tripId, data) => http.post(`/trips/${tripId}/days`, data)
 export const generateDays = (tripId, start, end) =>
   http.post(`/trips/${tripId}/days/generate`, null, { params: { start, end } }).then((r) => r.data)
 export const addStop = (dayId, data) => http.post(`/trips/days/${dayId}/stops`, data).then((r) => r.data)
+export const updateStop = (dayId, stopId, data) => http.patch(`/trips/days/${dayId}/stops/${stopId}`, data).then((r) => r.data)
+export const reorderStops = (dayId, order) => http.put(`/trips/days/${dayId}/stops/order`, { order }).then((r) => r.data)
 export const deleteDay = (dayId) => http.delete(`/trips/days/${dayId}`)
 export const deleteStop = (dayId, stopId) => http.delete(`/trips/days/${dayId}/stops/${stopId}`)
 
