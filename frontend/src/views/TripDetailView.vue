@@ -70,11 +70,61 @@ async function revise() {
 // ── 编辑对话框状态 ─────────────────────────
 const editType = ref(null)
 const editDayId = ref(null)
+const editStopId = ref(null)
 const stopForm = ref({ name: '', stop_type: 'attraction', lat: null, lng: null, description: '', estimated_cost: null, estimated_duration_minutes: null })
 const dayForm = ref({ day_number: 1 })
 const tripForm = ref({ title: '', destination: '', travelers: 1, budget: null })
 const dialogVisible = ref(false)
 const stopFormRef = ref(null)
+
+// 编辑/添加共用表单；编辑时把 stop 字段拷入（null 转空串便于输入框清空）
+function blankStopForm() {
+  return { name: '', stop_type: 'attraction', lat: null, lng: null, description: '', estimated_cost: null, estimated_duration_minutes: null }
+}
+function openEditStop(day, stop) {
+  editDayId.value = day.id
+  editStopId.value = stop.id
+  stopForm.value = {
+    name: stop.name,
+    stop_type: stop.stop_type || 'attraction',
+    lat: stop.lat ?? '',
+    lng: stop.lng ?? '',
+    description: stop.description ?? '',
+    estimated_cost: stop.estimated_cost ?? null,
+    estimated_duration_minutes: stop.estimated_duration_minutes ?? null,
+  }
+  editType.value = 'edit-stop'
+  dialogVisible.value = true
+}
+async function saveEditStop() {
+  await stopFormRef.value.validate()
+  const payload = { ...stopForm.value }
+  if (payload.lat === '' || payload.lat == null) payload.lat = null
+  if (payload.lng === '' || payload.lng == null) payload.lng = null
+  if (payload.estimated_cost === '' || payload.estimated_cost == null) payload.estimated_cost = null
+  if (payload.estimated_duration_minutes === '' || payload.estimated_duration_minutes == null) payload.estimated_duration_minutes = null
+  await api.updateStop(editDayId.value, editStopId.value, payload)
+  ElMessage.success('站点已更新')
+  dialogVisible.value = false
+  load()
+}
+
+// ── 上移 / 下移（整日顺序重排） ────────────
+async function moveStop(day, stop, dir) {
+  const stops = day.stops
+  const idx = stops.findIndex((s) => s.id === stop.id)
+  const target = idx + dir
+  if (idx < 0 || target < 0 || target >= stops.length) return
+  const order = stops.map((s) => s.id)
+  ;[order[idx], order[target]] = [order[target], order[idx]]
+  try {
+    await api.reorderStops(day.id, order)
+    ElMessage.success(dir < 0 ? '已上移' : '已下移')
+    load()
+  } catch (e) {
+    // api 拦截器已 toast
+  }
+}
 
 const markers = computed(() => {
   const list = []
@@ -210,7 +260,8 @@ async function saveDay() {
 // ── 添加站点 ───────────────────────────────
 function openAddStop(dayId) {
   editDayId.value = dayId
-  stopForm.value = { name: '', stop_type: 'attraction', lat: null, lng: null, description: '', estimated_cost: null, estimated_duration_minutes: null }
+  editStopId.value = null
+  stopForm.value = blankStopForm()
   editType.value = 'add-stop'
   dialogVisible.value = true
 }
@@ -422,6 +473,9 @@ onMounted(load)
                 </div>
                 <div v-if="stop.description" class="stop-desc">{{ stop.description }}</div>
                 <div class="stop-actions">
+                  <el-button link size="small" @click="moveStop(day, stop, -1)" :disabled="idx === 0">上移</el-button>
+                  <el-button link size="small" @click="moveStop(day, stop, 1)" :disabled="idx === day.stops.length - 1">下移</el-button>
+                  <el-button link type="primary" @click="openEditStop(day, stop)">编辑</el-button>
                   <el-button link type="danger" @click="removeStop(day, stop)">删除</el-button>
                 </div>
               </div>
@@ -446,7 +500,7 @@ onMounted(load)
     <!-- 编辑对话框（三合一） -->
     <el-dialog
       v-model="dialogVisible"
-      :title="editType === 'edit-trip' ? '编辑行程信息' : editType === 'add-day' ? '添加日程' : '添加站点'"
+      :title="editType === 'edit-trip' ? '编辑行程信息' : editType === 'add-day' ? '添加日程' : editType === 'edit-stop' ? '编辑站点' : '添加站点'"
       width="480px"
     >
       <el-form v-if="editType === 'edit-trip'" :model="tripForm" label-width="80px">
@@ -486,7 +540,7 @@ onMounted(load)
 
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="editType === 'edit-trip' ? saveTrip() : editType === 'add-day' ? saveDay() : saveStop()">保存</el-button>
+        <el-button type="primary" @click="editType === 'edit-trip' ? saveTrip() : editType === 'add-day' ? saveDay() : editType === 'edit-stop' ? saveEditStop() : saveStop()">保存</el-button>
       </template>
     </el-dialog>
   </div>

@@ -31,6 +31,24 @@ class StopOut(StopIn):
     details: dict | None = None
 
 
+class StopUpdate(BaseModel):
+    """手动编辑站点：所有字段可选，未传字段保持原值。"""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    stop_type: StopType | None = None
+    lat: float | None = None
+    lng: float | None = None
+    description: str | None = None
+    estimated_cost: float | None = Field(default=None, ge=0)
+    estimated_duration_minutes: int | None = Field(default=None, ge=0)
+
+
+class StopOrderIn(BaseModel):
+    """整日站点顺序重排：提供该日全部站点 id，按给定顺序写入 order_index。"""
+
+    order: list[str] = Field(min_length=1, description="该日全部站点 id，按目标顺序排列")
+
+
 class DayIn(BaseModel):
     day_number: int = Field(ge=1)
     date: _Date | None = None
