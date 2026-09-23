@@ -1,0 +1,11 @@
+{
+  "decisions": [
+    {
+      "date": "2026-09-19",
+      "project": "my-trip-planner",
+      "decision": "下周期唯一优先重点 = 内容沉淀（README + 2-3 篇多 Agent 工程实践文章）",
+      "bottleneck": "C-资产沉淀不足",
+      "deferred": ["开源脚手架抽象", "上线 Demo 部署"]
+    }
+  ]
+}
