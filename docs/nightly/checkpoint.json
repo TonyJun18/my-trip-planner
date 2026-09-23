@@ -1,10 +1,26 @@
 {
+
   "night": "2026-09-23",
   "status": "completed_with_issues",
   "todo": [
     "competitive-analysis",
     "task-roadtrip-mode",
     "content-diff-positioning",
+    "task-google-auth-frontend",
+    "task-i18n-base",
+    "task-active-questions",
+    "task-user-profile-memory",
+    "content-map-edit-paradigms"
+  ],
+  "completed": [
+    "competitive-analysis"
+  ],
+  "current_index": 1,
+  "issues": [
+    "docs/night-build-todo.md 与 checkpoint 不同步：用户白天追加的 task-google-auth-frontend/task-i18n-base 在 checkpoint.todo 中但不在 todo 文件中（night-start 重建时被截断？）。本次仅在 todo 文件追加了新行动项，未覆盖删除 checkpoint 中的任务。建议用户 review 时确认 todo 文件完整性。"
+  ],
+  "branches": [
+    "nightly/2026-09-22/1-competitive-analysis"
     "task-trip-collab-vote",
     "content-planning-vs-booking",
     "task-manual-edit"
