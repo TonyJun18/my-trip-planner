@@ -1,35 +1,27 @@
 {
-  "night": "2026-09-23",
-  "status": "completed_with_issues",
+  "night": "2026-09-24",
+  "status": "in_progress",
   "todo": [
     "competitive-analysis",
-    "task-roadtrip-mode",
-    "content-diff-positioning",
-    "task-trip-collab-vote",
-    "content-planning-vs-booking",
-    "task-manual-edit"
+    "task-share-edit",
+    "content-open-planning-layer",
+    "task-active-questions",
+    "task-user-profile-memory",
+    "content-map-edit-paradigms",
+    "task-google-auth-frontend",
+    "task-i18n-base",
+    "content-readme"
   ],
   "completed": [
-    "competitive-analysis",
-    "task-roadtrip-mode",
-    "content-diff-positioning",
-    "task-trip-collab-vote",
-    "content-planning-vs-booking",
-    "task-manual-edit"
+    "competitive-analysis"
   ],
-  "current_index": 6,
+  "current_index": 1,
   "issues": [
-    "09-22 夜的工作（nightly/2026-09-22/1-competitive-analysis 国内OTA竞品分析、2-fe-frontend-adaptation 前端适配）仍在未合并分支上；其 todo 追加项（task-google-auth-frontend/task-i18n-base/task-active-questions/task-user-profile-memory/content-map-edit-paradigms）尚未进入 main 的 docs/night-build-todo.md。本夜按 main 事实源重建（competitive-analysis + 09-21 遗留未完成项 task-roadtrip-mode/content-diff-positioning），09-22 分支待用户 review 合并后再并入队列。",
-    "web_extract 在 cron 沙箱被网络策略拦截（目标解析为内网地址），与 09-21/09-22 记录一致；竞品分析基于 web_search 摘要完成，价格/功能以官网为准。",
-    "worker-6 并发复查：本夜 5 个 nightly/2026-09-23 分支为平行分支（均基于 main 92fec38，checkpoint 链式推进），worker-6 初始在 main 旧工作区重建检查点时与 sibling（branch-1 competitive-analysis）撞车；已丢弃重复竞品分析（内容备份至 /tmp/worker6-competitive-analysis-2026-09-23.md），切换至 branch-4 tip 接续执行 todo[4]=content-planning-vs-booking。分支 1-5 需用户 review 后逐个合并。",
-    "worker-7：task-manual-edit 任务定义（「行程手动细粒度编辑——站点卡片行内编辑（标题/时间/顺序拖拽），与 AI 修订并存」）只存在于 nightly/2026-09-23/1-competitive-analysis（竞品分析分支）的 docs/night-build-todo.md 与竞品分析 md 中，main 上尚未同步（与 todo 文件不同步 issue 同源）；已从分支1取描述执行，拖拽交互降级为上移/下移按钮（轻量实现，不引入拖拽库依赖）。"
+    "09-24 跨夜重建：09-22/09-23 全部分支已由用户合并进 main；todo 从 main 的 docs/night-build-todo.md 重建（含 09-24 竞品分析新追加 task-share-edit/content-open-planning-layer）。种子任务 oss-license/oss-gitignore/task-hotel-budget/task-revise-ux/task-deploy-pack/task-trip-share/task-roadtrip-mode/content-diff-positioning/content-planning-vs-booking/task-trip-collab-vote/task-manual-edit/content-article-publish-list(docs/articles/publish-list.md 含 04/06 卡片) 均已合并完成，不再入队。",
+    "web_extract 在 cron 沙箱被网络策略拦截（连续多夜），竞品分析基于 web_search 摘要完成，价格/功能以官网为准。",
+    "content-readme（README 增加夜间流水线小节）产物缺失，待白天/后续夜补；README 现有 385 行无夜间流水线说明。"
   ],
   "branches": [
-    "nightly/2026-09-23/1-competitive-analysis",
-    "nightly/2026-09-23/2-task-roadtrip-mode",
-    "nightly/2026-09-23/3-content-diff-positioning",
-    "nightly/2026-09-23/4-task-trip-collab-vote",
-    "nightly/2026-09-23/5-content-planning-vs-booking",
-    "nightly/2026-09-23/6-task-manual-edit"
+    "nightly/2026-09-24/1-competitive-analysis"
   ]
 }
