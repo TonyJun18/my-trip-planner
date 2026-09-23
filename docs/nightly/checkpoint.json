@@ -5,7 +5,6 @@
     "competitive-analysis",
     "task-roadtrip-mode",
     "content-diff-positioning",
-
     "task-google-auth-frontend",
     "task-i18n-base",
     "task-active-questions",
@@ -20,7 +19,6 @@
     "docs/night-build-todo.md 与 checkpoint 不同步：用户白天追加的 task-google-auth-frontend/task-i18n-base 在 checkpoint.todo 中但不在 todo 文件中（night-start 重建时被截断？）。本次仅在 todo 文件追加了新行动项，未覆盖删除 checkpoint 中的任务。建议用户 review 时确认 todo 文件完整性。"
   ],
   "branches": [
-    "nightly/2026-09-22/1-competitive-analysis"
     "task-trip-collab-vote",
     "content-planning-vs-booking",
     "task-manual-edit"
@@ -28,6 +26,12 @@
   "completed": [
     "competitive-analysis",
     "task-roadtrip-mode",
+    "content-diff-positioning"
+  ],
+  "current_index": 3,
+  "issues": [
+    "09-22 夜的工作（nightly/2026-09-22/1-competitive-analysis 国内OTA竞品分析、2-fe-frontend-adaptation 前端适配）仍在未合并分支上；其 todo 追加项（task-google-auth-frontend/task-i18n-base/task-active-questions/task-user-profile-memory/content-map-edit-paradigms）尚未进入 main 的 docs/night-build-todo.md。本夜按 main 事实源重建（competitive-analysis + 09-21 遗留未完成项 task-roadtrip-mode/content-diff-positioning），09-22 分支待用户 review 合并后再并入队列。",
+    "web_extract 在 cron 沙箱被网络策略拦截（目标解析为内网地址），与 09-21/09-22 记录一致；竞品分析基于 web_search 摘要完成，价格/功能以官网为准。"
     "content-diff-positioning",
     "task-trip-collab-vote",
     "content-planning-vs-booking"
