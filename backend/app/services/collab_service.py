@@ -1,4 +1,4 @@
-"""分享页协作服务：评论 / 站点投票（免登录，凭 share_token 授权）。"""
+"""分享页协作服务：评论 / 站点投票 / 受邀编辑（免登录，凭相应令牌授权）。"""
 from __future__ import annotations
 
 import hashlib
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.models import Stop, StopVote, Trip, TripComment, TripDay
-from app.schemas.collab import CommentIn, VoteIn
+from app.schemas.collab import CommentIn, InvitedStopUpdate, VoteIn
 
 
 # ── 分享令牌基础：所有协作接口都要求持有效令牌（与只读分享同信任级别） ──
@@ -18,6 +18,15 @@ async def _get_trip_by_token(db: AsyncSession, token: str) -> Trip:
     trip = (await db.execute(stmt)).scalar_one_or_none()
     if trip is None:
         raise NotFoundError("分享链接无效或已失效", code="share_token_invalid")
+    return trip
+
+
+async def _get_trip_by_edit_token(db: AsyncSession, token: str) -> Trip:
+    """按受邀编辑令牌读取行程（403 → 404：令牌等同于授权，不存在即视为无效）。"""
+    stmt = select(Trip).where(Trip.edit_token == token)
+    trip = (await db.execute(stmt)).scalar_one_or_none()
+    if trip is None:
+        raise NotFoundError("协作编辑链接无效或已失效", code="edit_token_invalid")
     return trip
 
 
@@ -145,3 +154,41 @@ async def cast_vote(
 
     counts = await _counts_for_stop(db, stop_id)
     return {"stop_id": stop_id, "up": counts["up"], "down": counts["down"], "my_value": data.value}
+
+
+# ── 受邀编辑（凭 edit_token，受限字段直写，不经 AI 修订） ─────────────
+async def update_invited_stop(
+    db: AsyncSession, token: str, stop_id: str, data: InvitedStopUpdate
+) -> Stop:
+    """受邀者更新站点受限字段：name / description / checked（exclude_unset，其余不动）。"""
+    trip = await _get_trip_by_edit_token(db, token)
+    stop = await _belongs_to_trip(db, stop_id, trip.id)
+    for field, value in data.model_dump(exclude_unset=True).items():
+        if value is not None:
+            setattr(stop, field, value)
+    await db.flush()
+    await db.refresh(stop)
+    return stop
+
+
+async def reorder_invited_stops(db: AsyncSession, token: str, day_id: str, order: list[str]) -> list[Stop]:
+    """受邀者重排某日全部站点顺序（受限编辑，不经 AI 修订）。"""
+    trip = await _get_trip_by_edit_token(db, token)
+    day = await db.get(TripDay, day_id)
+    if day is None or day.trip_id != trip.id:
+        from app.core.exceptions import NotFoundError
+
+        raise NotFoundError("日程不存在", code="day_not_found")
+    stmt = select(Stop).where(Stop.day_id == day.id).order_by(Stop.order_index)
+    stops = list((await db.execute(stmt)).scalars().all())
+    if len(order) != len(stops) or set(order) != {s.id for s in stops}:
+        from app.core.exceptions import AppError
+
+        raise AppError("顺序列表必须包含该日全部站点", code="stop_order_invalid")
+    by_id = {s.id: s for s in stops}
+    for idx, stop_id in enumerate(order, start=1):
+        by_id[stop_id].order_index = idx
+    await db.flush()
+    for s in stops:
+        await db.refresh(s)
+    return [by_id[sid] for sid in order]

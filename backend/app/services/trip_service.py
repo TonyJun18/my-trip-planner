@@ -82,6 +82,40 @@ async def get_trip_by_share_token(db: AsyncSession, token: str) -> Trip:
     return trip
 
 
+# ── 受邀编辑（edit_token：编辑权与只读分享分离，owner 可随时收回） ────
+async def create_edit_token(db: AsyncSession, trip_id: str, *, owner: str | None = None) -> str:
+    """为行程生成（或复用）受邀编辑令牌。需要行程归属校验。
+
+    - 与 share_token 独立：不开放编辑时旧分享链接保持只读，安全边界清晰。
+    - 幂等：已生成则复用（share_token 同语义）。
+    """
+    trip = await _load_trip(db, trip_id, owner=owner)
+    if not trip.edit_token:
+        trip.edit_token = token_urlsafe(32)
+        await db.flush()
+    return trip.edit_token
+
+
+async def revoke_edit_token(db: AsyncSession, trip_id: str, *, owner: str | None = None) -> None:
+    """收回受邀编辑权：清空 edit_token（不影响只读分享链接）。"""
+    trip = await _load_trip(db, trip_id, owner=owner)
+    if trip.edit_token:
+        trip.edit_token = None
+        await db.flush()
+
+
+async def get_trip_by_edit_token(db: AsyncSession, token: str) -> Trip:
+    """按受邀编辑令牌读取行程（编辑权包含只读，受邀者可查看完整行程）。
+
+    与只读 share_token 的信任语义一致：持令牌即视为授权，令牌不存在 → 404。
+    """
+    stmt = select(Trip).options(*_TRIP_LOADS).where(Trip.edit_token == token)
+    trip = (await db.execute(stmt)).scalar_one_or_none()
+    if trip is None:
+        raise NotFoundError("协作编辑链接无效或已失效", code="edit_token_invalid")
+    return trip
+
+
 async def create_trip(db: AsyncSession, data: TripCreate, *, owner: str | None = None) -> Trip:
     trip = Trip(**data.model_dump(), owner=owner)
     db.add(trip)

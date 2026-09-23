@@ -9,7 +9,7 @@ from app.core.database import get_session
 from app.core.exceptions import NotFoundError
 from app.models import User
 from app.schemas import DayIn, DayOut, ReviseOut, ReviseRequest, ShareOut, SharedTripOut, StopIn, StopOrderIn, StopOut, StopUpdate, TripCreate, TripListOut, TripOut, TripUpdate
-from app.schemas.collab import CommentIn, CommentOut, VoteIn, VoteOut
+from app.schemas.collab import CommentIn, CommentOut, InvitedStopUpdate, SharedEditOut, VoteIn, VoteOut
 from app.services import budget_service, collab_service, trip_service
 
 router = APIRouter()
@@ -80,6 +80,76 @@ async def cast_share_vote(
         user_agent=request.headers.get("user-agent"),
     )
     return VoteOut(**result)
+
+
+# ── 受邀编辑（凭 edit_token：免登录可编辑站点受限字段/顺序，owner 可收回） ──
+@router.get("/edit/{token}", response_model=SharedTripOut, summary="按受邀编辑令牌查看行程（含预算汇总）")
+async def get_editable_trip(
+    token: str,
+    db: AsyncSession = Depends(get_session),
+) -> SharedTripOut:
+    """编辑令牌同时授予只读权限：受邀者看到与只读分享相同的行程内容。"""
+    trip = await trip_service.get_trip_by_edit_token(db, token)
+    return SharedTripOut(
+        **TripOut.model_validate(trip).model_dump(),
+        budget_summary=budget_service.compute_budget(trip),
+    )
+
+
+@router.patch("/edit/{token}/stops/{stop_id}", response_model=StopOut, summary="受邀者编辑站点受限字段")
+async def update_invited_stop(
+    token: str,
+    stop_id: str,
+    data: InvitedStopUpdate,
+    db: AsyncSession = Depends(get_session),
+) -> StopOut:
+    """受邀者（凭 edit_token）更新站点 name/description/checked，其余字段不可改。
+
+    与 owner 的 PATCH /days/{day_id}/stops/{stop_id} 不同：这里的授权来源是
+    edit_token（免登录），且字段白名单更窄（协作字段，不经 AI 修订）。
+    """
+    stop = await collab_service.update_invited_stop(db, token, stop_id, data)
+    return StopOut.model_validate(stop)
+
+
+@router.put("/edit/{token}/days/{day_id}/stops/order", response_model=list[StopOut], summary="受邀者重排整日站点顺序")
+async def reorder_invited_stops(
+    token: str,
+    day_id: str,
+    data: StopOrderIn,
+    db: AsyncSession = Depends(get_session),
+) -> list[StopOut]:
+    """受邀者（凭 edit_token）按给定顺序重排该日全部站点（幂等，须给出全部站点 id）。"""
+    stops = await collab_service.reorder_invited_stops(db, token, day_id, data.order)
+    return [StopOut.model_validate(s) for s in stops]
+
+
+@router.post("/{trip_id}/share/edit", response_model=SharedEditOut, summary="开放受邀编辑权（生成编辑链接）")
+async def create_share_edit(
+    trip_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> SharedEditOut:
+    """owner 为行程生成受邀编辑链接（幂等：已生成则复用）。"""
+    edit_token = await trip_service.create_edit_token(db, trip_id, owner=user.id)
+    base = str(request.base_url).rstrip("/")
+    return SharedEditOut(
+        trip_id=trip_id,
+        edit_token=edit_token,
+        edit_url=f"{base}/share/{edit_token}?edit=1",
+    )
+
+
+@router.delete("/{trip_id}/share/edit", status_code=status.HTTP_204_NO_CONTENT, summary="收回受邀编辑权")
+async def revoke_share_edit(
+    trip_id: str,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> Response:
+    """owner 收回受邀编辑权：清空 edit_token，已有编辑链接立即失效（只读分享不受影响）。"""
+    await trip_service.revoke_edit_token(db, trip_id, owner=user.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("", response_model=TripListOut, summary="行程列表")

@@ -43,6 +43,13 @@ class UnauthorizedError(AppError):
     code = "unauthorized"
 
 
+class PermissionDeniedError(AppError):
+    """已认证但权限不足 / 缺少专属令牌（403）。"""
+
+    status_code = 403
+    code = "permission_denied"
+
+
 class ExternalServiceError(AppError):
     status_code = 502
     code = "external_service_error"
