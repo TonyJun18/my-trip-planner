@@ -7,6 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.models import User
+from app.schemas import DayIn, DayOut, ReviseOut, ReviseRequest, ShareOut, StopIn, StopOut, TripCreate, TripListOut, TripOut, TripUpdate
+from app.schemas.collab import CommentIn, CommentOut, VoteIn, VoteOut
+from app.services import budget_service, collab_service, trip_service
 from app.schemas import DayIn, DayOut, ReviseOut, ReviseRequest, ShareOut, StopIn, StopOrderIn, StopOut, StopUpdate, TripCreate, TripListOut, TripOut, TripUpdate
 from app.services import budget_service, trip_service
 
@@ -20,6 +23,57 @@ async def get_shared_trip(
 ) -> TripOut:
     """持分享令牌即可免登录查看行程（只读语义，无写接口）。"""
     return await trip_service.get_trip_by_share_token(db, token)
+
+
+# ── 分享页协作（评论 / 投票，免登录，凭 share_token） ─────────────
+@router.get("/share/{token}/comments", response_model=list[CommentOut], summary="分享页评论列表（免登录）")
+async def list_share_comments(
+    token: str,
+    db: AsyncSession = Depends(get_session),
+) -> list[CommentOut]:
+    """按分享令牌查看行程评论（时间正序）。"""
+    return await collab_service.list_comments(db, token)
+
+
+@router.post("/share/{token}/comments", response_model=CommentOut, status_code=status.HTTP_201_CREATED, summary="分享页发表评论（免登录）")
+async def create_share_comment(
+    token: str,
+    data: CommentIn,
+    db: AsyncSession = Depends(get_session),
+) -> CommentOut:
+    """访客凭分享令牌发表评论（昵称可选，内容 ≤500 字）。"""
+    return await collab_service.create_comment(db, token, data)
+
+
+@router.get("/share/{token}/votes", response_model=dict[str, VoteOut], summary="分享页站点投票汇总（免登录）")
+async def list_share_votes(
+    token: str,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+) -> dict[str, VoteOut]:
+    """行程内全部站点的 👍/👎 计数；附带当前访客的选择（同 token 匿名身份）。"""
+    voter_key = collab_service._voter_key(token, request.client.host if request.client else None, request.headers.get("user-agent"))
+    return await collab_service.list_stop_votes(db, token, voter_key=voter_key)
+
+
+@router.post("/share/{token}/votes/{stop_id}", response_model=VoteOut, summary="站点投票/翻转（免登录）")
+async def cast_share_vote(
+    token: str,
+    stop_id: str,
+    data: VoteIn,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+) -> VoteOut:
+    """对行程内站点投 👍(1)/👎(-1)；同一访客可翻转，重复提交幂等。"""
+    result = await collab_service.cast_vote(
+        db,
+        token,
+        stop_id,
+        data,
+        client_ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return VoteOut(**result)
 
 
 @router.get("", response_model=TripListOut, summary="行程列表")

@@ -9,6 +9,25 @@ const loading = ref(false)
 const error = ref('')
 const trip = ref(null)
 
+// ── 分享页协作：评论 ──
+const comments = ref([])
+const commentLoading = ref(false)
+const commentName = ref('')
+const commentText = ref('')
+const commentSubmitting = ref(false)
+
+// ── 分享页协作：站点投票 ──
+const votes = ref({}) // stop_id -> { up, down, my_value? }
+const voting = ref({}) // stop_id -> true（提交中防抖）
+
+function fmtTime(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 const markers = computed(() => {
   const list = []
   for (const day of trip.value?.days || []) {
@@ -61,11 +80,71 @@ async function load() {
   error.value = ''
   try {
     trip.value = await api.getSharedTrip(route.params.token)
+    await Promise.all([loadComments(), loadVotes()])
   } catch (e) {
     error.value = '分享链接无效或已失效'
   } finally {
     loading.value = false
   }
+}
+
+// ── 协作加载 / 提交 ──
+async function loadComments() {
+  commentLoading.value = true
+  try {
+    comments.value = await api.getSharedTripComments(route.params.token)
+  } catch (e) {
+    comments.value = []
+  } finally {
+    commentLoading.value = false
+  }
+}
+
+async function loadVotes() {
+  try {
+    votes.value = await api.getSharedTripVotes(route.params.token)
+  } catch (e) {
+    votes.value = {}
+  }
+}
+
+async function submitComment() {
+  const content = commentText.value.trim()
+  if (!content || commentSubmitting.value) return
+  commentSubmitting.value = true
+  try {
+    const created = await api.postSharedTripComment(route.params.token, {
+      author_name: commentName.value.trim() || null,
+      content,
+    })
+    comments.value.push(created)
+    commentText.value = ''
+  } catch (e) {
+    // 拦截器已弹出错误提示
+  } finally {
+    commentSubmitting.value = false
+  }
+}
+
+async function castVote(stopId, value) {
+  if (voting.value[stopId]) return
+  voting.value[stopId] = true
+  try {
+    const result = await api.castSharedTripVote(route.params.token, stopId, value)
+    votes.value[stopId] = result
+  } catch (e) {
+    // 拦截器已弹出错误提示
+  } finally {
+    voting.value[stopId] = false
+  }
+}
+
+function voteCount(stopId, kind) {
+  return votes.value?.[stopId]?.[kind] || 0
+}
+
+function myVote(stopId) {
+  return votes.value?.[stopId]?.my_value || 0
 }
 
 onMounted(load)
@@ -178,12 +257,67 @@ onMounted(load)
               <div class="stop-meta">
                 <span v-if="stop.estimated_cost != null"><el-icon><Wallet /></el-icon>¥{{ stop.estimated_cost }}</span>
                 <span v-if="stop.estimated_duration_minutes"><el-icon><Clock /></el-icon>{{ stop.estimated_duration_minutes }} 分钟</span>
+                <span class="vote-group">
+                  <button
+                    class="vote-btn"
+                    :class="{ active: myVote(stop.id) === 1 }"
+                    :disabled="voting[stop.id]"
+                    @click="castVote(stop.id, 1)"
+                    title="想去 👍"
+                  >👍 {{ voteCount(stop.id, 'up') }}</button>
+                  <button
+                    class="vote-btn"
+                    :class="{ active: myVote(stop.id) === -1 }"
+                    :disabled="voting[stop.id]"
+                    @click="castVote(stop.id, -1)"
+                    title="不想去 👎"
+                  >👎 {{ voteCount(stop.id, 'down') }}</button>
+                </span>
               </div>
               <div v-if="stop.description" class="stop-desc">{{ stop.description }}</div>
             </div>
           </div>
         </div>
         <el-empty v-else description="这一天还没有站点" :image-size="60" />
+      </div>
+
+      <!-- 分享页协作：评论区（免登录，凭分享链接） -->
+      <div class="comments-card">
+        <div class="card-head">
+          <span class="card-title">协作讨论</span>
+          <span class="map-hint">凭分享链接即可参与 · 无需登录</span>
+        </div>
+
+        <div v-if="comments.length" class="comment-list">
+          <div v-for="c in comments" :key="c.id" class="comment-item">
+            <div class="comment-avatar">{{ (c.author_name || '匿')[0] }}</div>
+            <div class="comment-main">
+              <div class="comment-head">
+                <span class="comment-name">{{ c.author_name || '匿名访客' }}</span>
+                <span class="comment-time">{{ fmtTime(c.created_at) }}</span>
+              </div>
+              <div class="comment-text">{{ c.content }}</div>
+            </div>
+          </div>
+        </div>
+        <el-empty v-else-if="!commentLoading" description="还没有评论，来抢沙发" :image-size="50" />
+
+        <div class="comment-composer">
+          <el-input v-model="commentName" placeholder="昵称（可选）" class="comment-name-input" maxlength="50" clearable />
+          <el-input
+            v-model="commentText"
+            type="textarea"
+            :rows="2"
+            maxlength="500"
+            show-word-limit
+            placeholder="对这个行程有什么想说的？"
+          />
+          <div class="comment-actions">
+            <el-button type="primary" :loading="commentSubmitting" :disabled="!commentText.trim()" @click="submitComment">
+              发表评论
+            </el-button>
+          </div>
+        </div>
       </div>
     </template>
   </div>
@@ -312,6 +446,42 @@ onMounted(load)
 .stop-meta { display: flex; gap: 14px; font-size: 12.5px; color: var(--muted); margin-top: 6px; align-items: center; }
 .stop-meta .el-icon { font-size: 13px; color: var(--faint); }
 .stop-desc { margin-top: 6px; font-size: 13px; color: var(--ink-2); line-height: 1.55; }
+
+/* ── 站点投票 ── */
+.vote-group { margin-left: auto; display: inline-flex; gap: 6px; }
+.vote-btn {
+  appearance: none; border: 1px solid var(--line); background: #fff;
+  border-radius: var(--radius-full); padding: 3px 10px; font-size: 12.5px;
+  color: var(--ink-2); cursor: pointer; transition: all .15s;
+  line-height: 1.4;
+}
+.vote-btn:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
+.vote-btn.active { background: var(--brand-soft); border-color: var(--brand); color: var(--brand); font-weight: 600; }
+.vote-btn:disabled { opacity: .55; cursor: default; }
+
+/* ── 分享页协作评论 ── */
+.comments-card {
+  background: #fff; border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 18px; box-shadow: var(--shadow-card); margin-bottom: 24px;
+}
+.comment-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+.comment-item { display: flex; gap: 10px; }
+.comment-avatar {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  background: var(--brand-soft); color: var(--brand); font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.comment-main { flex: 1; min-width: 0; }
+.comment-head { display: flex; align-items: baseline; gap: 8px; }
+.comment-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.comment-time { font-size: 11.5px; color: var(--faint); }
+.comment-text {
+  margin-top: 3px; font-size: 13.5px; color: var(--ink-2); line-height: 1.55;
+  white-space: pre-wrap; word-break: break-word;
+}
+.comment-composer { border-top: 1px dashed var(--line); padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.comment-name-input { max-width: 220px; }
+.comment-actions { display: flex; justify-content: flex-end; }
 
 /* 响应式 */
 @media (max-width: 860px) {
