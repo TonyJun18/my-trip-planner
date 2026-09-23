@@ -34,6 +34,11 @@
 - [ ] content-planning-vs-booking: 写一篇发布就绪文章《AI 旅行规划正在变成预订漏斗——独立工具的机会在"规划层"》（Mindtrip agentic 机票 + Expedia 收购 Layla 的行业分层观察；免费/透明/可修订规划层定位）（验收：docs/articles/06-planning-vs-booking.md 存在且内容完整）
 - [ ] task-manual-edit: 行程手动细粒度编辑——站点卡片行内编辑（标题/时间/顺序拖拽），与 AI 修订并存（Wanderlog 手动自由改 + 地图联动是最强交互）（验收：行程详情页可改单日单点 + build 通过 + 测试覆盖；排在 task-roadtrip-mode 之后）
 
+## 2026-09-24 竞品分析追加（格局信号：预订层被资本垄断，规划层机会放大）
+
+- [ ] task-share-edit: 分享链接升级「受邀编辑权」——share_token 支持受限编辑（站点顺序/备注/勾选，不经 AI 修订），分享页开放编辑入口（MonkeyTravel/Wanderlog 验证的「一个链接进群、全员可编辑、实时同步」刚需）（验收：受邀方可编辑站点/顺序 + owner 可收回权限 + 测试覆盖；待 task-trip-collab-vote 稳定后评估）
+- [ ] content-open-planning-layer: 写一篇发布就绪文章《当 AI 旅行工具都在抢着替你花钱：独立规划层的生存策略》——Mindtrip agentic 机票/酒店预订 + Expedia×Layla 收购为引，讲透「规划与预订分离」哲学，diff 修订 + 质检 trace + 城市基准价透明估算构成反例（验收：docs/articles/07-open-planning-layer.md 存在且内容完整，发布清单补卡片）
+
 ## 用户白天下达任务（2026-09-21 追加）
 
 - [ ] task-google-auth-frontend: 前端 Google 登录按钮——GIS 加载 + credential 回调 → POST /auth/google → 复用 setSession；按钮文案与配色融入 AuthView（后端已完成：branch nightly/2026-09-21/10-task-google-auth-backend，POST /api/v1/auth/google 已就绪）。GOOGLE_CLIENT_ID 前端可先用占位/环境变量注入，不强制真实 key（验收：build 通过 + 登录链路代码完整）
