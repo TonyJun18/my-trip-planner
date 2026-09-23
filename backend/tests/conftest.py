@@ -83,7 +83,7 @@ async def test_engine():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(
-            text("TRUNCATE TABLE users, trips, trip_days, stops, trip_plans, plan_tasks, trip_comments, stop_votes CASCADE")
+            text("TRUNCATE TABLE users, trips, trip_days, stops, trip_plans, plan_tasks, trip_comments, stop_votes, user_profiles CASCADE")
         )
     yield engine
     await engine.dispose()
