@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundError
 from app.models import Stop, Trip, TripDay, TripPlan
-from app.schemas import DayIn, StopIn, TripCreate, TripUpdate
+from app.schemas import DayIn, StopIn, StopUpdate, TripCreate, TripUpdate
 
 # 统一 eager-load 关系，避免序列化时 async lazy load 报 MissingGreenlet
 _TRIP_LOADS = (selectinload(Trip.days).selectinload(TripDay.stops),)
@@ -148,6 +148,51 @@ async def add_stop(db: AsyncSession, day_id: str, data: StopIn, *, owner: str | 
     await db.flush()
     await db.refresh(stop)
     return stop
+
+
+async def _load_day_for_owner(db: AsyncSession, day_id: str, *, owner: str | None = None) -> TripDay:
+    """加载日程并校验其所属行程归属当前用户（站点级写操作统一走这里）。"""
+    day = await db.get(TripDay, day_id)
+    if day is None:
+        raise NotFoundError("日程不存在", code="day_not_found")
+    trip = await _load_trip(db, day.trip_id, owner=owner)
+    return day
+
+
+async def update_stop(
+    db: AsyncSession, day_id: str, stop_id: str, data: StopUpdate, *, owner: str | None = None
+) -> Stop:
+    """手动编辑站点字段：仅更新显式传入的字段（exclude_unset），其余保持原值。"""
+    day = await _load_day_for_owner(db, day_id, owner=owner)
+    stop = await db.get(Stop, stop_id)
+    if stop is None or stop.day_id != day.id:
+        raise NotFoundError("站点不存在", code="stop_not_found")
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(stop, field, value)
+    await db.flush()
+    await db.refresh(stop)
+    return stop
+
+
+async def reorder_stops(
+    db: AsyncSession, day_id: str, order: list[str], *, owner: str | None = None
+) -> list[Stop]:
+    """整日站点重排：order 必须包含该日全部站点 id（乱序/缺漏 → 400），按序重写 order_index。"""
+    day = await _load_day_for_owner(db, day_id, owner=owner)
+    stmt = select(Stop).where(Stop.day_id == day.id).order_by(Stop.order_index)
+    stops = list((await db.execute(stmt)).scalars().all())
+    if len(order) != len(stops) or set(order) != {s.id for s in stops}:
+        from app.core.exceptions import AppError
+
+        raise AppError("顺序列表必须包含该日全部站点", code="stop_order_invalid")
+    by_id = {s.id: s for s in stops}
+    for idx, stop_id in enumerate(order, start=1):
+        by_id[stop_id].order_index = idx
+    await db.flush()
+    for s in stops:
+        await db.refresh(s)
+    # 按请求的新顺序返回（而非按旧 order_index 排序）
+    return [by_id[sid] for sid in order]
 
 
 async def generate_days_for_range(
