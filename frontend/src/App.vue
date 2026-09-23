@@ -1,10 +1,18 @@
 <script setup>
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useI18n } from 'vue-i18n'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import en from 'element-plus/es/locale/lang/en'
+import LangSwitcher from '@/components/LangSwitcher.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
+const { t, locale } = useI18n()
+
+// Element Plus locale 与 vue-i18n 语言联动（el-config-provider 响应式）
+const elLocale = computed(() => (locale.value === 'en-US' ? en : zhCn))
 
 // 刷新后用 /auth/me 校验本地 token 并恢复用户信息；token 失效时 store 会自动登出
 onMounted(() => {
@@ -18,64 +26,67 @@ function logout() {
 </script>
 
 <template>
-  <el-container class="app-shell">
-    <el-header class="app-header">
-      <div class="brand" @click="router.push('/')">
-        <span class="brand-logo">
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 2C8.5 6.5 6 9.8 6 13.2 6 16.9 8.7 19.5 12 19.5s6-2.6 6-6.3C18 9.8 15.5 6.5 12 2z" fill="currentColor" />
-            <circle cx="12" cy="13" r="2.4" fill="#fff" />
-            <path d="M4 21h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-          </svg>
-        </span>
-        <span class="brand-text">随行</span>
-        <span class="brand-sub">AI 旅行规划</span>
-      </div>
-      <div class="nav">
-        <template v-if="auth.isLoggedIn">
-          <button class="nav-link" :class="{ active: $route.path === '/' }" @click="router.push('/')">
-            我的行程
-          </button>
-          <button class="btn-primary" @click="router.push('/plan')">
-            <el-icon style="margin-right: 6px"><MagicStick /></el-icon>AI 规划行程
-          </button>
-          <el-dropdown>
-            <span class="user-chip">
-              <span class="avatar">{{ (auth.displayName || '旅')[0].toUpperCase() }}</span>
-              <span class="user-name">{{ auth.displayName }}</span>
-              <el-icon class="chevron"><ArrowDown /></el-icon>
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item disabled class="user-meta">
-                  <div>{{ auth.user?.display_name || '旅行者' }}</div>
-                  <div class="user-contact">{{ auth.user?.email || auth.user?.phone || '-' }}</div>
-                </el-dropdown-item>
-                <el-dropdown-item divided @click="logout">
-                  <el-icon style="margin-right: 6px"><SwitchButton /></el-icon>退出登录
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </template>
-        <template v-else>
-          <button class="btn-primary" @click="router.push('/login')">登录 / 注册</button>
-        </template>
-      </div>
-    </el-header>
+  <el-config-provider :locale="elLocale">
+    <el-container class="app-shell">
+      <el-header class="app-header">
+        <div class="brand" @click="router.push('/')">
+          <span class="brand-logo">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 2C8.5 6.5 6 9.8 6 13.2 6 16.9 8.7 19.5 12 19.5s6-2.6 6-6.3C18 9.8 15.5 6.5 12 2z" fill="currentColor" />
+              <circle cx="12" cy="13" r="2.4" fill="#fff" />
+              <path d="M4 21h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+          </span>
+          <span class="brand-text">{{ t('app.brand') }}</span>
+          <span class="brand-sub">{{ t('app.brandSub') }}</span>
+        </div>
+        <div class="nav">
+          <template v-if="auth.isLoggedIn">
+            <button class="nav-link" :class="{ active: $route.path === '/' }" @click="router.push('/')">
+              {{ t('app.myTrips') }}
+            </button>
+            <button class="btn-primary" @click="router.push('/plan')">
+              <el-icon style="margin-right: 6px"><MagicStick /></el-icon>{{ t('app.planTrip') }}
+            </button>
+            <el-dropdown>
+              <span class="user-chip">
+                <span class="avatar">{{ (auth.displayName || '旅')[0].toUpperCase() }}</span>
+                <span class="user-name">{{ auth.displayName }}</span>
+                <el-icon class="chevron"><ArrowDown /></el-icon>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item disabled class="user-meta">
+                    <div>{{ auth.user?.display_name || t('app.traveler') }}</div>
+                    <div class="user-contact">{{ auth.user?.email || auth.user?.phone || '-' }}</div>
+                  </el-dropdown-item>
+                  <el-dropdown-item divided @click="logout">
+                    <el-icon style="margin-right: 6px"><SwitchButton /></el-icon>{{ t('app.logout') }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </template>
+          <template v-else>
+            <button class="btn-primary" @click="router.push('/login')">{{ t('app.loginRegister') }}</button>
+          </template>
+          <LangSwitcher />
+        </div>
+      </el-header>
 
-    <el-main class="app-main">
-      <router-view />
-    </el-main>
+      <el-main class="app-main">
+        <router-view />
+      </el-main>
 
-    <footer class="app-footer">
-      <div class="footer-inner">
-        <span>随行 · AI 旅行规划助手</span>
-        <span class="footer-dot">·</span>
-        <span>为你的每一次出发，准备好一切</span>
-      </div>
-    </footer>
-  </el-container>
+      <footer class="app-footer">
+        <div class="footer-inner">
+          <span>{{ t('app.brand') }} · {{ t('app.brandSub') }}</span>
+          <span class="footer-dot">·</span>
+          <span>{{ t('app.tagline') }}</span>
+        </div>
+      </footer>
+    </el-container>
+  </el-config-provider>
 </template>
 
 <style scoped>

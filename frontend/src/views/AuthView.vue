@@ -3,10 +3,12 @@ import { ref, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { useI18n } from 'vue-i18n'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const { t } = useI18n()
 
 const mode = ref('login')
 const loading = ref(false)
@@ -21,13 +23,13 @@ const form = reactive({
 })
 
 const loginRules = {
-  account: [{ required: true, message: '请输入邮箱或手机号', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  account: [{ required: true, message: t('auth.emailRequired'), trigger: 'blur' }],
+  password: [{ required: true, message: t('auth.passwordRequired'), trigger: 'blur' }],
 }
 const registerRules = {
   password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 8, message: '密码至少 8 位', trigger: 'blur' },
+    { required: true, message: t('auth.passwordRequired'), trigger: 'blur' },
+    { min: 8, message: t('auth.passwordMin'), trigger: 'blur' },
   ],
 }
 
@@ -37,7 +39,7 @@ async function submit() {
   try {
     if (mode.value === 'login') {
       await auth.login(form.account, form.password)
-      ElMessage.success('欢迎回来！')
+      ElMessage.success(t('auth.loginSuccess'))
     } else {
       const payload = {
         email: form.email || null,
@@ -46,12 +48,12 @@ async function submit() {
         display_name: form.display_name || null,
       }
       if (!payload.email && !payload.phone) {
-        ElMessage.warning('邮箱或手机号至少填一个')
+        ElMessage.warning(t('auth.orRequired'))
         loading.value = false
         return
       }
       await auth.register(payload)
-      ElMessage.success('注册成功，开启你的旅程吧')
+      ElMessage.success(t('auth.registerSuccess'))
     }
     const redirect = route.query.redirect || '/'
     router.push(redirect)
@@ -81,14 +83,14 @@ function switchMode() {
               <path d="M4 21h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
             </svg>
           </span>
-          <span class="visual-brand">随行</span>
+          <span class="visual-brand">{{ t('app.brand') }}</span>
         </div>
-        <h1 class="visual-title">每一次出发，<br />都从一处风景开始。</h1>
-        <p class="visual-sub">AI 为你排好景点、美食与住宿，<br />你只管享受旅程。</p>
+        <h1 class="visual-title">{{ t('auth.visualTitle1') }}<br />{{ t('auth.visualTitle2') }}</h1>
+        <p class="visual-sub">{{ t('auth.visualSub1') }}<br />{{ t('auth.visualSub2') }}</p>
         <div class="visual-features">
-          <div class="feat"><span class="feat-icon">🧭</span> 智能行程规划</div>
-          <div class="feat"><span class="feat-icon">🌤️</span> 结合当地天气</div>
-          <div class="feat"><span class="feat-icon">🗺️</span> 地图路线导览</div>
+          <div class="feat"><span class="feat-icon">🧭</span> {{ t('auth.featPlan') }}</div>
+          <div class="feat"><span class="feat-icon">🌤️</span> {{ t('auth.featWeather') }}</div>
+          <div class="feat"><span class="feat-icon">🗺️</span> {{ t('auth.featMap') }}</div>
         </div>
       </div>
     </div>
@@ -96,9 +98,9 @@ function switchMode() {
     <!-- 右侧表单 -->
     <div class="auth-form-side">
       <el-card class="auth-card" shadow="never">
-        <h2 class="auth-title">{{ mode === 'login' ? '欢迎回来' : '创建账号' }}</h2>
+        <h2 class="auth-title">{{ mode === 'login' ? t('auth.welcomeBack') : t('auth.createAccount') }}</h2>
         <p class="auth-sub">
-          {{ mode === 'login' ? '登录后继续你的旅行规划' : '注册只需几秒，立即可用 AI 规划' }}
+          {{ mode === 'login' ? t('auth.loginSub') : t('auth.registerSub') }}
         </p>
 
         <el-form
@@ -109,37 +111,37 @@ function switchMode() {
           @keyup.enter="submit"
         >
           <!-- 登录：账号 -->
-          <el-form-item v-if="mode === 'login'" label="邮箱 / 手机号" prop="account">
-            <el-input v-model="form.account" placeholder="you@example.com 或 13800138000" size="large" />
+          <el-form-item v-if="mode === 'login'" :label="t('auth.account')" prop="account">
+            <el-input v-model="form.account" :placeholder="t('auth.accountPlaceholder')" size="large" />
           </el-form-item>
 
           <!-- 注册：邮箱 + 手机号 -->
           <template v-else>
-            <el-form-item label="邮箱（可选）" prop="email">
+            <el-form-item :label="t('auth.email')" prop="email">
               <el-input v-model="form.email" placeholder="you@example.com" size="large" />
             </el-form-item>
-            <el-form-item label="手机号（可选）" prop="phone">
+            <el-form-item :label="t('auth.phone')" prop="phone">
               <el-input v-model="form.phone" placeholder="13800138000" size="large" />
             </el-form-item>
-            <el-form-item label="昵称（可选）" prop="display_name">
-              <el-input v-model="form.display_name" placeholder="旅行达人" size="large" />
+            <el-form-item :label="t('auth.nickname')" prop="display_name">
+              <el-input v-model="form.display_name" :placeholder="t('auth.nicknamePlaceholder')" size="large" />
             </el-form-item>
-            <div class="or-divider">邮箱和手机号至少填一个</div>
+            <div class="or-divider">{{ t('auth.orRequired') }}</div>
           </template>
 
-          <el-form-item label="密码" prop="password">
-            <el-input v-model="form.password" type="password" show-password size="large" placeholder="至少 8 位" />
+          <el-form-item :label="t('auth.password')" prop="password">
+            <el-input v-model="form.password" type="password" show-password size="large" :placeholder="t('auth.passwordPlaceholder')" />
           </el-form-item>
 
           <button class="submit-btn" :disabled="loading" @click.prevent="submit">
             <el-icon v-if="loading" class="is-loading" style="margin-right: 6px"><Loading /></el-icon>
-            {{ mode === 'login' ? '登 录' : '注 册' }}
+            {{ mode === 'login' ? t('auth.login') : t('auth.register') }}
           </button>
         </el-form>
 
         <div class="switch-line">
-          {{ mode === 'login' ? '还没有账号？' : '已有账号？' }}
-          <a class="switch-link" @click="switchMode">{{ mode === 'login' ? '去注册' : '去登录' }}</a>
+          {{ mode === 'login' ? t('auth.noAccount') : t('auth.hasAccount') }}
+          <a class="switch-link" @click="switchMode">{{ mode === 'login' ? t('auth.goRegister') : t('auth.goLogin') }}</a>
         </div>
       </el-card>
     </div>
