@@ -218,6 +218,27 @@ def _validation_feedback(exc: Exception) -> str:
     return "你的最终行程 JSON 校验失败，请修正后重新输出完整的 JSON（不要解释）：\n" + "\n".join(lines)
 
 
+def _questions_text(request: dict[str, Any]) -> str:
+    """把主动提问 Q&A 组装成给 Planner/Critic 的补充上下文。
+
+    仅保留用户实际回答过的问题（answer 非空）；未回答的不注入，
+    避免无意义占位污染 LLM 上下文。无回答时返回空串。
+    """
+    questions = request.get("questions") or []
+    answered = [
+        q for q in questions
+        if isinstance(q, dict) and (q.get("answer") or "").strip()
+    ]
+    if not answered:
+        return ""
+    lines = ["【需求澄清 · 用户追问答复】（规划必须尊重以下答复，与偏好冲突时以答复为准）"]
+    for i, q in enumerate(answered, start=1):
+        q_text = (q.get("question") or "").strip() or f"追问 {i}"
+        ans = (q.get("answer") or "").strip()
+        lines.append(f"{i}. {q_text}：{ans}")
+    return "\n".join(lines)
+
+
 def _collect_list_output(state: dict[str, Any]) -> dict[str, Any] | None:
     """（列表输出型 Agent 共用）从消息历史取出工具结果并解析为统一 POI 列表。"""
     # agent 内部已把 ToolMessage 写入 messages；取最后一个工具结果
@@ -269,11 +290,13 @@ async def attraction_agent(
     city: str,
     preferences: list[str],
     *,
+    request: dict[str, Any] | None = None,
     provider: str = "auto",
 ) -> dict[str, Any]:
     """偏好 → 关键词 → search_attractions → POI 列表。
 
     返回 {"status", "pois": [...]}；失败时 {"status": "failed", "error": ...}。
+    request: 可选；传入完整规划请求，把其中的主动提问 Q&A 并入搜索上下文。
     """
 
     async def _node(state: dict[str, Any]) -> dict[str, Any]:
@@ -284,6 +307,7 @@ async def attraction_agent(
                 content=(
                     f"目的地城市：{state['city']}\n"
                     f"用户偏好：{', '.join(state.get('preferences') or []) or '无特别偏好'}\n"
+                    f"{_questions_text(state.get('request') or {})}\n"
                     "请选择合适的搜索关键词，调用 search_attractions 工具获取景点列表。"
                 )
             )
@@ -320,7 +344,10 @@ async def attraction_agent(
             return {"messages": state["messages"], "status": "failed", "error": "无法从工具结果解析 POI"}
         return {"messages": state["messages"], "status": "completed", "pois": out["pois"]}
 
-    state: dict[str, Any] = {"city": city, "preferences": preferences, "provider": provider, "messages": []}
+    state: dict[str, Any] = {
+        "city": city, "preferences": preferences, "provider": provider,
+        "request": request, "messages": [],
+    }
     try:
         result = await _node(state)
         if result.get("status") != "completed":
@@ -356,9 +383,13 @@ async def hotel_agent(
     city: str,
     accommodation: list[str] | None = None,
     *,
+    request: dict[str, Any] | None = None,
     provider: str = "auto",
 ) -> dict[str, Any]:
-    """住宿需求 → 关键词 → search_hotels → 酒店 POI 列表。"""
+    """住宿需求 → 关键词 → search_hotels → 酒店 POI 列表。
+
+    request: 可选；传入完整规划请求，把其中的主动提问 Q&A 并入搜索上下文。
+    """
     accommodation = accommodation or []
 
     async def _node(state: dict[str, Any]) -> dict[str, Any]:
@@ -369,6 +400,7 @@ async def hotel_agent(
                 content=(
                     f"目的地城市：{state['city']}\n"
                     f"住宿需求：{', '.join(state.get('accommodation') or []) or '无特别需求（默认推荐评分较高的酒店）'}\n"
+                    f"{_questions_text(state.get('request') or {})}\n"
                     "请选择合适的搜索关键词，调用 search_hotels 工具获取酒店列表。"
                 )
             )
@@ -402,7 +434,10 @@ async def hotel_agent(
             return {"messages": state["messages"], "status": "failed", "error": "无法从工具结果解析酒店"}
         return {"messages": state["messages"], "status": "completed", "pois": out["pois"]}
 
-    state: dict[str, Any] = {"city": city, "accommodation": accommodation, "provider": provider, "messages": []}
+    state: dict[str, Any] = {
+        "city": city, "accommodation": accommodation, "provider": provider,
+        "request": request, "messages": [],
+    }
     try:
         result = await _node(state)
         if result.get("status") != "completed":
@@ -473,6 +508,11 @@ def _planner_user_text(request: dict[str, Any], materials: dict[str, Any]) -> st
         f"偏好：{', '.join(request.get('preferences') or []) or '无'}"
     )
 
+    # 主动提问 Q&A（需求澄清）：有回答才注入，未回答的问题忽略
+    qa_text = _questions_text(request)
+    if qa_text:
+        lines.append(f"\n{qa_text}")
+
     # 采集失败的源：明确告知 Planner，让它仍然能编排（部分失败 → 优雅降级）
     failed_sources = materials.get("failed_sources") or []
     if failed_sources:
@@ -529,13 +569,19 @@ async def critic_agent(
     """
     prov = get_provider(provider)
     messages: list[Any] = [SystemMessage(content=CRITIC_SYSTEM_PROMPT)]
+    critic_req = (
+        f"【用户原始需求】目的地：{request.get('destination', '')}；"
+        f"日期：{request.get('start_date', '')} 至 {request.get('end_date', '')}；"
+        f"人数：{request.get('travelers', 1)}；预算：{request.get('budget', '未指定')} 元；"
+        f"偏好：{', '.join(request.get('preferences') or []) or '无'}"
+    )
+    qa_text = _questions_text(request)
+    if qa_text:
+        critic_req += f"\n{qa_text}"
     messages.append(
         HumanMessage(
             content=(
-                f"【用户原始需求】目的地：{request.get('destination', '')}；"
-                f"日期：{request.get('start_date', '')} 至 {request.get('end_date', '')}；"
-                f"人数：{request.get('travelers', 1)}；预算：{request.get('budget', '未指定')} 元；"
-                f"偏好：{', '.join(request.get('preferences') or []) or '无'}\n\n"
+                f"{critic_req}\n\n"
                 f"【待审查行程 JSON】\n{json.dumps(plan, ensure_ascii=False)[:6000]}\n\n"
                 "请审查并输出质检报告 JSON。"
             )
@@ -732,10 +778,10 @@ async def run_planning_agents(
     trace: list[dict[str, Any]] = []
     review_history: list[dict[str, Any]] = []  # 每次评审的报告（给 Planner 作为上下文）
 
-    # 1) 三个采集 Agent 并行
-    attraction_task = attraction_agent(city, prefs, provider=provider)
+    # 1) 三个采集 Agent 并行（request 传入后，主动提问 Q&A 会并入搜索上下文）
+    attraction_task = attraction_agent(city, prefs, request=request, provider=provider)
     weather_task = weather_agent(city)
-    hotel_task = hotel_agent(city, _accommodation_hints(request), provider=provider)
+    hotel_task = hotel_agent(city, _accommodation_hints(request), request=request, provider=provider)
 
     a_res, w_res, h_res = await asyncio.gather(attraction_task, weather_task, hotel_task)
 
