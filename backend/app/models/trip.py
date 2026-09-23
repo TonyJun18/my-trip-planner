@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -129,3 +130,33 @@ class PlanTask(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TripComment(Base):
+    """分享页协作：访客对行程的评论（凭 share_token 免登录，只读分享链路上的轻量互动）。"""
+
+    __tablename__ = "trip_comments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    author_name: Mapped[str | None] = mapped_column(String(50), nullable=True)  # 访客昵称（可选）
+    content: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class StopVote(Base):
+    """分享页协作：访客对行程站点的 👍/👎 投票。
+
+    - voter_key 为服务端计算的轻量匿名身份（share_token + IP + UA 哈希），仅用作
+      「一访客一票、可翻转」的去重依据，不是强身份认证（与只读分享同信任级别）。
+    - 同一 visitor 对同一站点：不存在则新建；方向变化则更新；方向相同则幂等（不重复累计）。
+    """
+
+    __tablename__ = "stop_votes"
+    __table_args__ = (UniqueConstraint("stop_id", "voter_key", name="uq_stop_votes_stop_voter"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    stop_id: Mapped[str] = mapped_column(ForeignKey("stops.id", ondelete="CASCADE"), index=True)
+    voter_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    value: Mapped[int] = mapped_column(Integer, nullable=False)  # 1=👍 / -1=👎
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

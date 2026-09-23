@@ -39,6 +39,7 @@ from app.agent import tools as agent_tools
 from app.agent.providers import get_provider, invoke_with_resilience
 from app.core.logging import get_logger
 from app.schemas.plan import validate_critique, validate_plan
+from app.services.driving_service import check_plan_driving
 
 logger = get_logger(__name__)
 
@@ -712,11 +713,17 @@ async def run_planning_agents(
     max_corrections: int = 3,
     max_review_rounds: int = 2,
 ) -> dict[str, Any]:
-    """多 Agent 全流程：采集 → 整合 → 质检评审 → 输出 {plan, trace, status, error, agents}。
+    """多 Agent 全流程：采集 → 整合 → 质检评审 → 自驾约束 → 输出 {plan, trace, status, error, agents}。
 
     Evaluator-Optimizer：Planner 生成后交给 TravelCriticAgent 评审，
     未通过则带反馈重生成，最多 ``max_review_rounds`` 轮后强制定稿
     （任务有界，不会无限循环）。Critic 自身失败时降级「通过」，绝不阻断。
+
+    自驾约束（DrivingGate）：Planner 每代输出后由确定性代码 ``check_plan_driving``
+    校验站点间驾车距离/时长/折返（TripPlanner AI 差异化——经停优化、避免折返）。
+    critical 问题存在且还有评审轮次 → 拒绝该站点组合并带反馈重生成；
+    达最大评审轮 → 强制定稿但保留告警，并把 driving 报告注入 plan.driving
+    （系统始终产出某种东西，从不因自驾检查而整体失败）。
 
     trace 每步标注 agent 名，前端可展示“哪个专家在做什么”。
     """
@@ -754,7 +761,7 @@ async def run_planning_agents(
                       "observation": f"餐厅搜索失败: {exc}", "status": "failed"})
         logger.warning("餐饮搜索失败 city=%s err=%s", city, exc)
 
-    # 3) Planner 整合（无工具），Evaluator-Optimizer 评审循环
+    # 3) Planner 整合（无工具），Evaluator-Optimizer 评审循环 + 自驾 DrivingGate
     materials = {
         "attractions": a_res.get("pois", []),
         "hotels": h_res.get("pois", []),
@@ -762,7 +769,9 @@ async def run_planning_agents(
         "weather": (w_res.get("weather") or {}),
     }
     plan: dict[str, Any] | None = None
+    planner: dict[str, Any] = {"status": "failed", "error": "未执行"}  # 循环前预初始化（静态分析）
     review_rounds = 0
+    driving_reports: list[dict[str, Any]] = []  # 每代自驾校验报告（给最终 plan.driving 用）
 
     for round_idx in range(max_review_rounds + 1):
         review_feedback = _critic_feedback(review_history[-1]) if review_history else None
@@ -785,12 +794,32 @@ async def run_planning_agents(
                     "review_rounds": review_rounds}
 
         candidate = planner["plan"]
-        review_rounds += 1
 
         # 预算校准前置：先以真实 stops 计算预算（覆盖 LLM 估值），再交给质检
         all_stops = [s for d in candidate.get("days", []) for s in d.get("stops", [])]
         candidate["budget"] = agent_tools.compute_budget(all_stops)
         candidate["hotels"] = _normalize_hotels(materials.get("hotels") or [])
+
+        # ── DrivingGate：自驾约束校验（确定性代码，超距/超时/折返） ──
+        driving = check_plan_driving(candidate)
+        driving_reports.append(driving)
+        if not driving["passed"] and round_idx < max_review_rounds:
+            # 拒绝该站点组合：带自驾反馈重新生成（不进 Critic，省一次评审 token）
+            logger.info("自驾校验未通过 round=%d critical=%d，进入修订", round_idx + 1, driving["critical_count"])
+            trace.append({
+                "agent": "DrivingGate",
+                "action": "check_driving",
+                "observation": (
+                    f"自驾校验未通过：{driving['critical_count']} 个超距/超时问题"
+                    f"（{driving['summary']}）"
+                ),
+                "status": "failed",
+            })
+            review_history.append(_driving_feedback(driving))  # 作为修订反馈
+            review_rounds += 1
+            continue
+
+        review_rounds += 1
 
         # 交给 TravelCriticAgent 评审（最后一代无需再评：强制定稿）
         if round_idx >= max_review_rounds:
@@ -827,6 +856,25 @@ async def run_planning_agents(
 
     # 质检摘要注入 plan.quality（随 plan JSON 落库，前端可直接消费）
     plan["quality"] = _plan_quality(review_history, review_rounds, max_review_rounds)
+    # 自驾校验报告注入 plan.driving（最终一代；前端可展示里程/时长/折返告警）
+    if driving_reports:
+        final_driving = driving_reports[-1]
+        # 只保留最终代完整报告，历史各代摘要放进 driving_history（避免 plan 膨胀）
+        plan["driving"] = {
+            **{k: v for k, v in final_driving.items() if k != "legs"},
+            "legs": final_driving.get("legs") or [],
+            "history": [{"passed": r.get("passed"), "critical_count": r.get("critical_count"),
+                         "summary": r.get("summary")} for r in driving_reports],
+        }
+        trace.append({
+            "agent": "DrivingGate",
+            "action": "check_driving",
+            "observation": (
+                "自驾校验" + ("通过" if final_driving["passed"] else f"未通过（{final_driving['critical_count']} 个 critical）")
+                + f"：总里程约 {final_driving['total_km']}km"
+            ),
+            "status": "completed" if final_driving["passed"] else "warning",
+        })
 
     return {
         "plan": plan,
@@ -849,6 +897,26 @@ async def run_planning_agents(
 def _has_actionable_issues(critique: dict[str, Any]) -> bool:
     """质检报告里是否有需要 Planner 修改的（critical/warning）问题。"""
     return any(i.get("severity") in ("critical", "warning") for i in (critique.get("issues") or []))
+
+
+def _driving_feedback(driving: dict[str, Any]) -> dict[str, Any]:
+    """把自驾校验报告转成一条「质检报告」塞进 review_history，驱动 Planner 修订。
+
+    只保留 critical（超距/超时，必须修改）与 warning（折返，建议修改），
+    缺坐标的 logistics warning 不反馈（无法据此修订站点序列）。
+    输出结构与 CritiqueSchema 兼容（score/passed/issues/summary），
+    保证 _critic_feedback 无需改动即可消费。
+    """
+    actionable = [i for i in driving.get("issues") or []
+                  if i.get("severity") in ("critical", "warning") and i.get("category") != "logistics"]
+    return {
+        "severity": "critical" if driving.get("critical_count", 0) > 0 else "warning",
+        "score": max(0, 100 - driving.get("critical_count", 0) * 30),
+        "passed": driving.get("passed", False),
+        "issues": actionable,
+        "summary": driving.get("summary", "自驾路线校验未通过"),
+        "source": "DrivingGate",
+    }
 
 
 def _plan_quality(
