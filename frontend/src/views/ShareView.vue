@@ -51,24 +51,8 @@ const typeLabel = { attraction: '景点', food: '餐饮', hotel: '住宿' }
 const typeColor = { attraction: 'var(--brand)', food: '#c2410c', hotel: '#0d8a5f' }
 const typeEmoji = { attraction: '🏞️', food: '🍜', hotel: '🏨' }
 
-// ── 预算（只读页无 token 权限调 budget API，直接本地汇总 stops 估算值） ──
-const budget = computed(() => {
-  let total = 0
-  const byType = { attraction: 0, food: 0, hotel: 0 }
-  for (const day of trip.value?.days || []) {
-    for (const stop of day.stops || []) {
-      const cost = Number(stop.estimated_cost) || 0
-      total += cost
-      if (byType[stop.stop_type] != null) byType[stop.stop_type] += cost
-    }
-  }
-  const dayCount = (trip.value?.days || []).length
-  return {
-    total_estimated: total,
-    by_type: byType,
-    daily_average: dayCount ? Math.round(total / dayCount) : null,
-  }
-})
+// ── 预算：公开分享接口（GET /trips/share/{token}）返回 budget_summary 汇总，无需本地重复计算 ──
+const budget = computed(() => trip.value?.budget_summary || null)
 
 const budgetPercent = computed(() => {
   if (!budget.value?.total_estimated || !trip.value?.budget) return null

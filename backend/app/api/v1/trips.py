@@ -7,22 +7,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.models import User
-from app.schemas import DayIn, DayOut, ReviseOut, ReviseRequest, ShareOut, StopIn, StopOut, TripCreate, TripListOut, TripOut, TripUpdate
+from app.schemas import DayIn, DayOut, ReviseOut, ReviseRequest, ShareOut, SharedTripOut, StopIn, StopOrderIn, StopOut, StopUpdate, TripCreate, TripListOut, TripOut, TripUpdate
 from app.schemas.collab import CommentIn, CommentOut, VoteIn, VoteOut
 from app.services import budget_service, collab_service, trip_service
-from app.schemas import DayIn, DayOut, ReviseOut, ReviseRequest, ShareOut, StopIn, StopOrderIn, StopOut, StopUpdate, TripCreate, TripListOut, TripOut, TripUpdate
-from app.services import budget_service, trip_service
 
 router = APIRouter()
 
 
-@router.get("/share/{token}", response_model=TripOut, summary="按分享令牌只读查看行程（免登录）")
+@router.get("/share/{token}", response_model=SharedTripOut, summary="按分享令牌只读查看行程（免登录，含预算汇总）")
 async def get_shared_trip(
     token: str,
     db: AsyncSession = Depends(get_session),
-) -> TripOut:
-    """持分享令牌即可免登录查看行程（只读语义，无写接口）。"""
-    return await trip_service.get_trip_by_share_token(db, token)
+) -> SharedTripOut:
+    """持分享令牌即可免登录查看行程（只读语义，无写接口）。
+
+    返回 TripOut + budget 汇总（compute_budget），分享页前端无需本地重复计算。
+    """
+    trip = await trip_service.get_trip_by_share_token(db, token)
+    return SharedTripOut(
+        **TripOut.model_validate(trip).model_dump(),
+        budget_summary=budget_service.compute_budget(trip),
+    )
 
 
 # ── 分享页协作（评论 / 投票，免登录，凭 share_token） ─────────────

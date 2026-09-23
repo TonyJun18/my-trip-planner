@@ -12,6 +12,33 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(9)
 
+// ── 手动创建行程（PATCH/POST /trips 后端已支持，前端补入口） ──
+const createVisible = ref(false)
+const creating = ref(false)
+const createForm = ref({ title: '', destination: '', start_date: '', end_date: '', travelers: 1, budget: 3000 })
+
+function openCreate() {
+  createForm.value = { title: '', destination: '', start_date: '', end_date: '', travelers: 1, budget: 3000 }
+  createVisible.value = true
+}
+async function submitCreate() {
+  if (!createForm.value.title.trim() || !createForm.value.destination.trim() || !createForm.value.start_date || !createForm.value.end_date) {
+    ElMessage.warning('请填写标题、目的地和日期')
+    return
+  }
+  creating.value = true
+  try {
+    const trip = await api.createTrip(createForm.value)
+    ElMessage.success('行程已创建')
+    createVisible.value = false
+    router.push(`/trips/${trip.id}`)
+  } catch {
+    // api 拦截器已提示
+  } finally {
+    creating.value = false
+  }
+}
+
 const statusMap = {
   draft: { label: '草稿', type: 'info' },
   planning: { label: '规划中', type: 'warning' },
@@ -98,6 +125,9 @@ onMounted(load)
       <button class="btn-primary" @click="router.push('/plan')">
         <el-icon style="margin-right: 6px"><MagicStick /></el-icon>AI 规划新行程
       </button>
+      <button class="btn-ghost" @click="openCreate">
+        <el-icon style="margin-right: 6px"><Plus /></el-icon>手动创建
+      </button>
     </div>
 
     <!-- 空状态 -->
@@ -174,6 +204,45 @@ onMounted(load)
         />
       </div>
     </div>
+
+    <!-- 手动创建行程对话框 -->
+    <el-dialog v-model="createVisible" title="手动创建行程" width="460px">
+      <el-form label-width="80px">
+        <el-form-item label="标题" required>
+          <el-input v-model="createForm.title" placeholder="如：国庆杭州三日游" />
+        </el-form-item>
+        <el-form-item label="目的地" required>
+          <el-input v-model="createForm.destination" placeholder="如：杭州" />
+        </el-form-item>
+        <el-form-item label="日期" required>
+          <el-date-picker
+            v-model="createForm.start_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="开始日期"
+            style="width: 48%"
+          />
+          <span class="date-sep">→</span>
+          <el-date-picker
+            v-model="createForm.end_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="结束日期"
+            style="width: 48%"
+          />
+        </el-form-item>
+        <el-form-item label="人数">
+          <el-input-number v-model="createForm.travelers" :min="1" :max="20" />
+        </el-form-item>
+        <el-form-item label="预算(元)">
+          <el-input-number v-model="createForm.budget" :min="0" :step="500" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createVisible = false">取消</el-button>
+        <el-button type="primary" :loading="creating" @click="submitCreate">创建</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -196,6 +265,15 @@ onMounted(load)
   transition: background .2s, transform .15s, box-shadow .2s;
 }
 .btn-primary:hover { background: var(--brand-dark); box-shadow: 0 4px 16px rgba(255,56,92,0.38); transform: translateY(-1px); }
+
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: transparent; border: 1px solid var(--line); cursor: pointer;
+  font-size: 14px; font-weight: 500; color: var(--ink-2);
+  padding: 11px 20px; border-radius: var(--radius-full);
+  transition: border-color .2s, color .2s;
+}
+.btn-ghost:hover { border-color: var(--brand); color: var(--brand); }
 
 /* ── 空状态 ── */
 .empty { text-align: center; padding: 80px 0 60px; }

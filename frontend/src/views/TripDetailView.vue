@@ -138,11 +138,29 @@ const markers = computed(() => {
   return list
 })
 
+// 行程状态：展示 + 切换
 const statusMap = {
   draft: { label: '草稿', type: 'info' },
   planning: { label: '规划中', type: 'warning' },
   confirmed: { label: '已确认', type: 'success' },
   archived: { label: '已归档', type: 'info' },
+}
+const statusOptions = Object.entries(statusMap).map(([value, s]) => ({ value, label: s.label }))
+
+// ── 状态切换（PATCH /trips/{id} status 字段，后端已支持） ──
+const statusUpdating = ref(false)
+async function changeStatus() {
+  const newStatus = trip.value.status
+  statusUpdating.value = true
+  try {
+    await api.updateTrip(route.params.id, { status: newStatus })
+    ElMessage.success(`已切换为「${(statusMap[newStatus] || {}).label || newStatus}」`)
+  } catch {
+    // 失败时回滚为当前真实状态
+    await load()
+  } finally {
+    statusUpdating.value = false
+  }
 }
 
 const typeLabel = { attraction: '景点', food: '餐饮', hotel: '住宿' }
@@ -217,6 +235,28 @@ async function doShare() {
     ElMessage.error('生成分享链接失败')
   } finally {
     sharing.value = false
+  }
+}
+
+// ── 批量生成日程（按日期范围） ──────────────
+const genDaysVisible = ref(false)
+const genRange = ref([])
+const genDaysLoading = ref(false)
+async function genDays() {
+  if (!genRange.value?.length) {
+    ElMessage.warning('请选择日期范围')
+    return
+  }
+  genDaysLoading.value = true
+  try {
+    const [start, end] = genRange.value
+    const days = await api.generateDays(route.params.id, start, end)
+    ElMessage.success(`已生成 ${days.length} 天日程`)
+    genDaysVisible.value = false
+    genRange.value = []
+    await load()
+  } finally {
+    genDaysLoading.value = false
   }
 }
 
@@ -339,8 +379,19 @@ onMounted(load)
                 <span class="hero-pill" v-if="trip.budget != null"><el-icon><Wallet /></el-icon>预算 ¥{{ trip.budget }}</span>
               </div>
             </div>
-            <span class="status-badge" :class="(statusMap[trip.status] || statusMap.draft).type">
-              {{ (statusMap[trip.status] || statusMap.draft).label }}
+            <span class="status-group">
+              <span class="status-badge" :class="(statusMap[trip.status] || statusMap.draft).type">
+                {{ (statusMap[trip.status] || statusMap.draft).label }}
+              </span>
+              <el-select
+                v-model="trip.status"
+                class="status-switch"
+                size="small"
+                :loading="statusUpdating"
+                @change="changeStatus"
+              >
+                <el-option v-for="opt in statusOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
+              </el-select>
             </span>
           </div>
         </div>
@@ -488,6 +539,7 @@ onMounted(load)
       <!-- 底部操作 -->
       <div class="bottom-bar">
         <el-button @click="openAddDay"><el-icon style="margin-right: 4px"><Plus /></el-icon>添加日程</el-button>
+        <el-button @click="genDaysVisible = true"><el-icon style="margin-right: 4px"><Calendar /></el-icon>按日期生成日程</el-button>
         <el-button type="success" plain :loading="exporting" @click="doExportImage">
           <el-icon style="margin-right: 4px"><Picture /></el-icon>导出图片
         </el-button>
@@ -496,6 +548,28 @@ onMounted(load)
         </el-button>
       </div>
     </template>
+
+    <!-- 批量生成日程对话框 -->
+    <el-dialog v-model="genDaysVisible" title="按日期批量生成日程" width="440px">
+      <el-form label-width="80px">
+        <el-form-item label="日期范围">
+          <el-date-picker
+            v-model="genRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <div class="gen-days-hint">将按范围内每一天生成一个日程（跳过已存在的天数）</div>
+      </el-form>
+      <template #footer>
+        <el-button @click="genDaysVisible = false">取消</el-button>
+        <el-button type="primary" :loading="genDaysLoading" @click="genDays">生成</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 编辑对话框（三合一） -->
     <el-dialog
@@ -588,14 +662,18 @@ onMounted(load)
   padding: 6px 12px; border-radius: var(--radius-full);
   backdrop-filter: blur(4px);
 }
-.status-badge {
+.status-group {
   position: absolute; top: 16px; right: 16px; z-index: 2;
+  display: flex; align-items: center; gap: 8px;
+}
+.status-badge {
   font-size: 12px; font-weight: 600; padding: 5px 12px;
   border-radius: var(--radius-full); background: rgba(255,255,255,0.9);
 }
 .status-badge.success { color: var(--success); }
 .status-badge.warning { color: var(--warning); }
 .status-badge.info { color: var(--muted); }
+.status-switch { width: 108px; }
 
 /* ── 地图 + 预算 ── */
 .map-budget-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; margin-bottom: 28px; }

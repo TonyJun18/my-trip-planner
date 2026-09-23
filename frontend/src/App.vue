@@ -1,9 +1,15 @@
 <script setup>
+import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const auth = useAuthStore()
+
+// 刷新后用 /auth/me 校验本地 token 并恢复用户信息；token 失效时 store 会自动登出
+onMounted(() => {
+  auth.fetchMe()
+})
 
 function logout() {
   auth.logout()

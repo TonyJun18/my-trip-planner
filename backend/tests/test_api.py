@@ -601,7 +601,7 @@ async def test_share_link_flow(client, auth_user):
     resp2 = await client.post(f"/api/v1/trips/{trip_id}/share", headers=headers)
     assert resp2.json()["share_token"] == token
 
-    # 公开 GET 返回行程详情（无需 auth header）
+    # 公开 GET 返回行程详情（无需 auth header），并携带预算汇总（分享页免本地计算）
     resp = await client.get(f"/api/v1/trips/share/{token}")
     assert resp.status_code == 200, resp.text
     shared = resp.json()
@@ -609,6 +609,9 @@ async def test_share_link_flow(client, auth_user):
     assert shared["destination"] == "杭州"
     assert len(shared["days"]) == 1
     assert shared["days"][0]["stops"][0]["name"] == "西湖"
+    assert "budget_summary" in shared
+    assert shared["budget_summary"]["total_estimated"] == 0
+    assert shared["budget_summary"]["currency"] == "CNY"
 
     # TripOut 携带 share_token（前端可判断已分享）
     resp = await client.get(f"/api/v1/trips/{trip_id}", headers=headers)

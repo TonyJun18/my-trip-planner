@@ -117,6 +117,26 @@ class TripListOut(BaseModel):
     total: int
 
 
+# ── 分享只读响应：TripOut + 预算汇总（分享页免 token 调 budget API） ──────
+class TripBudgetOut(BaseModel):
+    """与 budget_service.compute_budget 返回值同构的预算汇总。"""
+
+    total_estimated: float
+    by_type: dict[str, float] = Field(default_factory=dict)
+    daily_average: float | None = None
+    currency: str = "CNY"
+
+
+class SharedTripOut(TripOut):
+    """公开分享行程详情：在 TripOut 基础上携带预算汇总，分享页无需再本地求和。
+
+    注意字段名用 budget_summary：TripOut.budget 是「用户设定的预算金额」，
+    二者不能同名冲突，且分享页两处都需要。
+    """
+
+    budget_summary: TripBudgetOut = Field(default_factory=TripBudgetOut)
+
+
 # ── 行程规划请求（Agent 输入） ────────────────────────────────
 class PlanRequest(BaseModel):
     destination: str = Field(min_length=1, max_length=200)
