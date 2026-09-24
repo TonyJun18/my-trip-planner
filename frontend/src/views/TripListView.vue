@@ -2,9 +2,11 @@
 import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import * as api from '@/api'
 
 const router = useRouter()
+const { t } = useI18n()
 
 const loading = ref(false)
 const trips = ref([])
@@ -23,13 +25,13 @@ function openCreate() {
 }
 async function submitCreate() {
   if (!createForm.value.title.trim() || !createForm.value.destination.trim() || !createForm.value.start_date || !createForm.value.end_date) {
-    ElMessage.warning('请填写标题、目的地和日期')
+    ElMessage.warning(t('tripList.fillRequired'))
     return
   }
   creating.value = true
   try {
     const trip = await api.createTrip(createForm.value)
-    ElMessage.success('行程已创建')
+    ElMessage.success(t('tripList.tripCreated'))
     createVisible.value = false
     router.push(`/trips/${trip.id}`)
   } catch {
@@ -39,12 +41,12 @@ async function submitCreate() {
   }
 }
 
-const statusMap = {
-  draft: { label: '草稿', type: 'info' },
-  planning: { label: '规划中', type: 'warning' },
-  confirmed: { label: '已确认', type: 'success' },
-  archived: { label: '已归档', type: 'info' },
-}
+const statusMap = computed(() => ({
+  draft: { label: t('tripList.statusDraft'), type: 'info' },
+  planning: { label: t('tripList.statusPlanning'), type: 'warning' },
+  confirmed: { label: t('tripList.statusConfirmed'), type: 'success' },
+  archived: { label: t('tripList.statusArchived'), type: 'info' },
+}))
 
 // 目的地 → 氛围渐变（按城市名哈希取色，避免每次不同）
 const gradients = [
@@ -65,7 +67,7 @@ function gradientOf(dest) {
   return gradients[h % gradients.length]
 }
 
-const tripCountLabel = computed(() => (total.value ? `共 ${total.value} 个行程` : '还没有行程'))
+const tripCountLabel = computed(() => (total.value ? t('tripList.totalTrips', { count: total.value }) : t('tripList.noTrips')))
 
 async function load() {
   loading.value = true
@@ -83,9 +85,9 @@ function onPageChange(p) {
   load()
 }
 
-function dateRange(t) {
-  if (!t.start_date && !t.end_date) return '日期未定'
-  return `${t.start_date || '?'} ~ ${t.end_date || '?'}`
+function dateRange(trip) {
+  if (!trip.start_date && !trip.end_date) return t('tripList.dateUndecided')
+  return t('tripList.dateRange', { start: trip.start_date || '?', end: trip.end_date || '?' })
 }
 
 function dayCount(t) {
@@ -94,17 +96,17 @@ function dayCount(t) {
 
 async function removeTrip(trip) {
   try {
-    await ElMessageBox.confirm(`确定删除「${trip.title}」吗？此操作不可撤销。`, '删除行程', {
+    await ElMessageBox.confirm(t('tripList.deleteConfirmMsg', { title: trip.title }), t('tripList.deleteConfirmTitle'), {
       type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel'),
       confirmButtonClass: 'el-button--danger',
     })
   } catch {
     return
   }
   await api.deleteTrip(trip.id)
-  ElMessage.success('已删除')
+  ElMessage.success(t('tripList.deleted'))
   load()
 }
 
@@ -116,17 +118,17 @@ onMounted(load)
     <!-- 页头 -->
     <div class="page-head">
       <div>
-        <h2 class="page-title">我的行程</h2>
+        <h2 class="page-title">{{ t('tripList.title') }}</h2>
         <p class="page-sub">
-          <template v-if="trips.length">每一段旅程，都值得被记住。继续探索或开启新计划 ↓</template>
-          <template v-else>还没有行程，让 AI 为你开启第一段旅程</template>
+          <template v-if="trips.length">{{ t('tripList.subHas') }}</template>
+          <template v-else>{{ t('tripList.subEmpty') }}</template>
         </p>
       </div>
       <button class="btn-primary" @click="router.push('/plan')">
-        <el-icon style="margin-right: 6px"><MagicStick /></el-icon>AI 规划新行程
+        <el-icon style="margin-right: 6px"><MagicStick /></el-icon>{{ t('tripList.planNew') }}
       </button>
       <button class="btn-ghost" @click="openCreate">
-        <el-icon style="margin-right: 6px"><Plus /></el-icon>手动创建
+        <el-icon style="margin-right: 6px"><Plus /></el-icon>{{ t('tripList.manualCreate') }}
       </button>
     </div>
 
@@ -141,10 +143,10 @@ onMounted(load)
           <path d="M30 98h60" stroke="#ffb199" stroke-width="3" stroke-linecap="round" />
         </svg>
       </div>
-      <p class="empty-title">准备出发？</p>
-      <p class="empty-sub">告诉 AI 你想去哪里、玩几天、预算多少，<br />几分钟内生成完整行程。</p>
+      <p class="empty-title">{{ t('tripList.emptyTitle') }}</p>
+      <p class="empty-sub">{{ t('tripList.emptySub') }}</p>
       <button class="btn-primary" @click="router.push('/plan')">
-        <el-icon style="margin-right: 6px"><MagicStick /></el-icon>开启 AI 规划
+        <el-icon style="margin-right: 6px"><MagicStick /></el-icon>{{ t('tripList.startPlan') }}
       </button>
     </div>
 
@@ -174,18 +176,18 @@ onMounted(load)
                 <el-icon><Calendar /></el-icon>{{ dateRange(trip) }}
               </span>
               <span class="meta-item">
-                <el-icon><User /></el-icon>{{ trip.travelers }} 人
+                <el-icon><User /></el-icon>{{ trip.travelers }} {{ t('common.people') }}
               </span>
               <span class="meta-item">
-                <el-icon><Clock /></el-icon>{{ dayCount(trip) }} 天
+                <el-icon><Clock /></el-icon>{{ dayCount(trip) }} {{ t('common.days') }}
               </span>
             </div>
             <div class="card-bottom">
               <span class="budget" v-if="trip.budget != null">¥{{ trip.budget }}</span>
-              <span class="budget muted" v-else>预算未设</span>
+              <span class="budget muted" v-else>{{ t('tripList.budgetUnset') }}</span>
               <div class="card-actions" @click.stop>
-                <el-button link type="primary" @click="router.push(`/trips/${trip.id}`)">查看</el-button>
-                <el-button link type="danger" @click="removeTrip(trip)">删除</el-button>
+                <el-button link type="primary" @click="router.push(`/trips/${trip.id}`)">{{ t('common.view') }}</el-button>
+                <el-button link type="danger" @click="removeTrip(trip)">{{ t('common.delete') }}</el-button>
               </div>
             </div>
           </div>
@@ -206,20 +208,20 @@ onMounted(load)
     </div>
 
     <!-- 手动创建行程对话框 -->
-    <el-dialog v-model="createVisible" title="手动创建行程" width="460px">
+    <el-dialog v-model="createVisible" :title="t('tripList.createDialogTitle')" width="460px">
       <el-form label-width="80px">
-        <el-form-item label="标题" required>
-          <el-input v-model="createForm.title" placeholder="如：国庆杭州三日游" />
+        <el-form-item :label="t('tripList.title')" required>
+          <el-input v-model="createForm.title" :placeholder="t('tripList.titlePlaceholder')" />
         </el-form-item>
-        <el-form-item label="目的地" required>
-          <el-input v-model="createForm.destination" placeholder="如：杭州" />
+        <el-form-item :label="t('tripList.destination')" required>
+          <el-input v-model="createForm.destination" :placeholder="t('tripList.destinationPlaceholder')" />
         </el-form-item>
-        <el-form-item label="日期" required>
+        <el-form-item :label="t('tripList.date')" required>
           <el-date-picker
             v-model="createForm.start_date"
             type="date"
             value-format="YYYY-MM-DD"
-            placeholder="开始日期"
+            :placeholder="t('tripList.startDate')"
             style="width: 48%"
           />
           <span class="date-sep">→</span>
@@ -227,20 +229,20 @@ onMounted(load)
             v-model="createForm.end_date"
             type="date"
             value-format="YYYY-MM-DD"
-            placeholder="结束日期"
+            :placeholder="t('tripList.endDate')"
             style="width: 48%"
           />
         </el-form-item>
-        <el-form-item label="人数">
+        <el-form-item :label="t('tripList.travelers')">
           <el-input-number v-model="createForm.travelers" :min="1" :max="20" />
         </el-form-item>
-        <el-form-item label="预算(元)">
+        <el-form-item :label="t('tripList.budgetYuan')">
           <el-input-number v-model="createForm.budget" :min="0" :step="500" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createVisible = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="submitCreate">创建</el-button>
+        <el-button @click="createVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="creating" @click="submitCreate">{{ t('common.create') }}</el-button>
       </template>
     </el-dialog>
   </div>
