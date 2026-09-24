@@ -22,6 +22,10 @@ export const useAuthStore = defineStore('auth', {
       const data = await api.register(payload)
       this.setSession(data)
     },
+    async loginWithGoogle(idToken) {
+      const data = await api.googleLogin(idToken)
+      this.setSession(data)
+    },
     setSession({ access_token, user }) {
       this.token = access_token
       this.user = user
