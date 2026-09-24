@@ -192,9 +192,53 @@ async function load() {
     } catch {
       plan.value = null
     }
+    // Plan B 备选方案：确定性规则生成（无 LLM 成本）；仅主案模式加载
+    if (activePlan.value === 'main') {
+      try {
+        const pb = await api.getPlanB(route.params.id)
+        planB.value = pb?.variant || null
+      } catch {
+        planB.value = null // 404/无站点 → 无备选，静默降级（不展示入口）
+      }
+    }
   } finally {
     loading.value = false
   }
+}
+
+// ── 行程备选方案（Plan B：确定性规则生成，无 LLM 成本） ────
+const planB = ref(null) // { label, description, deltas, days, budget } | null
+const activePlan = ref('main') // 'main' | 'plan_b'
+
+// 主案 / 备选 切换选项（el-segmented）
+const planOptions = computed(() => [
+  { label: t('tripDetail.planMain'), value: 'main' },
+  { label: t('tripDetail.planB'), value: 'plan_b' },
+])
+
+// 备选骨架的天数（与主案同构：day_number/date/theme/stops）
+const planBDays = computed(() => ((planB.value?.days) || []).map((d) => ({
+  day_number: d.day_number,
+  date: d.date,
+  note: d.theme, // 语义对齐主案 DayOut.note（后端 day.theme ↔ note）
+  stops: (d.stops || []).map((s) => ({
+    id: `pb-${d.day_number}-${s.name}`,
+    name: s.name,
+    stop_type: s.stop_type,
+    lat: s.lat,
+    lng: s.lng,
+    description: s.description,
+    estimated_cost: s.estimated_cost,
+    estimated_duration_minutes: s.estimated_duration_minutes,
+  })),
+})))
+
+// 备选方案预算（服务端已按站点汇总，与 backend budget_service 同构）
+const planBBudget = computed(() => planB.value?.budget || null)
+const planBTotal = computed(() => planBBudget.value?.total_estimated || 0)
+
+function onPlanChange(p) {
+  if (p === 'main' && activePlan.value !== 'main') load() // 切回主案时重新加载（刷新权威数据）
 }
 
 // ── 酒店推荐（公共组件 HotelRecommend 接收 plan.hotels + trip.days） ──
@@ -498,6 +542,33 @@ onMounted(load)
               </div>
             </template>
             <el-empty v-else :description="$t('common.noBudget')" :image-size="60" />
+          </div>
+        </div>
+
+        <!-- 备选方案对比（Plan B：主案 / 备选切换） -->
+        <div v-if="planB" class="planb-card">
+          <div class="planb-head">
+            <span class="planb-title"><el-icon style="margin-right: 6px"><Switch /></el-icon>{{ $t('tripDetail.planBTitle') }}</span>
+            <el-segmented v-model="activePlan" :options="planOptions" size="small" @change="onPlanChange" />
+          </div>
+          <div v-if="activePlan === 'plan_b'" class="planb-body">
+            <div class="planb-meta">
+              <span class="planb-label">{{ planB.label }}</span>
+              <span class="planb-desc">{{ planB.description }}</span>
+            </div>
+            <div class="planb-deltas">
+              <div v-for="(d, i) in planB.deltas" :key="i" class="planb-delta">
+                <el-icon style="margin-right: 6px; color: var(--brand)"><RefreshRight /></el-icon>{{ d }}
+              </div>
+            </div>
+            <div class="planb-budget" v-if="planBBudget">
+              <el-icon style="margin-right: 6px"><Wallet /></el-icon>
+              {{ $t('tripDetail.planBBudgetLabel') }} ¥{{ planBTotal }}
+              <span v-if="planBBudget.by_type?.hotel" class="planb-budget-sub">
+                {{ $t('common.typeHotel') }} ¥{{ planBBudget.by_type.hotel }}
+              </span>
+            </div>
+            <div class="planb-hint">{{ $t('tripDetail.planBHint') }}</div>
           </div>
         </div>
 
@@ -858,6 +929,47 @@ onMounted(load)
 .bottom-bar { display: flex; gap: 12px; margin-top: 20px; padding: 8px 0 20px; flex-wrap: wrap; }
 
 .latlng { display: flex; gap: 8px; width: 100%; }
+
+/* ── 备选方案对比（Plan B） ── */
+.planb-card {
+  background: linear-gradient(135deg, #eef4ff, #fff 60%);
+  border: 1px solid #d6e4ff;
+  border-radius: var(--radius-xl);
+  padding: 14px 20px;
+  margin-bottom: 20px;
+}
+.planb-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap;
+}
+.planb-title {
+  font-size: 15px; font-weight: 600; color: var(--ink);
+  display: inline-flex; align-items: center;
+}
+.planb-body { margin-top: 12px; }
+.planb-meta { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.planb-label {
+  font-size: 13px; font-weight: 700; color: var(--brand);
+  background: rgba(64,110,255,.10); padding: 3px 10px; border-radius: var(--radius-full);
+}
+.planb-desc { font-size: 13px; color: var(--ink-2); }
+.planb-deltas {
+  margin-top: 10px; background: #fff; border: 1px solid var(--line);
+  border-radius: var(--radius-md); padding: 8px 12px;
+}
+.planb-delta {
+  display: flex; align-items: flex-start; gap: 4px;
+  font-size: 13px; color: var(--ink-2); line-height: 1.5; padding: 4px 0;
+}
+.planb-delta .el-icon { flex-shrink: 0; margin-top: 3px; }
+.planb-budget {
+  margin-top: 10px; font-size: 13px; color: var(--ink); font-weight: 600;
+  display: inline-flex; align-items: center;
+}
+.planb-budget-sub {
+  margin-left: 10px; font-weight: 500; color: var(--muted);
+}
+.planb-hint { margin-top: 8px; font-size: 12px; color: var(--faint); }
 
 /* 响应式 */
 @media (max-width: 860px) {
