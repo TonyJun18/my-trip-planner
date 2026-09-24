@@ -239,6 +239,18 @@ def _questions_text(request: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _profile_text(request: dict[str, Any]) -> str:
+    """把跨会话用户画像摘要（create_task 时注入的 profile_text）组装成补充上下文。
+
+    画像来自用户历史偏好（traveler_type/pace/budget_tier/favorite_cities 等），
+    规划时优先尊重；与本次请求冲突时以本次请求为准。无画像返回空串。
+    """
+    profile = request.get("profile_text") or ""
+    if not isinstance(profile, str) or not profile.strip():
+        return ""
+    return "【跨会话用户画像】（来自该用户历史偏好，规划时请优先尊重；与本次请求冲突时以本次请求为准）\n" + profile.strip()
+
+
 def _collect_list_output(state: dict[str, Any]) -> dict[str, Any] | None:
     """（列表输出型 Agent 共用）从消息历史取出工具结果并解析为统一 POI 列表。"""
     # agent 内部已把 ToolMessage 写入 messages；取最后一个工具结果
@@ -308,6 +320,7 @@ async def attraction_agent(
                     f"目的地城市：{state['city']}\n"
                     f"用户偏好：{', '.join(state.get('preferences') or []) or '无特别偏好'}\n"
                     f"{_questions_text(state.get('request') or {})}\n"
+                    f"{_profile_text(state.get('request') or {})}\n"
                     "请选择合适的搜索关键词，调用 search_attractions 工具获取景点列表。"
                 )
             )
@@ -401,6 +414,7 @@ async def hotel_agent(
                     f"目的地城市：{state['city']}\n"
                     f"住宿需求：{', '.join(state.get('accommodation') or []) or '无特别需求（默认推荐评分较高的酒店）'}\n"
                     f"{_questions_text(state.get('request') or {})}\n"
+                    f"{_profile_text(state.get('request') or {})}\n"
                     "请选择合适的搜索关键词，调用 search_hotels 工具获取酒店列表。"
                 )
             )
@@ -513,6 +527,11 @@ def _planner_user_text(request: dict[str, Any], materials: dict[str, Any]) -> st
     if qa_text:
         lines.append(f"\n{qa_text}")
 
+    # 跨会话用户画像（历史偏好记忆）：有画像才注入，规划时优先尊重
+    profile_text = _profile_text(request)
+    if profile_text:
+        lines.append(f"\n{profile_text}")
+
     # 采集失败的源：明确告知 Planner，让它仍然能编排（部分失败 → 优雅降级）
     failed_sources = materials.get("failed_sources") or []
     if failed_sources:
@@ -578,6 +597,9 @@ async def critic_agent(
     qa_text = _questions_text(request)
     if qa_text:
         critic_req += f"\n{qa_text}"
+    profile_text = _profile_text(request)
+    if profile_text:
+        critic_req += f"\n{profile_text}"
     messages.append(
         HumanMessage(
             content=(

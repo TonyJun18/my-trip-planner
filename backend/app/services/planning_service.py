@@ -230,10 +230,21 @@ def get_executor(session_factory: async_sessionmaker[AsyncSession] | None = None
 
 # ── 任务 CRUD（供 API 使用） ─────────────────────────────────
 async def create_task(db: AsyncSession, data: PlanRequest, *, owner: str | None = None) -> PlanTask:
-    """创建规划任务并入队。"""
+    """创建规划任务并入队。
+
+    画像注入：任务创建时（而非执行时）从 DB 读取当前用户画像，把画像摘要
+    并入 request_data（随任务快照落库）。执行器消费 request_data 时无需再触库，
+    且规划上下文与发起时刻的画像一致（可追溯）。
+    """
     request_data = data.model_dump(mode="json")  # date → ISO 字符串，可 JSON 序列化
     if owner:
         request_data["owner"] = owner
+        # 跨会话画像记忆：注入「历史偏好摘要」给 Agent（同程记忆关联性、Layla 个性化）
+        from app.services import profile_service
+
+        profile_ctx = await profile_service.profile_for_request(db, user_id=owner)
+        if profile_ctx.get("profile_text"):
+            request_data["profile_text"] = profile_ctx["profile_text"]
     task = PlanTask(
         owner=owner,
         request_data=request_data,
