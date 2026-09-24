@@ -140,6 +140,18 @@ class SharedTripOut(TripOut):
 
 
 # ── 行程规划请求（Agent 输入） ────────────────────────────────
+class PlanQuestion(BaseModel):
+    """主动提问：规划前向用户追问的一个问题及其答案。
+
+    规划提交后、执行前由前端动态追问（马蜂窝 AI 路书「主动提问」差异化），
+    答案随请求一并提交，由编排层并入 Planner/Critic 上下文。
+    """
+
+    question: str = Field(min_length=1, max_length=200)
+    options: list[str] | None = Field(default=None, max_length=8, description="预设选项（可选）")
+    answer: str | None = Field(default=None, max_length=500, description="用户回答；未回答的问题会被忽略")
+
+
 class PlanRequest(BaseModel):
     destination: str = Field(min_length=1, max_length=200)
     start_date: date
@@ -147,6 +159,7 @@ class PlanRequest(BaseModel):
     travelers: int = Field(default=1, ge=1)
     budget: float | None = Field(default=None, ge=0)
     preferences: list[str] = Field(default_factory=list, description="偏好，如 ['美食', '自然风光', '博物馆']")
+    questions: list[PlanQuestion] = Field(default_factory=list, max_length=10, description="主动提问 Q&A（人群/节奏/避峰/备选方案），答案并入规划上下文")
     provider: Literal["auto", "openai", "deepseek", "ollama"] = "auto"
 
 
