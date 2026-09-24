@@ -44,3 +44,10 @@
 - [x] task-google-auth-frontend: 前端 Google 登录按钮——GIS 加载 + credential 回调 → POST /auth/google → 复用 setSession；按钮文案与配色融入 AuthView（后端已完成：branch nightly/2026-09-21/10-task-google-auth-backend，POST /api/v1/auth/google 已就绪）。GOOGLE_CLIENT_ID 前端可先用占位/环境变量注入，不强制真实 key（验收：build 通过 + 登录链路代码完整）
 - [x] task-i18n-base: 多语言基础设施——vue-i18n@9 + zh-CN/en-US locales + 顶栏语言切换器 + Element Plus locale 联动（el-config-provider）（验收：build 通过 + 切换语言后 Element 组件文案与页面硬编码文案来源统一）。已完成基础设施 + App/Auth/TripList 壳层迁移；PlanWizard/TripDetailView/ShareView 大视图硬编码文案待后续 task-i18n-views）
 - [x] task-i18n-views: 大视图文案迁移——PlanWizard/TripDetailView/ShareView 三视图硬编码中文迁移到 locales（约 1.6 万字符）（验收：切到 en-US 后三视图主要文案为英文 + build 通过；task-i18n-base 遗留，工作量超出单 worker 窗口，拆分为独立任务）
+
+## 2026-09-25 竞品分析追加（格局信号：国内 OTA 集体 AI 规划化，规划层机会放大）
+
+- [x] task-note-import: 笔记/种草文本导入——粘贴攻略笔记 → 结构化提取站点候选 → 勾选并入行程（Tripnotes 范式复活 + 去哪儿小红书导入验证国内刚需；规划层天然入口：想法搬运工，不绑架预订）（验收：粘贴文本生成站点候选 + 恶意注入文本按敌意输入处理 + 测试覆盖）
+- [ ] task-plan-b: 行程备选方案 Plan B——规划同时产出 1 个备选骨架（节奏/取舍/预算档不同），详情页主案/备案对比切换（马蜂窝 AI 路书「备选方案」用户高频需求；roadtrip-mode 已落地，评估条件满足）（验收：规划响应含 plan_b + 前端对比切换 + 测试覆盖）
+- [ ] content-domestic-planning-layer: 文章《国内 OTA 也在做 AI 行程了——独立规划层为什么还能活》（携程一站式规划到预订/去哪儿小红书导入/马蜂窝路书备选方案/飞猪多智能体为引，承接 07 文做姊妹篇，讲国内语境下规划层与预订层的边界与生存策略）（验收：docs/articles/08-*.md 存在且内容完整，发布清单补卡片）
+- [ ] content-quality-fallback: README 增加「质量与兜底」小节（降级链 + 质检 trace + 已知局限表格同步；OTA 人工定制师/指路人的反向思考——我们的兜底是工程化的降级链与可回溯 trace）（验收：README 内容与仓库实际一致；兼收 09-24 content-readme 收尾）
