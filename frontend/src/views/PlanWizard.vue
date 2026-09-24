@@ -1,12 +1,14 @@
 <script setup>
 import { ref, reactive, computed, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import * as api from '@/api'
 import HotelRecommend from '@/components/HotelRecommend.vue'
 import QualityCard from '@/components/QualityCard.vue'
 
 const router = useRouter()
+const { t } = useI18n()
 
 const formRef = ref(null)
 const submitting = ref(false)
@@ -22,44 +24,33 @@ const form = reactive({
   end_date: '',
   travelers: 2,
   budget: 3000,
-  preferences: ['美食', '自然风光'],
+  preferences: ['food', 'nature'],
   provider: 'auto',
 })
 
 // ── 主动提问（马蜂窝 AI 路书差异化：规划前动态追问需求澄清） ──
-// 每题：question / options / answer。未回答的问题提交时直接忽略，
-// 后端只把有答案的 Q&A 并入规划上下文；客户端也无需强制填写。
-const questions = reactive([
-  {
-    question: '这次是和谁一起出行？',
-    options: ['情侣', '亲子', '朋友结伴', '独自一人', '公司团建'],
-    answer: '',
-  },
-  {
-    question: '更倾向什么节奏？',
-    options: ['紧凑打卡', '适中', '慢节奏深度游'],
-    answer: '',
-  },
-  {
-    question: '需要避开人流高峰吗？',
-    options: ['尽量避开', '无所谓', '哪里热闹去哪里'],
-    answer: '',
-  },
-  {
-    question: '有备选目的地或特殊要求吗？',
-    options: [],
-    answer: '',
-  },
-])
+// 问题/选项定义用 i18n key，答案存独立状态（qaAnswers）：
+// 切换语言不丢已填答案；提交时把 key 解析为当前语言的自然语言 label。
+const qaDefs = [
+  { key: 'q1', options: ['q1o1', 'q1o2', 'q1o3', 'q1o4', 'q1o5'] },
+  { key: 'q2', options: ['q2o1', 'q2o2', 'q2o3'] },
+  { key: 'q3', options: ['q3o1', 'q3o2', 'q3o3'] },
+  { key: 'q4', options: [] },
+]
+const qaAnswers = reactive({ q1: '', q2: '', q3: '', q4: '' })
 
 function pickQuestion(q, option) {
-  q.answer = q.answer === option ? '' : option
+  qaAnswers[q.key] = qaAnswers[q.key] === option ? '' : option
 }
 
 function answeredQuestions() {
-  return questions
-    .filter((q) => (q.answer || '').trim())
-    .map((q) => ({ question: q.question, options: q.options, answer: q.answer.trim() }))
+  return qaDefs
+    .filter((q) => (qaAnswers[q.key] || '').trim())
+    .map((q) => ({
+      question: t(`planWizard.${q.key}`),
+      options: q.options.map((o) => t(`planWizard.${o}`)),
+      answer: qaAnswers[q.key] ? t(`planWizard.${qaAnswers[q.key]}`) : '',
+    }))
 }
 
 function defaultDates() {
@@ -80,25 +71,36 @@ function defaultDates() {
 defaultDates()
 
 const rules = {
-  destination: [{ required: true, message: '想去哪儿？填一个目的地吧', trigger: 'blur' }],
-  start_date: [{ required: true, message: '请选择开始日期' }],
-  end_date: [{ required: true, message: '请选择结束日期' }],
+  destination: [{ required: true, message: t('planWizard.reqDestMsg'), trigger: 'blur' }],
+  start_date: [{ required: true, message: t('planWizard.reqStartMsg') }],
+  end_date: [{ required: true, message: t('planWizard.reqEndMsg') }],
 }
 
-const preferenceOptions = ['美食', '自然风光', '历史文化', '购物', '亲子', '徒步', '博物馆', '夜生活', '摄影', '温泉']
+// 偏好项存内部 key；语言切换时高亮不丢；提交时映射当前语言 label
+const prefLabelKeyMap = {
+  food: 'prefFood', nature: 'prefNature', history: 'prefHistory',
+  shopping: 'prefShopping', family: 'prefFamily', hiking: 'prefHiking',
+  museum: 'prefMuseum', nightlife: 'prefNightlife', photo: 'prefPhoto',
+  hotspring: 'prefHotspring',
+}
+const preferenceKeys = ['food', 'nature', 'history', 'shopping', 'family', 'hiking', 'museum', 'nightlife', 'photo', 'hotspring']
+function prefLabel(k) {
+  return t(`planWizard.${prefLabelKeyMap[k]}`)
+}
+const preferenceOptions = computed(() => preferenceKeys.map((k) => ({ key: k, label: prefLabel(k) })))
 
 function togglePref(p) {
-  const i = form.preferences.indexOf(p)
+  const i = form.preferences.indexOf(p.key)
   if (i >= 0) form.preferences.splice(i, 1)
-  else form.preferences.push(p)
+  else form.preferences.push(p.key)
 }
 
-// 仪表盘样预算滑块
+// 仪表盘样预算滑块（label 走 i18n）
 const budgetPresets = [
-  { label: '经济', value: 1500 },
-  { label: '舒适', value: 3000 },
-  { label: '品质', value: 6000 },
-  { label: '奢华', value: 12000 },
+  { labelKey: 'budgetEconomy', value: 1500 },
+  { labelKey: 'budgetComfort', value: 3000 },
+  { labelKey: 'budgetQuality', value: 6000 },
+  { labelKey: 'budgetLuxury', value: 12000 },
 ]
 function pickBudget(v) { form.budget = v }
 
@@ -112,6 +114,8 @@ async function submit() {
   try {
     const payload = {
       ...form,
+      // 偏好 key → 当前语言 label（默认中文，保持后端契约）
+      preferences: form.preferences.map((k) => prefLabel(k)),
       questions: answeredQuestions(),
     }
     const task = await api.planTrip(payload)
@@ -132,11 +136,11 @@ async function pollTask(taskId) {
       result.value = { ...task, trace: task.trace || [] }
       submitting.value = false
       activeStep.value = 2
-      ElMessage.success('行程规划完成！')
+      ElMessage.success(t('planWizard.planSucceed'))
       return
     }
     if (task.status === 'failed') {
-      errorMsg.value = task.error || '规划失败'
+      errorMsg.value = task.error || t('planWizard.planFailed')
       submitting.value = false
       activeStep.value = 0
       ElMessage.error(errorMsg.value)
@@ -158,21 +162,32 @@ const planBudget = computed(() => result.value?.plan?.budget || {})
 // 向导页酒店推荐展示（未落库，暂不安排；详情页可安排）
 const planHotels = computed(() => result.value?.plan?.hotels || [])
 
-const typeLabel = { attraction: '景点', food: '餐饮', hotel: '住宿' }
+const typeLabelKeys = { attraction: 'typeAttraction', food: 'typeFood', hotel: 'typeHotel' }
+const typeLabel = computed(() => ({
+  attraction: t('common.typeAttraction'),
+  food: t('common.typeFood'),
+  hotel: t('common.typeHotel'),
+}))
 const typeEmoji = { attraction: '🏞️', food: '🍜', hotel: '🏨' }
 const typeColor = { attraction: 'var(--brand)', food: '#c2410c', hotel: '#0d8a5f' }
 
 // Agent 名称映射（trace.thought 存了 agent 名）
-const agentLabel = {
-  AttractionSearchAgent: '景点搜索专家',
-  WeatherQueryAgent: '天气查询专家',
-  HotelAgent: '酒店推荐专家',
-  PlannerAgent: '行程规划专家',
-  TravelCriticAgent: '行程质检专家',
-  orchestrator: '信息补充',
+const agentLabelKeys = {
+  AttractionSearchAgent: 'agentAttraction',
+  WeatherQueryAgent: 'agentWeather',
+  HotelAgent: 'agentHotel',
+  PlannerAgent: 'agentPlanner',
+  TravelCriticAgent: 'agentCritic',
+  orchestrator: 'agentOrchestrator',
 }
 function agentName(s) {
-  return agentLabel[s.thought] || s.thought || 'Agent'
+  const key = agentLabelKeys[s.thought]
+  return key ? t(`planWizard.${key}`) : s.thought || 'Agent'
+}
+
+// trace 是否失败（后端 observation 为中文「失败」字样；兼容中英文）
+function isTraceFailed(s) {
+  return /(失败|failed|error)/i.test(s.observation || '')
 }
 
 function goDetail() {
@@ -183,15 +198,15 @@ function goDetail() {
 <template>
   <div class="wizard">
     <div class="wizard-head">
-      <h2 class="page-title">开启你的下一段旅程</h2>
-      <p class="page-sub">告诉我们想去哪里，AI 规划团队会在几分钟内为你排好每一天</p>
+      <h2 class="page-title">{{ $t('planWizard.pageTitle') }}</h2>
+      <p class="page-sub">{{ $t('planWizard.pageSub') }}</p>
     </div>
 
     <!-- Step 指示器 -->
     <div class="steps" :class="{ done: activeStep === 2 }">
       <div class="step" :class="{ active: activeStep === 0, done: activeStep > 0 }">
         <span class="step-num">1</span>
-        <span class="step-label">填写需求</span>
+        <span class="step-label">{{ $t('planWizard.stepFill') }}</span>
       </div>
       <div class="step-line" :class="{ filled: activeStep >= 1 }" />
       <div class="step" :class="{ active: activeStep === 1, done: activeStep > 1 }">
@@ -199,12 +214,12 @@ function goDetail() {
           <el-icon v-if="activeStep === 1" class="is-loading"><Loading /></el-icon>
           <template v-else><el-icon><Check /></el-icon></template>
         </span>
-        <span class="step-label">AI 规划中</span>
+        <span class="step-label">{{ $t('planWizard.stepPlanning') }}</span>
       </div>
       <div class="step-line" :class="{ filled: activeStep >= 2 }" />
       <div class="step" :class="{ active: activeStep === 2, done: activeStep > 2 }">
         <span class="step-num">3</span>
-        <span class="step-label">行程完成</span>
+        <span class="step-label">{{ $t('planWizard.stepDone') }}</span>
       </div>
     </div>
 
@@ -220,12 +235,12 @@ function goDetail() {
       >
         <!-- 目的地 -->
         <div class="field">
-          <label class="field-label">目的地 <span class="req">*</span></label>
+          <label class="field-label">{{ $t('planWizard.destLabel') }} <span class="req">*</span></label>
           <div class="dest-row">
             <el-input
               v-model="form.destination"
               size="large"
-              placeholder="想去哪儿？如：杭州、成都、大理"
+              :placeholder="$t('planWizard.destPlaceholder')"
               clearable
               class="dest-input"
             >
@@ -242,16 +257,16 @@ function goDetail() {
 
         <!-- 日期 -->
         <div class="field">
-          <label class="field-label">日期</label>
+          <label class="field-label">{{ $t('planWizard.dateLabel') }}</label>
           <div class="date-row">
             <el-date-picker
               v-model="form.start_date" type="date" value-format="YYYY-MM-DD"
-              placeholder="出发" style="flex:1" size="large"
+              :placeholder="$t('planWizard.dateDepart')" style="flex:1" size="large"
             />
             <span class="date-sep">→</span>
             <el-date-picker
               v-model="form.end_date" type="date" value-format="YYYY-MM-DD"
-              placeholder="返回" style="flex:1" size="large"
+              :placeholder="$t('planWizard.dateReturn')" style="flex:1" size="large"
             />
           </div>
         </div>
@@ -259,12 +274,12 @@ function goDetail() {
         <div class="two-col">
           <!-- 人数 -->
           <div class="field">
-            <label class="field-label">出行人数</label>
+            <label class="field-label">{{ $t('planWizard.travelersLabel') }}</label>
             <el-input-number v-model="form.travelers" :min="1" :max="20" size="large" style="width: 100%" />
           </div>
           <!-- 预算 -->
           <div class="field">
-            <label class="field-label">预算（元）</label>
+            <label class="field-label">{{ $t('planWizard.budgetLabel') }}</label>
             <el-input-number v-model="form.budget" :min="0" :step="500" size="large" style="width: 100%" />
           </div>
         </div>
@@ -273,18 +288,18 @@ function goDetail() {
         <div class="budget-presets">
           <button v-for="p in budgetPresets" :key="p.value"
                   type="button" class="chip" :class="{ picked: form.budget === p.value }"
-                  @click="pickBudget(p.value)">{{ p.label }} ¥{{ p.value }}</button>
+                  @click="pickBudget(p.value)">{{ $t('planWizard.' + p.labelKey) }} ¥{{ p.value }}</button>
         </div>
 
         <!-- 偏好 -->
         <div class="field">
-          <label class="field-label">旅行偏好（可多选）</label>
+          <label class="field-label">{{ $t('planWizard.prefLabel') }}</label>
           <div class="pref-list">
-            <button v-for="p in preferenceOptions" :key="p"
-                    type="button" class="chip pref" :class="{ picked: form.preferences.includes(p) }"
+            <button v-for="p in preferenceOptions" :key="p.key"
+                    type="button" class="chip pref" :class="{ picked: form.preferences.includes(p.key) }"
                     @click="togglePref(p)">
-              <span class="pref-check" v-if="form.preferences.includes(p)">✓</span>
-              {{ p }}
+              <span class="pref-check" v-if="form.preferences.includes(p.key)">✓</span>
+              {{ p.label }}
             </button>
           </div>
         </div>
@@ -292,24 +307,24 @@ function goDetail() {
         <!-- 主动提问：规划前需求澄清（可选，未答不提交） -->
         <div class="field qa-field">
           <label class="field-label">
-            再回答几个小问题，行程会更合你心意
-            <span class="qa-tip">（可选，不答也不影响规划）</span>
+            {{ $t('planWizard.qaTitle') }}
+            <span class="qa-tip">{{ $t('planWizard.qaTip') }}</span>
           </label>
           <div class="qa-list">
-            <div v-for="q in questions" :key="q.question" class="qa-item">
-              <div class="qa-q">{{ q.question }}</div>
+            <div v-for="q in qaDefs" :key="q.key" class="qa-item">
+              <div class="qa-q">{{ $t('planWizard.' + q.key) }}</div>
               <div v-if="q.options.length" class="qa-opts">
                 <button v-for="opt in q.options" :key="opt"
-                        type="button" class="chip" :class="{ picked: q.answer === opt }"
+                        type="button" class="chip" :class="{ picked: qaAnswers[q.key] === opt }"
                         @click="pickQuestion(q, opt)">
-                  <span v-if="q.answer === opt" style="margin-right: 4px">✓</span>{{ opt }}
+                  <span v-if="qaAnswers[q.key] === opt" style="margin-right: 4px">✓</span>{{ $t('planWizard.' + opt) }}
                 </button>
               </div>
               <el-input
                 v-else
-                v-model="q.answer"
+                v-model="qaAnswers[q.key]"
                 size="default"
-                placeholder="选填：如「想顺路去乌镇」「对海鲜过敏」「尽量住地铁口」"
+                :placeholder="$t('planWizard.q4Placeholder')"
                 clearable
                 class="qa-input"
               />
@@ -318,7 +333,7 @@ function goDetail() {
         </div>
 
         <button class="btn-primary big" :disabled="submitting" @click.prevent="submit">
-          <el-icon style="margin-right: 8px"><MagicStick /></el-icon>开始规划
+          <el-icon style="margin-right: 8px"><MagicStick /></el-icon>{{ $t('planWizard.startBtn') }}
         </button>
       </el-form>
     </div>
@@ -329,13 +344,13 @@ function goDetail() {
         <div class="pulse-ring">
           <el-icon class="is-loading" :size="34" color="var(--brand)"><Loading /></el-icon>
         </div>
-        <h3>AI 团队正在规划 {{ form.destination || '目的地' }} 的行程…</h3>
-        <p class="planning-sub">五位专家协作中：查景点 · 看天气 · 找酒店 · 排行程 · 验质量</p>
+        <h3>{{ $t('planWizard.planningTitle', { dest: form.destination || $t('planWizard.planningDestFallback') }) }}</h3>
+        <p class="planning-sub">{{ $t('planWizard.planningSub') }}</p>
       </div>
 
       <!-- 实时轨迹 -->
       <div v-if="traceSteps.length" class="agent-steps">
-        <div v-for="(s, i) in traceSteps" :key="i" class="agent-step" :class="{ done: !s.observation?.includes('失败') }">
+        <div v-for="(s, i) in traceSteps" :key="i" class="agent-step" :class="{ done: !isTraceFailed(s) }">
           <span class="agent-dot" />
           <div class="agent-content">
             <div class="agent-row">
@@ -347,7 +362,7 @@ function goDetail() {
         </div>
       </div>
       <div v-else class="planning-wait">
-        <span class="dots"><span>.</span><span>.</span><span>.</span></span> 正在唤醒 AI 专家…
+        <span class="dots"><span>.</span><span>.</span><span>.</span></span> {{ $t('planWizard.waking') }}
       </div>
     </div>
 
@@ -359,31 +374,31 @@ function goDetail() {
           <el-icon :size="40" color="#fff"><Check /></el-icon>
         </div>
         <div>
-          <h3 class="success-title">行程已生成，并自动保存</h3>
-          <p class="success-sub">{{ result.plan?.destination }} · {{ planDays.length }} 天 · 总预算 ¥{{ planBudget.total_estimated || 0 }}</p>
+          <h3 class="success-title">{{ $t('planWizard.successTitle') }}</h3>
+          <p class="success-sub">{{ $t('planWizard.successSub', { dest: result.plan?.destination, days: planDays.length, budget: planBudget.total_estimated || 0 }) }}</p>
         </div>
         <div class="success-actions">
-          <button class="btn-primary" @click="goDetail">查看行程详情</button>
-          <button class="btn-ghost" @click="activeStep = 0">再规划一个</button>
+          <button class="btn-primary" @click="goDetail">{{ $t('planWizard.viewDetail') }}</button>
+          <button class="btn-ghost" @click="activeStep = 0">{{ $t('planWizard.planAnother') }}</button>
         </div>
       </div>
 
       <!-- 行程摘要 -->
       <div class="summary-grid">
         <div class="summary-card">
-          <div class="summary-label">目的地</div>
+          <div class="summary-label">{{ $t('planWizard.summaryDest') }}</div>
           <div class="summary-value">{{ result.plan?.destination }}</div>
         </div>
         <div class="summary-card">
-          <div class="summary-label">行程天数</div>
-          <div class="summary-value">{{ planDays.length }} 天</div>
+          <div class="summary-label">{{ $t('planWizard.summaryDays') }}</div>
+          <div class="summary-value">{{ planDays.length }} {{ $t('common.days') }}</div>
         </div>
         <div class="summary-card">
-          <div class="summary-label">总预算</div>
+          <div class="summary-label">{{ $t('planWizard.summaryBudget') }}</div>
           <div class="summary-value accent">¥{{ planBudget.total_estimated || 0 }}</div>
         </div>
         <div class="summary-card">
-          <div class="summary-label">模型</div>
+          <div class="summary-label">{{ $t('planWizard.summaryModel') }}</div>
           <div class="summary-value small">{{ result.provider }} · {{ result.model || '-' }}</div>
         </div>
       </div>
@@ -394,7 +409,7 @@ function goDetail() {
           <div class="day-badge">Day {{ day.day_number }}</div>
           <div class="day-content">
             <div class="day-headline">
-              <h4 class="day-theme">{{ day.theme || '自由探索' }}</h4>
+              <h4 class="day-theme">{{ day.theme || $t('common.freeExplore') }}</h4>
               <span class="day-date">{{ day.date || '' }}</span>
             </div>
             <div class="stops">
@@ -409,7 +424,7 @@ function goDetail() {
                   </div>
                   <div class="stop-meta">
                     <span v-if="stop.estimated_cost">¥{{ stop.estimated_cost }}</span>
-                    <span v-if="stop.duration_minutes">{{ stop.duration_minutes }} 分钟</span>
+                    <span v-if="stop.duration_minutes">{{ stop.duration_minutes }} {{ $t('common.minutes') }}</span>
                     <span v-if="stop.description" class="stop-desc">{{ stop.description }}</span>
                   </div>
                 </div>
@@ -431,9 +446,9 @@ function goDetail() {
 
       <!-- 预算明细 -->
       <div class="budget-card">
-        <h4 class="budget-title">预算明细</h4>
+        <h4 class="budget-title">{{ $t('common.budgetTitle') }}</h4>
         <div class="budget-bars">
-          <div v-for="(label, k) in { attraction: '景点', food: '餐饮', hotel: '住宿' }" :key="k" class="budget-bar-row">
+          <div v-for="(label, k) in { attraction: $t('common.typeAttraction'), food: $t('common.typeFood'), hotel: $t('common.typeHotel') }" :key="k" class="budget-bar-row">
             <span class="budget-bar-label">{{ label }}</span>
             <div class="budget-bar-track">
               <div class="budget-bar-fill" :style="{
@@ -444,7 +459,7 @@ function goDetail() {
             <span class="budget-bar-value">¥{{ planBudget.by_type?.[k] || 0 }}</span>
           </div>
           <div class="budget-total-row">
-            <span>合计</span>
+            <span>{{ $t('common.total') }}</span>
             <span class="budget-total">¥{{ planBudget.total_estimated || 0 }}</span>
           </div>
         </div>
@@ -452,7 +467,7 @@ function goDetail() {
 
       <!-- Agent 轨迹（折叠） -->
       <el-collapse class="trace-collapse">
-        <el-collapse-item title="查看 AI 专家协作过程" name="trace">
+        <el-collapse-item :title="$t('planWizard.traceTitle')" name="trace">
           <div class="agent-steps">
             <div v-for="(s, i) in traceSteps" :key="i" class="agent-step done">
               <span class="agent-dot" />
@@ -465,7 +480,7 @@ function goDetail() {
               </div>
             </div>
           </div>
-          <el-empty v-if="!traceSteps.length" description="未记录协作轨迹" :image-size="60" />
+          <el-empty v-if="!traceSteps.length" :description="$t('planWizard.traceEmpty')" :image-size="60" />
         </el-collapse-item>
       </el-collapse>
     </div>
