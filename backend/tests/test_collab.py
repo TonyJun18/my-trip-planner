@@ -168,3 +168,151 @@ async def test_share_vote_validation(client, auth_user):
 
     resp = await client.post(f"/api/v1/trips/share/{token}/votes/{stop_b}", json={"value": 1})
     assert resp.status_code == 404
+
+
+# ── 受邀编辑（edit_token：受限字段 + 顺序重排，owner 可收回） ─────────
+async def _make_edit_trip(client, headers) -> tuple[str, str, str, str]:
+    """建行程 + Day + 2 站点 → 生成 edit_token → 返回 (trip_id, edit_token, day_id, [stop1, stop2])。"""
+    trip_id, _, stop1 = await _make_shared_trip(client, headers)
+    # 加第二个站点
+    resp = await client.get(f"/api/v1/trips/{trip_id}", headers=headers)
+    day_id = resp.json()["days"][0]["id"]
+    resp = await client.post(f"/api/v1/trips/days/{day_id}/stops", json={
+        "name": "灵隐寺", "stop_type": "attraction",
+    }, headers=headers)
+    assert resp.status_code == 201, resp.text
+    stop2 = resp.json()["id"]
+    resp = await client.post(f"/api/v1/trips/{trip_id}/share/edit", headers=headers)
+    assert resp.status_code == 200, resp.text
+    edit_token = resp.json()["edit_token"]
+    return trip_id, edit_token, day_id, stop1
+
+
+async def test_edit_token_generate_view_revoke(client, auth_user):
+    """owner 生成 edit_token → 受邀者可见含预算 → owner 收回 → 链接失效。"""
+    _, headers = auth_user
+    trip_id, edit_token, _, _ = await _make_edit_trip(client, headers)
+
+    # 幂等复用
+    resp = await client.post(f"/api/v1/trips/{trip_id}/share/edit", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["edit_token"] == edit_token
+    assert "edit=1" in resp.json()["edit_url"]
+
+    # 受邀者凭 edit_token 查看（免登录）
+    resp = await client.get(f"/api/v1/trips/edit/{edit_token}")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["id"] == trip_id
+    assert "budget_summary" in body
+    assert body["days"][0]["stops"][0]["checked"] is False
+
+    # owner 收回 → 旧链接失效
+    resp = await client.delete(f"/api/v1/trips/{trip_id}/share/edit", headers=headers)
+    assert resp.status_code == 204
+    resp = await client.get(f"/api/v1/trips/edit/{edit_token}")
+    assert resp.status_code == 404
+
+    # 且行程详情里 edit_token 已清空
+    resp = await client.get(f"/api/v1/trips/{trip_id}", headers=headers)
+    assert resp.json()["edit_token"] is None
+
+
+async def test_invited_stop_edit_flow(client, auth_user):
+    """受邀者改站点受限字段：名称/描述/勾选 → 仅这些字段变化。"""
+    _, headers = auth_user
+    _, edit_token, day_id, stop1 = await _make_edit_trip(client, headers)
+
+    # 更新（免登录，凭 edit_token）
+    resp = await client.patch(f"/api/v1/trips/edit/{edit_token}/stops/{stop1}", json={
+        "name": "西湖（改）",
+        "description": "环湖加雷峰塔",
+        "checked": True,
+    })
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["name"] == "西湖（改）"
+    assert body["description"] == "环湖加雷峰塔"
+    assert body["checked"] is True
+    assert body["order_index"] == 1  # 未动
+
+    # 下一个站点未受影响
+    resp = await client.get(f"/api/v1/trips/edit/{edit_token}")
+    stops = resp.json()["days"][0]["stops"]
+    other = [s for s in stops if s["id"] != stop1][0]
+    assert other["checked"] is False
+
+    # 只更新 checked（不传 name/description）→ 其余保持
+    resp = await client.patch(f"/api/v1/trips/edit/{edit_token}/stops/{stop1}", json={"checked": False})
+    assert resp.status_code == 200
+    assert resp.json()["checked"] is False
+    assert resp.json()["name"] == "西湖（改）"
+
+
+async def test_invited_reorder_flow(client, auth_user):
+    """受邀者重排整日站点顺序（幂等，须包含全部站点 id）。"""
+    _, headers = auth_user
+    _, edit_token, day_id, stop1 = await _make_edit_trip(client, headers)
+    resp = await client.get(f"/api/v1/trips/edit/{edit_token}")
+    stops = resp.json()["days"][0]["stops"]
+    stop2 = [s for s in stops if s["id"] != stop1][0]["id"]
+
+    # 交换顺序
+    resp = await client.put(
+        f"/api/v1/trips/edit/{edit_token}/days/{day_id}/stops/order",
+        json={"order": [stop2, stop1]},
+    )
+    assert resp.status_code == 200, resp.text
+    ordered = [s["id"] for s in resp.json()]
+    assert ordered == [stop2, stop1]
+
+    # 缺站点 → 400
+    resp = await client.put(
+        f"/api/v1/trips/edit/{edit_token}/days/{day_id}/stops/order",
+        json={"order": [stop1]},
+    )
+    assert resp.status_code == 400
+
+    # 无效令牌 → 404
+    resp = await client.put(
+        "/api/v1/trips/edit/bad-token/days/x/stops/order",
+        json={"order": [stop2, stop1]},
+    )
+    assert resp.status_code == 404
+
+
+async def test_invited_edit_validation(client, auth_user):
+    """只读 share_token 不能编辑（404 不泄露区分）；无效令牌 404；跨行程站点 404。"""
+    _, headers = auth_user
+    trip_id, edit_token, _, stop1 = await _make_edit_trip(client, headers)
+
+    # 用只读 share_token 调编辑接口 → 404（edit_token 列查不到，不泄露 token 有效）
+    share_resp = await client.post(f"/api/v1/trips/{trip_id}/share", headers=headers)
+    share_token = share_resp.json()["share_token"]
+    resp = await client.patch(f"/api/v1/trips/edit/{share_token}/stops/{stop1}", json={"checked": True})
+    assert resp.status_code == 404
+
+    # 无效 edit_token → 404
+    resp = await client.patch("/api/v1/trips/edit/bad-token/stops/whatever", json={"checked": True})
+    assert resp.status_code == 404
+
+    # 跨行程站点：B 用户的行程站点不能用 A 的 edit_token 改
+    from datetime import date
+
+    resp_b = await client.post("/api/v1/trips", json={
+        "title": "B 的行程", "destination": "北京",
+        "start_date": date.today().isoformat(), "end_date": date.today().isoformat(),
+    }, headers=headers)
+    trip_b = resp_b.json()["id"]
+    resp_day = await client.post(f"/api/v1/trips/{trip_b}/days", json={"day_number": 1}, headers=headers)
+    day_b = resp_day.json()["id"]
+    resp_stop = await client.post(f"/api/v1/trips/days/{day_b}/stops", json={"name": "故宫"}, headers=headers)
+    stop_b = resp_stop.json()["id"]
+
+    resp = await client.patch(f"/api/v1/trips/edit/{edit_token}/stops/{stop_b}", json={"checked": True})
+    assert resp.status_code == 404
+
+    # 受邀者不能改 owner 才有的字段（estimated_cost 不在白名单 → pydantic 忽略未声明字段）
+    resp = await client.patch(f"/api/v1/trips/edit/{edit_token}/stops/{stop1}", json={"estimated_cost": 999})
+    assert resp.status_code == 200
+    assert resp.json()["estimated_cost"] == 0.0  # 保持原值，未被改成 999

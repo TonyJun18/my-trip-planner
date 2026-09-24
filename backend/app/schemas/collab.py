@@ -1,4 +1,4 @@
-"""分享页协作 Schemas：评论 / 站点投票（免登录，凭 share_token）。"""
+"""分享页协作 Schemas：评论 / 站点投票 / 受邀编辑（免登录，凭令牌）。"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -44,3 +44,23 @@ class VoteOut(BaseModel):
     up: int
     down: int
     my_value: int = Field(ge=-1, le=1)
+
+
+class InvitedStopUpdate(BaseModel):
+    """受邀编辑：站点受限字段更新（不经 AI 修订，直接写库）。
+
+    只允许协作者改「轻量协作字段」：备注/描述/名称/勾选。
+    坐标、花费、时长等结构化规划数据不可由受邀者改动（保持规划层权威）。
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    checked: bool | None = None
+
+
+class SharedEditOut(BaseModel):
+    """受邀编辑状态：edit_token 是否存在 + 完整分享 URL。"""
+
+    trip_id: str
+    edit_token: str
+    edit_url: str

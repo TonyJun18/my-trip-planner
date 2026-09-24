@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Date,
     DateTime,
     Float,
@@ -46,6 +47,13 @@ class Trip(Base):
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
     share_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     """只读分享令牌：非空表示行程已生成分享链接，持令牌可免登录只读访问。"""
+    edit_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    """受邀编辑令牌（高级权限）：非空表示行程已开放「受邀编辑权」。
+
+    - 与 share_token 分离（特权分离）：分享链接默认只读，只有 owner 显式开放编辑
+      后才生成 edit_token；受邀者凭 edit_token 可读 + 受限编辑（站点备注/勾选/顺序）。
+    - owner 可随时清空（收回），不影响只读分享。
+    """
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -88,6 +96,8 @@ class Stop(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     estimated_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     estimated_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    checked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    """受邀编辑时的协作勾选状态（如「已确认要去 / 已完成」），owner 与受邀者共享。"""
     # 供地图/导出使用的可选元数据
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 

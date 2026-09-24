@@ -70,6 +70,15 @@ export const reviseTrip = (tripId, data) => http.post(`/trips/${tripId}/revise`,
 export const createShare = (tripId) => http.post(`/trips/${tripId}/share`).then((r) => r.data)
 export const getSharedTrip = (token) => http.get(`/trips/share/${token}`).then((r) => r.data)
 
+// ── 受邀编辑（edit_token：owner 开放/收回编辑权，受邀者免登录受限编辑） ──
+export const createShareEdit = (tripId) => http.post(`/trips/${tripId}/share/edit`).then((r) => r.data)
+export const revokeShareEdit = (tripId) => http.delete(`/trips/${tripId}/share/edit`).then((r) => r.data)
+export const getEditableTrip = (token) => http.get(`/trips/edit/${token}`).then((r) => r.data)
+export const updateInvitedStop = (token, stopId, data) =>
+  http.patch(`/trips/edit/${token}/stops/${stopId}`, data).then((r) => r.data)
+export const reorderInvitedStops = (token, dayId, order) =>
+  http.put(`/trips/edit/${token}/days/${dayId}/stops/order`, { order }).then((r) => r.data)
+
 // ── 分享页协作（评论 / 站点投票，免登录，凭 share_token） ──
 export const getSharedTripComments = (token) => http.get(`/trips/share/${token}/comments`).then((r) => r.data)
 export const postSharedTripComment = (token, data) => http.post(`/trips/share/${token}/comments`, data).then((r) => r.data)

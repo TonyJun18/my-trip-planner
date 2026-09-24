@@ -28,6 +28,7 @@ class StopOut(StopIn):
     model_config = ConfigDict(from_attributes=True)
     id: str
     order_index: int
+    checked: bool = False
     details: dict | None = None
 
 
@@ -99,6 +100,7 @@ class TripOut(BaseModel):
     budget: float | None
     status: str
     share_token: str | None = None
+    edit_token: str | None = None
     created_at: datetime
     updated_at: datetime
     days: list[DayOut] = []

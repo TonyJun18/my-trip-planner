@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import * as api from '@/api'
 import TripMap from '@/components/TripMap.vue'
 
@@ -8,6 +9,13 @@ const route = useRoute()
 const loading = ref(false)
 const error = ref('')
 const trip = ref(null)
+
+// ── 受邀编辑模式：URL 带 ?edit=1（owner 生成的 edit_url）→ 用 edit_token 访问 ──
+const editMode = computed(() => route.query.edit === '1')
+// 行内编辑缓冲：stop_id -> { name, description }
+const editingStop = ref(null)
+const editBuf = ref({ name: '', description: '' })
+const savingStop = ref(false)
 
 // ── 分享页协作：评论 ──
 const comments = ref([])
@@ -63,10 +71,12 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    trip.value = await api.getSharedTrip(route.params.token)
+    trip.value = editMode.value
+      ? await api.getEditableTrip(route.params.token)
+      : await api.getSharedTrip(route.params.token)
     await Promise.all([loadComments(), loadVotes()])
   } catch (e) {
-    error.value = '分享链接无效或已失效'
+    error.value = editMode.value ? '协作编辑链接无效或已失效' : '分享链接无效或已失效'
   } finally {
     loading.value = false
   }
@@ -131,15 +141,69 @@ function myVote(stopId) {
   return votes.value?.[stopId]?.my_value || 0
 }
 
+// ── 受邀编辑（editMode）：勾选 / 行内改名备注 / 上移下移顺序 ──
+async function toggleChecked(stop) {
+  try {
+    const updated = await api.updateInvitedStop(route.params.token, stop.id, { checked: !stop.checked })
+    stop.checked = updated.checked
+  } catch (e) {
+    // 拦截器已 toast（如链接已收回）
+  }
+}
+function startEditStop(stop) {
+  editingStop.value = stop.id
+  editBuf.value = { name: stop.name || '', description: stop.description || '' }
+}
+function cancelEditStop() {
+  editingStop.value = null
+  editBuf.value = { name: '', description: '' }
+}
+async function saveEditStop(stop) {
+  const name = (editBuf.value.name || '').trim()
+  if (!name) {
+    ElMessage.warning('名称不能为空')
+    return
+  }
+  savingStop.value = true
+  try {
+    const updated = await api.updateInvitedStop(route.params.token, stop.id, {
+      name,
+      description: (editBuf.value.description || '').trim() || null,
+    })
+    stop.name = updated.name
+    stop.description = updated.description
+    editingStop.value = null
+  } catch (e) {
+    // 拦截器已 toast
+  } finally {
+    savingStop.value = false
+  }
+}
+async function moveStop(day, stop, dir) {
+  const stops = day.stops
+  const idx = stops.findIndex((s) => s.id === stop.id)
+  const target = idx + dir
+  if (idx < 0 || target < 0 || target >= stops.length) return
+  const order = stops.map((s) => s.id)
+  ;[order[idx], order[target]] = [order[target], order[idx]]
+  try {
+    // 用服务端返回的新顺序更新本地（避免整页重载闪烁）
+    day.stops = await api.reorderInvitedStops(route.params.token, day.id, order)
+  } catch (e) {
+    // 拦截器已 toast（如链接已收回）
+  }
+}
+
 onMounted(load)
 </script>
 
 <template>
   <div v-loading="loading" class="share-page">
-    <!-- 只读提示条 -->
-    <div class="share-banner">
-      <el-icon style="margin-right: 6px"><View /></el-icon>
-      这是分享的只读行程 · 无法编辑
+    <!-- 提示条：只读 or 受邀编辑 -->
+    <div class="share-banner" :class="{ edit: editMode }">
+      <el-icon style="margin-right: 6px"><component :is="editMode ? 'EditPen' : 'View'" /></el-icon>
+      <span v-if="!editMode">这是分享的只读行程 · 无法编辑</span>
+      <span v-else>受邀编辑模式 · 你的修改会同步给行程 owner（名称 / 备注 / 勾选 / 顺序）</span>
     </div>
 
     <div v-if="error" class="share-error">
@@ -226,14 +290,26 @@ onMounted(load)
 
         <!-- 站点时间轴 -->
         <div class="stops-list" v-if="day.stops.length">
-          <div v-for="(stop, idx) in day.stops" :key="stop.id" class="stop-item">
+          <div v-for="(stop, idx) in day.stops" :key="stop.id" class="stop-item" :class="{ checked: stop.checked }">
             <div class="stop-rail">
               <span class="stop-index" :style="{ background: typeColor[stop.stop_type] || 'var(--brand)' }">{{ idx + 1 }}</span>
               <span class="rail-line" v-if="idx < day.stops.length - 1" />
             </div>
             <div class="stop-body">
               <div class="stop-head">
-                <span class="stop-name">{{ stop.name }}</span>
+                <span class="stop-name">
+                  <!-- 受邀编辑：勾选 + 行内编辑名称 -->
+                  <el-checkbox
+                    v-if="editMode"
+                    :model-value="!!stop.checked"
+                    @change="toggleChecked(stop)"
+                    style="margin-right: 6px"
+                  />
+                  <template v-if="editMode && editingStop === stop.id">
+                    <el-input v-model="editBuf.name" size="small" maxlength="200" class="inline-edit-name" />
+                  </template>
+                  <template v-else>{{ stop.name }}</template>
+                </span>
                 <el-tag size="small" round :style="{ color: typeColor[stop.stop_type] || 'var(--brand)', background: (typeColor[stop.stop_type] || 'var(--brand)') + '1a', border: 'none' }">
                   {{ typeEmoji[stop.stop_type] }} {{ typeLabel[stop.stop_type] || stop.stop_type }}
                 </el-tag>
@@ -241,7 +317,7 @@ onMounted(load)
               <div class="stop-meta">
                 <span v-if="stop.estimated_cost != null"><el-icon><Wallet /></el-icon>¥{{ stop.estimated_cost }}</span>
                 <span v-if="stop.estimated_duration_minutes"><el-icon><Clock /></el-icon>{{ stop.estimated_duration_minutes }} 分钟</span>
-                <span class="vote-group">
+                <span v-if="!editMode" class="vote-group">
                   <button
                     class="vote-btn"
                     :class="{ active: myVote(stop.id) === 1 }"
@@ -257,8 +333,30 @@ onMounted(load)
                     title="不想去 👎"
                   >👎 {{ voteCount(stop.id, 'down') }}</button>
                 </span>
+                <!-- 受邀编辑：行内编辑 + 上移下移 -->
+                <span v-else class="edit-group">
+                  <template v-if="editingStop === stop.id">
+                    <el-button size="small" type="primary" text :loading="savingStop" @click="saveEditStop(stop)">保存</el-button>
+                    <el-button size="small" text @click="cancelEditStop">取消</el-button>
+                  </template>
+                  <template v-else>
+                    <el-button size="small" text @click="startEditStop(stop)">✏️ 改名/备注</el-button>
+                  </template>
+                  <el-button size="small" text :disabled="idx === 0" @click="moveStop(day, stop, -1)">↑</el-button>
+                  <el-button size="small" text :disabled="idx >= day.stops.length - 1" @click="moveStop(day, stop, 1)">↓</el-button>
+                </span>
               </div>
-              <div v-if="stop.description" class="stop-desc">{{ stop.description }}</div>
+              <!-- 受邀编辑：行内编辑备注文本域 -->
+              <div v-if="editMode && editingStop === stop.id" class="stop-desc">
+                <el-input
+                  v-model="editBuf.description"
+                  type="textarea"
+                  :rows="2"
+                  maxlength="2000"
+                  placeholder="备注（可选）"
+                />
+              </div>
+              <div v-else-if="stop.description" class="stop-desc">{{ stop.description }}</div>
             </div>
           </div>
         </div>
@@ -318,6 +416,16 @@ onMounted(load)
   padding: 10px 16px; margin-bottom: 18px;
   font-size: 13px; color: var(--ink-2);
 }
+.share-banner.edit {
+  background: #fff7e6;
+  border-color: #f5c97b;
+  color: #8a5a00;
+}
+/* 受邀编辑：勾选后的站点置灰 */
+.stop-item.checked .stop-body { opacity: 0.62; }
+.stop-item.checked .stop-name { text-decoration: line-through; }
+.inline-edit-name { width: 220px; display: inline-flex; vertical-align: middle; }
+.edit-group { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
 
 .share-error { padding: 40px 0; }
 .share-error-hint { color: var(--faint); font-size: 13px; }

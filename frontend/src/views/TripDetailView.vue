@@ -238,6 +238,43 @@ async function doShare() {
   }
 }
 
+// ── 受邀编辑权（owner 开放/收回；与只读分享分离） ──────────
+const editSharing = ref(false)
+const editRevoking = ref(false)
+async function doShareEdit() {
+  editSharing.value = true
+  try {
+    const r = await api.createShareEdit(trip.value.id)
+    const url = r.edit_url
+    try {
+      await navigator.clipboard.writeText(url)
+      ElMessage.success('受邀编辑链接已复制，持链接者可直接改行程（可随时收回）')
+    } catch {
+      ElMessage.success(`受邀编辑链接：${url}`)
+    }
+    await load()
+  } catch (e) {
+    ElMessage.error('开放受邀编辑失败')
+  } finally {
+    editSharing.value = false
+  }
+}
+async function doRevokeShareEdit() {
+  try {
+    await ElMessageBox.confirm('收回后，已发出的受邀编辑链接立即失效（只读分享不受影响）。确认收回？', '收回受邀编辑权', { type: 'warning' })
+  } catch { return }
+  editRevoking.value = true
+  try {
+    await api.revokeShareEdit(trip.value.id)
+    ElMessage.success('已收回受邀编辑权')
+    await load()
+  } catch (e) {
+    ElMessage.error('收回失败')
+  } finally {
+    editRevoking.value = false
+  }
+}
+
 // ── 批量生成日程（按日期范围） ──────────────
 const genDaysVisible = ref(false)
 const genRange = ref([])
@@ -357,6 +394,24 @@ onMounted(load)
       <div class="topbar-actions">
         <el-button type="success" plain :loading="sharing" @click="doShare">
           <el-icon style="margin-right: 4px"><Share /></el-icon>分享行程
+        </el-button>
+        <el-button
+          v-if="!trip?.edit_token"
+          type="warning"
+          plain
+          :loading="editSharing"
+          @click="doShareEdit"
+        >
+          <el-icon style="margin-right: 4px"><EditPen /></el-icon>开放受邀编辑
+        </el-button>
+        <el-button
+          v-else
+          type="warning"
+          plain
+          :loading="editRevoking"
+          @click="doRevokeShareEdit"
+        >
+          <el-icon style="margin-right: 4px"><Lock /></el-icon>收回受邀编辑
         </el-button>
         <el-button @click="openEditTrip">编辑基本信息</el-button>
         <el-button type="danger" plain @click="removeTrip">删除行程</el-button>
