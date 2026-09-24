@@ -35,7 +35,8 @@ function diffText(a) {
   const day = a.day_number ? `Day${a.day_number} · ` : ''
   const target = a.target_name || ''
   if (a.op === 'reorder') {
-    return `${day}调整站点顺序（移至第 ${(a.index ?? 0) + 1} 位）`
+    // 后端 ReviseAction.index 是 1-based（移到第 N 位），直接显示即可
+    return `${day}调整站点顺序（移至第 ${a.index ?? '?'} 位）`
   }
   const fieldKeys = Object.keys(a.fields || {})
   const fieldText = fieldKeys.length ? `（${fieldKeys.join('、')}）` : ''

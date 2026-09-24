@@ -16,13 +16,6 @@ const taskStatus = ref('pending')
 const errorMsg = ref('')
 let pollTimer = null
 
-const providers = [
-  { label: '自动', value: 'auto' },
-  { label: 'DeepSeek', value: 'deepseek' },
-  { label: 'OpenAI', value: 'openai' },
-  { label: 'Ollama 本地', value: 'ollama' },
-]
-
 const form = reactive({
   destination: '',
   start_date: '',
@@ -70,7 +63,14 @@ function answeredQuestions() {
 }
 
 function defaultDates() {
-  const fmt = (d) => d.toISOString().slice(0, 10)
+  // 用本地日期格式化（toISOString 是 UTC 日期：UTC+8 晚间 20:00 后
+  // 本地已过午夜但 UTC 未过，默认出发日期会变成「昨天」）
+  const fmt = (d) => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
   const start = new Date()
   const end = new Date()
   end.setDate(end.getDate() + 2)
@@ -216,6 +216,7 @@ function goDetail() {
         :rules="rules"
         label-position="top"
         class="plan-form"
+        @submit.prevent
       >
         <!-- 目的地 -->
         <div class="field">
@@ -232,7 +233,7 @@ function goDetail() {
             </el-input>
             <div class="hot-cities">
               <button v-for="c in ['杭州', '成都', '北京', '上海', '大理', '厦门']" :key="c"
-                      class="chip" :class="{ picked: form.destination === c }" @click="form.destination = c">
+                      type="button" class="chip" :class="{ picked: form.destination === c }" @click="form.destination = c">
                 {{ c }}
               </button>
             </div>
@@ -271,7 +272,7 @@ function goDetail() {
         <!-- 预算快捷档 -->
         <div class="budget-presets">
           <button v-for="p in budgetPresets" :key="p.value"
-                  class="chip" :class="{ picked: form.budget === p.value }"
+                  type="button" class="chip" :class="{ picked: form.budget === p.value }"
                   @click="pickBudget(p.value)">{{ p.label }} ¥{{ p.value }}</button>
         </div>
 
@@ -280,7 +281,7 @@ function goDetail() {
           <label class="field-label">旅行偏好（可多选）</label>
           <div class="pref-list">
             <button v-for="p in preferenceOptions" :key="p"
-                    class="chip pref" :class="{ picked: form.preferences.includes(p) }"
+                    type="button" class="chip pref" :class="{ picked: form.preferences.includes(p) }"
                     @click="togglePref(p)">
               <span class="pref-check" v-if="form.preferences.includes(p)">✓</span>
               {{ p }}
@@ -299,7 +300,7 @@ function goDetail() {
               <div class="qa-q">{{ q.question }}</div>
               <div v-if="q.options.length" class="qa-opts">
                 <button v-for="opt in q.options" :key="opt"
-                        class="chip" :class="{ picked: q.answer === opt }"
+                        type="button" class="chip" :class="{ picked: q.answer === opt }"
                         @click="pickQuestion(q, opt)">
                   <span v-if="q.answer === opt" style="margin-right: 4px">✓</span>{{ opt }}
                 </button>
@@ -315,17 +316,6 @@ function goDetail() {
             </div>
           </div>
         </div>
-
-        <!-- 模型提供方（高级选项，折叠） -->
-        <el-collapse class="adv-collapse">
-          <el-collapse-item title="高级选项：模型提供方">
-            <el-radio-group v-model="form.provider">
-              <el-radio-button v-for="p in providers" :key="p.value" :value="p.value">
-                {{ p.label }}
-              </el-radio-button>
-            </el-radio-group>
-          </el-collapse-item>
-        </el-collapse>
 
         <button class="btn-primary big" :disabled="submitting" @click.prevent="submit">
           <el-icon style="margin-right: 8px"><MagicStick /></el-icon>开始规划
@@ -535,8 +525,6 @@ function goDetail() {
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .budget-presets { display: flex; flex-wrap: wrap; gap: 8px; margin: -8px 0 22px; }
 .pref-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.adv-collapse { margin-bottom: 20px; border: none; }
-.adv-collapse :deep(.el-collapse-item__header) { border: none; font-size: 13px; color: var(--muted); }
 
 /* ── 主动提问（需求澄清） ── */
 .qa-field { background: var(--fill); border-radius: var(--radius-lg); padding: 16px 18px; }
