@@ -8,10 +8,10 @@
 
 - [ ] competitive-analysis: 竞品分析（AI 旅行规划产品 3-5 个），输出差距→行动项（首夜必做，输出 docs/nightly/competitive-analysis/<date>.md）
 - [ ] oss-license: 补 LICENSE（MIT）+ 开源说明段落加入 README（验收：LICENSE 文件存在，README 有 LICENSE 小节）
-- [ ] oss-gitignore: 审查 .gitignore（backend/.gitignore、frontend/.gitignore、根目录），确保 .env、.venv、dist、__pycache__ 不被提交（验收：git status 干净度 + .gitignore 覆盖）
-- [ ] content-readme: README 增加「夜间开发流水线」说明 + 已知局限表格同步（验收：README 内容与仓库实际一致）
-- [ ] content-article-publish-list: 为 docs/articles/ 3 篇文章各写一份「发布清单」（标题变体 3 个 / 平台适配要点 / 首图建议），不自动发布（验收：docs/nightly/publish-list.md 存在）
-- [ ] task-hotel-budget: 补酒店价格真实度——评估并实现「基于 POI 类目 + 城市基准价的估算模型」，让预算 hotel 项不再是空壳（验收：compute_budget 输出 hotel 有非 0 估算 + 测试覆盖）
+- [x] oss-gitignore: 审查 .gitignore（backend/.gitignore、frontend/.gitignore、根目录），确保 .env、.venv、dist、__pycache__ 不被提交（验收：git status 干净度 + .gitignore 覆盖）
+- [x] content-readme: README 增加「夜间开发流水线」说明 + 已知局限表格同步（验收：README 内容与仓库实际一致）
+- [x] content-article-publish-list: 为 docs/articles/ 3 篇文章各写一份「发布清单」（标题变体 3 个 / 平台适配要点 / 首图建议），不自动发布（验收：docs/nightly/publish-list.md 存在）
+- [x] task-hotel-budget: 补酒店价格真实度——评估并实现「基于 POI 类目 + 城市基准价的估算模型」，让预算 hotel 项不再是空壳（验收：compute_budget 输出 hotel 有非 0 估算 + 测试覆盖）
 - [ ] task-revise-ux: 前端「让 AI 调整行程」对话交互打磨（加载态、错误态、diff 预览）（验收：build 通过 + 交互状态完整）
 - [ ] task-deploy-pack: Docker 化部署包（backend Dockerfile + docker-compose.yml + 部署文档），不实际部署（验收：docker compose config 通过）
 
@@ -51,3 +51,19 @@
 - [x] task-plan-b: 行程备选方案 Plan B——规划同时产出 1 个备选骨架（节奏/取舍/预算档不同），详情页主案/备案对比切换（马蜂窝 AI 路书「备选方案」用户高频需求；roadtrip-mode 已落地，评估条件满足）（验收：规划响应含 plan_b + 前端对比切换 + 测试覆盖）
 - [x] content-domestic-planning-layer: 文章《国内 OTA 也在做 AI 行程了——独立规划层为什么还能活》（携程一站式规划到预订/去哪儿小红书导入/马蜂窝路书备选方案/飞猪多智能体为引，承接 07 文做姊妹篇，讲国内语境下规划层与预订层的边界与生存策略）（验收：docs/articles/08-*.md 存在且内容完整，发布清单补卡片）
 - [x] content-quality-fallback: README 增加「质量与兜底」小节（降级链 + 质检 trace + 已知局限表格同步；OTA 人工定制师/指路人的反向思考——我们的兜底是工程化的降级链与可回溯 trace）（验收：README 内容与仓库实际一致；兼收 09-24 content-readme 收尾）
+
+## 用户白天下达任务（2026-09-25 追加）
+
+> 本轮为「完善方案」评审确认后的执行项，聚焦需求文档「已知局限」表与竞品 backlog 中记录的真实差距。
+
+- [ ] task-driving-real-routes: 自驾路径真实化——DrivingGate 从「球面距离估算」升级为「高德驾车路径 API 真实距离/时长」（局限表原文：自驾基于球面距离估算，与实际道路有偏差）；校验超限单段（>120km/150min，或单日 >300km）自动附「中途经停建议」（竞品 TripPlanner AI「经停优化」差异项）；高德未配置/限流/超时 → 指数退避重试后自动降级回球面估算（现状兜底，不阻断规划）（验收：DrivingGate 输出带 source=amap|haversine 标注 + 超长单段给出经停建议 + mock 测试覆盖成功/熔断/降级路径 + 全套件回归通过）
+- [ ] task-share-token-lifecycle: 分享令牌生命周期——share_token 支持过期（TTL：1天/7天/30天/永久）、owner 吊销、免登录访问审计（时间/IP/UA，按行程聚合，owner 可查）；expired/revoked 即时返回 410/403，旧 token（无过期字段）按永久兼容；附带「收藏灵感夹」——登录用户可收藏他人分享的行程，行程列表页展示（验收：过期/吊销/审计 API + 旧数据兼容 + 收藏 CRUD + 前端分享设置弹窗与收藏按钮 + i18n + 测试覆盖，全套件回归通过）
+- [ ] task-food-agent: （候选方案 3，工程量较大，单独评估）餐饮搜索 Agent 化——新增 FoodAgent（菜品/口味偏好 → 高德美食 POI → 结构化推荐），Agent 主路径 + 现有代码补位作兜底；Critic 从「打分手」升级为「协作者」——不过审时产出修正 diff（复用 revise diff 执行器）精确修改而非整段重生成（验收：FoodAgent 独立 schema + 代码兜底降级链 + Critic diff 精确修订 + 测试覆盖；暂缓，待方案 1+2 合并稳定后评估）
+
+## 2026-09-26 竞品分析追加（价格真实度 + 实时协作 + 输入范式，来自 docs/nightly/competitive-analysis/2026-09-26.md）
+
+- [ ] task-budget-split: 预算分摊/多币种——行程级预算视图支持「人均分摊」（按成员/按天/按类别），行程元数据携带币种，预算项按成员标记（AiGo 多币种+分摊、Wanderlog 预算协作为海外多人出行刚需；接 share 协作链路）（验收：分享页可看人均预算 + 测试覆盖；排在 task-share-token-lifecycle 之后）
+- [ ] task-screenshot-import: 截图导入行程——上传攻略截图 → OCR 提取站点候选（复用 task-note-import 的结构化提取与恶意注入处理管线）→ 勾选并入行程（AiGo screenshot-to-itinerary 为笔记导入姊妹范式；去哪儿已验证小红书图片/笔记导入国内价值）（验收：截图可生成站点候选 + 敌意输入仍按数据对待 + 测试覆盖）
+- [ ] content-budget-transparency: 文章《预算是 AI 行程工具最不诚实的部分》——iPlan.ai 预算偏差 20-30%/Wonderplan 一般目的地数据/Wandercrafted 预算放付费墙为引，讲「估算透明 + 修订联动」哲学（标注口径的诚实估算 + 可修正），与 07/08 文构成价格维度姊妹篇（验收：docs/articles/09-*.md 存在且内容完整，代码引用与仓库实际一致，发布清单补卡片）
+- [ ] task-pwa-offline: PWA 离线——前端 Service Worker，缓存行程详情/api 响应，弱网时展示缓存行程 + 「离线模式」标识（AiGo PWA 离线为卖点，TripIt/Wanderlog 也有；行程是结构化 JSON 天然可离线缓存）（验收：build 通过 + SW 注册 + 行程详情可离线打开；低优先级）
+- 注（task-hotel-budget 补充验收口径）：落地时增加「估算口径标注」（source + 基准说明 + 置信度），预算视图展示「估算 vs 实际可验证」——对手 iPlan.ai 偏差 20-30% 翻车现场是「诚实估算」差异化背书
