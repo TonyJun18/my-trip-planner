@@ -8,8 +8,30 @@ from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.core.exceptions import NotFoundError
 from app.models import User
-from app.schemas import DayIn, DayOut, ReviseOut, ReviseRequest, ShareOut, SharedTripOut, StopIn, StopOrderIn, StopOut, StopUpdate, TripCreate, TripListOut, TripOut, TripUpdate
-from app.schemas.collab import CommentIn, CommentOut, InvitedStopUpdate, SharedEditOut, VoteIn, VoteOut
+from app.schemas import (
+    DayIn,
+    DayOut,
+    ReviseOut,
+    ReviseRequest,
+    SharedTripOut,
+    ShareOut,
+    StopIn,
+    StopOrderIn,
+    StopOut,
+    StopUpdate,
+    TripCreate,
+    TripListOut,
+    TripOut,
+    TripUpdate,
+)
+from app.schemas.collab import (
+    CommentIn,
+    CommentOut,
+    InvitedStopUpdate,
+    SharedEditOut,
+    VoteIn,
+    VoteOut,
+)
 from app.services import budget_service, collab_service, trip_service
 
 router = APIRouter()

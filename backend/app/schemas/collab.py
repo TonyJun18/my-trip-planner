@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -32,9 +33,9 @@ class CommentOut(BaseModel):
 
 
 class VoteIn(BaseModel):
-    """站点投票：方向 1=👍 / -1=👎。"""
+    """站点投票：方向 1=👍 / -1=👎（Literal 排除 0，避免被当有效票）。"""
 
-    value: int = Field(ge=-1, le=1, description="1=👍 / -1=👎")
+    value: Literal[-1, 1] = Field(description="1=👍 / -1=👎")
 
 
 class VoteOut(BaseModel):

@@ -30,7 +30,12 @@ class GoogleAuthError(UnauthorizedError):
     code = "google_auth_failed"
 
 
-def _google_credentials() -> tuple[str, str]:
+def _google_credentials() -> str:
+    """返回配置的 Google OAuth Client ID（校验已配置）。
+
+    统一返回 str，调用方直接使用完整 Client ID（此前错误声明为 tuple
+    导致 ``[0]`` 取到第一个字符，audience 校验必然失败）。
+    """
     client_id = settings.GOOGLE_CLIENT_ID
     if not client_id:
         raise GoogleAuthError("服务端未配置 GOOGLE_CLIENT_ID，请先在后端 .env 配置")
@@ -97,7 +102,7 @@ def _to_token_out(user: User) -> TokenOut:
 
 async def google_login(db: AsyncSession, id_token: str) -> TokenOut:
     """验证 Google ID Token 并完成登录/注册，返回项目 JWT。"""
-    client_id = _google_credentials()[0]
+    client_id = _google_credentials()
 
     try:
         from google.auth.transport import requests as google_requests

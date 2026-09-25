@@ -45,11 +45,25 @@ function renderMarkers(markers) {
     const t = m.stop_type || m.type || 'attraction'
     const icon = makeIcon(t, i + 1)
     const label = typeLabel[t] || t
-    const popup = L.popup().setContent(
-      `<b>${i + 1}. ${m.name}</b><br/><span style="color:#6a6a6a">${label}</span>` +
-        (m.description ? `<br/><small style="color:#929292">${m.description}</small>` : ''),
-    )
-    L.marker([m.lat, m.lng], { icon }).addTo(markerLayer).bindPopup(popup)
+    // 用 DOM API 构建 popup（textContent），杜绝 name/description 的 HTML 注入
+    // （数据可来自 LLM 输出或被受邀编辑者写入 → 存储型 XSS 面）
+    const popupEl = document.createElement('div')
+    const title = document.createElement('b')
+    title.textContent = `${i + 1}. ${m.name}`
+    popupEl.appendChild(title)
+    popupEl.appendChild(document.createElement('br'))
+    const typeEl = document.createElement('span')
+    typeEl.style.color = '#6a6a6a'
+    typeEl.textContent = label
+    popupEl.appendChild(typeEl)
+    if (m.description) {
+      popupEl.appendChild(document.createElement('br'))
+      const descEl = document.createElement('small')
+      descEl.style.color = '#929292'
+      descEl.textContent = m.description
+      popupEl.appendChild(descEl)
+    }
+    L.marker([m.lat, m.lng], { icon }).addTo(markerLayer).bindPopup(popupEl)
   })
 
   // 游览路线（按顺序连点成线）

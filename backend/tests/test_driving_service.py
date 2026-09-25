@@ -136,7 +136,6 @@ def test_plan_summary_rejected():
 
 # ── DrivingGate 编排集成（超距 → 修订 → 通过） ───────────────
 def _install_offline_tools(monkeypatch):
-    from app.agent import agents as agents_mod
     from app.agent import tools as tools_mod
 
     async def _fake_search(city, *, query=None, limit=8, want_type="attraction"):

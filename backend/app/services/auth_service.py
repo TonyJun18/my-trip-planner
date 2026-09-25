@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError, UnauthorizedError
@@ -76,7 +77,13 @@ async def register(db: AsyncSession, data: RegisterIn) -> TokenOut:
         password_hash=hash_password(data.password),
     )
     db.add(user)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # 并发注册竞态：先查后插的两步之间另一个请求已插入同 email/phone，
+        # 撞上唯一约束。回滚后统一转成 400（而非 500）。
+        await db.rollback()
+        raise AuthError("该邮箱或手机号已注册")
     await db.refresh(user)
 
     token = create_access_token(user.id)

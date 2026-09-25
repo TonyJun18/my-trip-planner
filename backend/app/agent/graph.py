@@ -1,5 +1,14 @@
 """LangGraph T-A-O（Thought-Action-Observation）Agent 状态图。
 
+⚠️ 定位说明（2026-09-24 代码审查 #6）：
+当前生产编排路径是 ``agents.py`` 的手写 asyncio（并行采集 + Planner 整合 +
+Critic 质检），**本文件是早期 LangGraph 原型，仓库内无任何调用方**。保留原因：
+- 作为「状态图编排」的参考实现，未来若 Agent 数量/状态增多可迁移到 LangGraph；
+- 技术栈文档仍宣称 LangGraph（历史发布文章）。
+
+不要同时维护两套实现——新增 Agent 逻辑请写到 ``agents.py``，本文件只在
+真正切换编排框架时更新（届时删除本注释并让 agents.py 走 StateGraph）。
+
 流程：
   plan_request -> [Thought -> Action(tool_calls) -> Observation(ToolMessage)] 循环
                 -> finalize（输出完整行程 JSON，经 Pydantic 强校验）

@@ -152,3 +152,22 @@ async def test_google_login_schema_validation(client, bad_token):
     """id_token 过短 → 422（schemas 层校验）。"""
     resp = await client.post("/api/v1/auth/google", json={"id_token": bad_token})
     assert resp.status_code == 422
+
+
+async def test_google_login_passes_full_client_id_as_audience(client, monkeypatch):
+    """audience 必须是完整 Client ID（回归：曾把 str 当 tuple 取 [0]，只传首字符）。"""
+    from google.oauth2 import id_token as google_id_token
+
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", _CLIENT_ID, raising=False)
+    captured: dict = {}
+
+    def _spy(token, req, audience, clock_skew_in_seconds=0):
+        captured["audience"] = audience
+        return _make_payload()
+
+    monkeypatch.setattr(google_id_token, "verify_oauth2_token", _spy, raising=False)
+
+    resp = await client.post("/api/v1/auth/google", json={"id_token": _FAKE_TOKEN})
+    assert resp.status_code == 200, resp.text
+    # 完整 Client ID，而不是其首字符（如 "t"）
+    assert captured.get("audience") == _CLIENT_ID

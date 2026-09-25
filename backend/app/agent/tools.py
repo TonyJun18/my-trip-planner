@@ -163,6 +163,9 @@ async def geocode(name: str, *, city: str | None = None) -> dict[str, Any] | Non
 
     async with httpx.AsyncClient(timeout=_GEO_TIMEOUT, headers=headers) as client:
         for q in queries:
+            # Nominatim 使用条款：最多 1 请求/秒。统一在每次请求前限速（含成功路径），
+            # 而非只在失败后 sleep——并发 geocode 时也要遵守限速，避免封 IP。
+            await asyncio.sleep(1.1)
             try:
                 resp = await client.get(
                     _NOMINATIM_ENDPOINT,
@@ -184,8 +187,6 @@ async def geocode(name: str, *, city: str | None = None) -> dict[str, Any] | Non
                     }
                 except (KeyError, ValueError):
                     continue
-            # Nominatim 要求至少 1 秒间隔
-            await asyncio.sleep(1.1)
     return None
 
 
@@ -280,8 +281,9 @@ async def _search_pois_tavily(
     search_result = await tavily_search(search_query, max_results=limit)
 
     raw_items = search_result.get("results", [])
-    # 并发地理编码，限制 6 并发，避免打爆 Nominatim
-    sem = asyncio.Semaphore(6)
+    # Nominatim 限速 1 req/s：串行地理编码（sem=1 + geocode 内请求前 sleep），
+    # 避免并发打爆 Nominatim 被封 IP。
+    sem = asyncio.Semaphore(1)
 
     async def _bounded(item: dict[str, Any]) -> dict[str, Any] | None:
         async with sem:

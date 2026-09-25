@@ -18,7 +18,6 @@ from sqlalchemy import select
 from app.agent import agents
 from app.agent.agents import _profile_text
 from app.models import PlanTask
-from app.schemas import PlanRequest
 from app.schemas.profile import ProfileIn
 
 

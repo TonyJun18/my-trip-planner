@@ -198,6 +198,20 @@ def available_provider_chain(preferred: str | None = None) -> list[BaseLLMProvid
     return chain
 
 
+def _fallback_chain_for(provider: BaseLLMProvider) -> list[BaseLLMProvider] | None:
+    """构建主 provider 之外的兜底链（尊重 ``ENABLE_PROVIDER_FALLBACK``）。
+
+    - 关闭 fallback → 返回 None（调用方维持单 provider 行为）
+    - 开启 → 以主 provider 为首构建可用链，去掉与主 provider 相同者（避免重复尝试）
+    - 构建失败（无可用 provider）→ 返回 None，不影响主调用
+    """
+    try:
+        chain = available_provider_chain(provider.name)
+    except LLMProviderError:
+        return None
+    return [p for p in chain if p.name != provider.name]
+
+
 async def invoke_with_resilience(
     provider: BaseLLMProvider,
     messages: list[Any],
@@ -214,16 +228,25 @@ async def invoke_with_resilience(
     - 成功 → 记录成功并返回
     - ``tools`` 非空时先 bind_tools（Agent 场景必须传入，否则 LLM 不知道可用工具）
 
+    兜底链默认启用：未显式传 ``providers`` 且 ``ENABLE_PROVIDER_FALLBACK`` 为真时，
+    主 provider 失败耗尽后自动按 ``available_provider_chain`` 探测可用 provider 作为兜底
+    （README 宣称的“主 provider 失败后自动切换”在此实现；主 provider 成功时零额外开销）。
+    调用方也可显式传 ``providers`` 覆盖。
+
     返回的 AIMessage 附 ``observation`` 元数据（response_metadata）：
     ``{"latency_ms", "attempts", "provider_chain", "token_usage", "cost_usd"}``，
     供调用方做结构化观测（每次 Agent 调用一条日志）。
     """
     chain = providers or [provider]
+    # True 表示不再需要（或不该）构建兜底链；False 表示主链耗尽后惰性构建一次
+    fallback_ready = providers is not None or not settings.ENABLE_PROVIDER_FALLBACK
     last_error: Exception | None = None
     used_chain: list[str] = []
     total_attempts = 0
 
-    for idx, prov in enumerate(chain):
+    idx = 0
+    while idx < len(chain):
+        prov = chain[idx]
         used_chain.append(prov.name)
         if not _circuit_breaker.allow():
             raise LLMCircuitOpenError(
@@ -257,10 +280,23 @@ async def invoke_with_resilience(
                 await asyncio.sleep(delay)
 
         _circuit_breaker.record_failure()
-        # 该 provider 已彻底失败 → 换下一个兜底 provider（若有），否则抛出
-        if idx < len(chain) - 1:
-            logger.warning("LLM provider=%s 失败，切换到下一个: %s", prov.name, chain[idx + 1].name)
+        # 该 provider 已彻底失败 → 换下一个（显式链 / 惰性兜底）
+        idx += 1
+        if idx < len(chain):
+            logger.warning("LLM provider=%s 失败，切换到下一个: %s", prov.name, chain[idx].name)
             continue
+        if not fallback_ready:
+            fallback = _fallback_chain_for(provider) or []
+            fallback_ready = True  # 只自动构建一次，防止异常 -> 死循环
+            if fallback:
+                logger.warning(
+                    "LLM provider=%s 失败，启动兜底链: %s",
+                    prov.name,
+                    [p.name for p in fallback],
+                )
+                chain = fallback
+                idx = 0
+                continue
         break
 
     raise LLMProviderError(

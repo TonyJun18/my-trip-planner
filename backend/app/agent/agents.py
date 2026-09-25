@@ -32,11 +32,12 @@ import json
 import re
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool as lc_tool
 
 from app.agent import tools as agent_tools
 from app.agent.providers import get_provider, invoke_with_resilience
+from app.common.config import settings
 from app.core.logging import get_logger
 from app.schemas.plan import validate_critique, validate_plan
 from app.services.driving_service import check_plan_driving
@@ -304,11 +305,13 @@ async def attraction_agent(
     *,
     request: dict[str, Any] | None = None,
     provider: str = "auto",
+    max_iterations: int | None = None,
 ) -> dict[str, Any]:
     """偏好 → 关键词 → search_attractions → POI 列表。
 
     返回 {"status", "pois": [...]}；失败时 {"status": "failed", "error": ...}。
     request: 可选；传入完整规划请求，把其中的主动提问 Q&A 并入搜索上下文。
+    max_iterations: 单次执行允许的工具调用上限（默认 settings.AGENT_MAX_ITERATIONS）。
     """
 
     async def _node(state: dict[str, Any]) -> dict[str, Any]:
@@ -333,7 +336,8 @@ async def attraction_agent(
             if isinstance(parsed, list):
                 return {"messages": [response], "pois": parsed, "status": "completed"}
             return {"messages": [response], "status": "failed", "error": "Agent 未调用搜索工具"}
-        # 执行工具并回填 Observation
+        # 执行工具并回填 Observation（上限由 max_iterations 约束，防异常多调用）
+        tool_calls = tool_calls[: max_iterations if max_iterations is not None else settings.AGENT_MAX_ITERATIONS]
         tool_msgs = []
         for tc in tool_calls:
             fn = TOOL_MAP.get(tc.get("name") or "")
@@ -398,10 +402,12 @@ async def hotel_agent(
     *,
     request: dict[str, Any] | None = None,
     provider: str = "auto",
+    max_iterations: int | None = None,
 ) -> dict[str, Any]:
     """住宿需求 → 关键词 → search_hotels → 酒店 POI 列表。
 
     request: 可选；传入完整规划请求，把其中的主动提问 Q&A 并入搜索上下文。
+    max_iterations: 单次执行允许的工具调用上限（默认 settings.AGENT_MAX_ITERATIONS）。
     """
     accommodation = accommodation or []
 
@@ -426,6 +432,8 @@ async def hotel_agent(
             if isinstance(parsed, list):
                 return {"messages": [response], "pois": parsed, "status": "completed"}
             return {"messages": [response], "status": "failed", "error": "Agent 未调用搜索工具"}
+        # 执行工具并回填 Observation（上限由 max_iterations 约束，防异常多调用）
+        tool_calls = tool_calls[: max_iterations if max_iterations is not None else settings.AGENT_MAX_ITERATIONS]
         tool_msgs = []
         for tc in tool_calls:
             fn = TOOL_MAP.get(tc.get("name") or "")
@@ -614,7 +622,10 @@ async def critic_agent(
     last_error: str | None = None
     for _ in range(max_corrections + 1):
         try:
-            response = await invoke_with_resilience(prov, messages)
+            # 显式传 providers=[prov]：Critic 不参与自动兜底链。
+            # 质检是可选优化（失败降级放行、绝不阻断），若接入兜底，
+            # 主 provider 失败会切到兜底继续评审，改变「失败即降级」的契约。
+            response = await invoke_with_resilience(prov, messages, providers=[prov])
         except Exception as exc:  # noqa: BLE001 — LLM 调用失败也要降级，绝不阻断主流程
             logger.warning("Critic 调用失败，降级放行: %s", exc)
             return {"status": "degraded", "critique": _pass_critique("质检调用失败，按通过处理"), "corrections": corrections}
@@ -780,6 +791,7 @@ async def run_planning_agents(
     provider: str = "auto",
     max_corrections: int = 3,
     max_review_rounds: int = 2,
+    max_iterations: int | None = None,
 ) -> dict[str, Any]:
     """多 Agent 全流程：采集 → 整合 → 质检评审 → 自驾约束 → 输出 {plan, trace, status, error, agents}。
 
@@ -793,6 +805,9 @@ async def run_planning_agents(
     达最大评审轮 → 强制定稿但保留告警，并把 driving 报告注入 plan.driving
     （系统始终产出某种东西，从不因自驾检查而整体失败）。
 
+    ``max_iterations``：全局 Agent 迭代上限（默认取 settings.AGENT_MAX_ITERATIONS），
+    覆盖采集 agent 的工具调用次数与评审重生成轮数的合计，防止异常路径无限循环。
+
     trace 每步标注 agent 名，前端可展示“哪个专家在做什么”。
     """
     city = request.get("destination", "")
@@ -801,9 +816,11 @@ async def run_planning_agents(
     review_history: list[dict[str, Any]] = []  # 每次评审的报告（给 Planner 作为上下文）
 
     # 1) 三个采集 Agent 并行（request 传入后，主动提问 Q&A 会并入搜索上下文）
-    attraction_task = attraction_agent(city, prefs, request=request, provider=provider)
+    #    采集 agent 内部最多调用工具一次，无 LLM 迭代循环，但通过参数显式带上限。
+    agent_max_iter = max_iterations if max_iterations is not None else settings.AGENT_MAX_ITERATIONS
+    attraction_task = attraction_agent(city, prefs, request=request, provider=provider, max_iterations=agent_max_iter)
     weather_task = weather_agent(city)
-    hotel_task = hotel_agent(city, _accommodation_hints(request), request=request, provider=provider)
+    hotel_task = hotel_agent(city, _accommodation_hints(request), request=request, provider=provider, max_iterations=agent_max_iter)
 
     a_res, w_res, h_res = await asyncio.gather(attraction_task, weather_task, hotel_task)
 
@@ -852,7 +869,7 @@ async def run_planning_agents(
             "action": "integrate" if round_idx == 0 else f"revise (round {round_idx})",
             "observation": (
                 f"整合 {len(materials['attractions'])} 景点 / {len(materials['hotels'])} 酒店 / {len(foods)} 餐厅"
-                + (f"；按评审意见修订" if round_idx > 0 else "")
+                + ("；按评审意见修订" if round_idx > 0 else "")
             ),
             "status": planner.get("status"),
         })

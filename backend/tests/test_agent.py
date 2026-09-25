@@ -293,7 +293,6 @@ async def test_planner_agent_correction(monkeypatch):
 # ── TravelCriticAgent（Evaluator-Optimizer 评审循环） ─────────
 def _install_offline_tools(monkeypatch):
     """统一替换外部工具为离线假实现（含 food，避免真网络）。"""
-    from app.agent import agents as agents_mod
     from app.agent import tools as tools_mod
 
     async def _fake_search(city, *, query=None, limit=8, want_type="attraction"):

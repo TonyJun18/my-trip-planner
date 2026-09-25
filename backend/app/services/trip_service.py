@@ -11,9 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.core.exceptions import NotFoundError
 from app.models import Stop, Trip, TripDay, TripPlan
 from app.schemas import DayIn, StopIn, StopUpdate, TripCreate, TripUpdate
-
-# 统一 eager-load 关系，避免序列化时 async lazy load 报 MissingGreenlet
-_TRIP_LOADS = (selectinload(Trip.days).selectinload(TripDay.stops),)
+from app.services._common import TRIP_LOADS as _TRIP_LOADS
 
 
 def _owner_expr(owner: str | None):
@@ -138,19 +136,18 @@ async def delete_trip(db: AsyncSession, trip_id: str, *, owner: str | None = Non
 
 
 async def delete_day(db: AsyncSession, day_id: str, *, owner: str | None = None) -> None:
-    """删除一个日程（级联删除其下站点）。"""
-    day = await db.get(TripDay, day_id)
-    if day is None:
-        raise NotFoundError("日程不存在", code="day_not_found")
+    """删除一个日程（级联删除其下站点）。先校验所属行程归属，防越权删除。"""
+    day = await _load_day_for_owner(db, day_id, owner=owner)
     await db.delete(day)
     await db.flush()
 
 
 async def delete_stop(db: AsyncSession, stop_id: str, *, owner: str | None = None) -> None:
-    """删除一个站点。"""
+    """删除一个站点。先校验所属行程归属，防越权删除。"""
     stop = await db.get(Stop, stop_id)
     if stop is None:
         raise NotFoundError("站点不存在", code="stop_not_found")
+    await _load_day_for_owner(db, stop.day_id, owner=owner)
     await db.delete(stop)
     await db.flush()
 
@@ -189,7 +186,8 @@ async def _load_day_for_owner(db: AsyncSession, day_id: str, *, owner: str | Non
     day = await db.get(TripDay, day_id)
     if day is None:
         raise NotFoundError("日程不存在", code="day_not_found")
-    trip = await _load_trip(db, day.trip_id, owner=owner)
+    # 触发所属行程的 owner 校验；不匹配时 _load_trip 抛 NotFound
+    await _load_trip(db, day.trip_id, owner=owner)
     return day
 
 
@@ -232,12 +230,20 @@ async def reorder_stops(
 async def generate_days_for_range(
     db: AsyncSession, trip_id: str, start: date, end: date, *, note: str | None = None, owner: str | None = None
 ) -> list[TripDay]:
-    """按日期范围批量生成 Day（含边界检查）。"""
+    """按日期范围批量生成 Day（含边界检查）。
+
+    上限 31 天（与 PlanSchema 一致）：防止一次请求插入数年（1825+ 天）的
+    非法数据量；超限抛 ConflictError。
+    """
     trip = await _load_trip(db, trip_id, owner=owner)
     if end < start:
         from app.core.exceptions import ConflictError
 
         raise ConflictError("结束日期不能早于开始日期")
+    if (end - start).days + 1 > 31:
+        from app.core.exceptions import ConflictError
+
+        raise ConflictError("日期范围不能超过 31 天")
     existing = {d.day_number for d in trip.days}
     created: list[TripDay] = []
     for i, d in enumerate(_daterange(start, end), start=1):

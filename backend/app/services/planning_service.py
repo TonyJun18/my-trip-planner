@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -25,6 +25,7 @@ from app.common.config import settings
 from app.core.logging import get_logger
 from app.models import PlanTask, Stop, Trip, TripDay, TripPlan
 from app.schemas import PlanRequest, PlanTaskOut
+from app.services._common import normalize_trace as _normalize_trace
 
 logger = get_logger(__name__)
 
@@ -37,19 +38,26 @@ class PlanningExecutor:
         self._session_factory = session_factory
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._worker_task: asyncio.Task | None = None
+        self._recovery_task: asyncio.Task | None = None
 
     def start(self) -> None:
         if self._worker_task is None or self._worker_task.done():
             self._worker_task = asyncio.create_task(self._worker_loop())
+        # 启动恢复扫描：进程重启后把崩溃遗留的 running 任务标记为失败
+        # （此前 running 任务会永远卡住，轮询接口无法收敛）
+        if self._recovery_task is None or self._recovery_task.done():
+            self._recovery_task = asyncio.create_task(self._recover_stale_tasks())
 
     async def stop(self) -> None:
-        if self._worker_task is not None:
-            self._worker_task.cancel()
-            try:
-                await self._worker_task
-            except asyncio.CancelledError:
-                pass
-            self._worker_task = None
+        for t in (self._worker_task, self._recovery_task):
+            if t is not None:
+                t.cancel()
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
+        self._worker_task = None
+        self._recovery_task = None
 
     def submit(self, task_id: str) -> None:
         self._queue.put_nowait(task_id)
@@ -65,8 +73,41 @@ class PlanningExecutor:
             finally:
                 self._queue.task_done()
 
+    async def _recover_stale_tasks(self) -> None:
+        """启动恢复：把 running 超过阈值（进程崩溃遗留）的任务标记为失败。
+
+        进程重启后，内存队列清空——上次未完成的任务永远处于 running、
+        轮询接口无法收敛；这里给它们一个确定的失败终态。
+        """
+        try:
+            async with self._session_factory() as db:
+                stale = (
+                    await db.execute(
+                        select(PlanTask).where(
+                            PlanTask.status == "running",
+                            PlanTask.started_at.is_not(None),
+                            PlanTask.started_at
+                            < datetime.now(UTC)
+                            - timedelta(seconds=settings.TASK_STALE_RUNNING_SECONDS),
+                        )
+                    )
+                ).scalars().all()
+                for task in stale:
+                    task.status = "failed"
+                    task.error_message = "进程重启，任务未完成（running 超时，标记为失败）"
+                    task.finished_at = datetime.now(UTC)
+                    logger.warning("恢复扫描：任务 %s 标记为失败（崩溃遗留）", task.id)
+                if stale:
+                    await db.commit()
+        except Exception:
+            logger.exception("启动恢复扫描失败（不影响服务启动）")
+
     async def _execute_task(self, task_id: str) -> None:
-        """执行单个任务：更新状态 → 跑 Agent → 回写库 → 完成/失败。"""
+        """执行单个任务：更新状态 → 跑 Agent → 回写库 → 完成/失败。
+
+        通过 ``asyncio.wait_for`` 施加总超时（``TASK_EXECUTION_TIMEOUT``），
+        超时标记 ``failed_timeout``，避免单个任务卡死 worker 队列。
+        """
         async with self._session_factory() as db:
             task = await db.get(PlanTask, task_id)
             if task is None:
@@ -82,12 +123,22 @@ class PlanningExecutor:
             provider = request_data.get("provider", "auto")
 
             try:
-                result = await run_planning_agents(
-                    request_data,
-                    provider=provider,
-                    max_corrections=settings.AGENT_MAX_CORRECTIONS,
-                    max_review_rounds=settings.AGENT_MAX_REVIEW_ROUNDS,
+                result = await asyncio.wait_for(
+                    run_planning_agents(
+                        request_data,
+                        provider=provider,
+                        max_corrections=settings.AGENT_MAX_CORRECTIONS,
+                        max_review_rounds=settings.AGENT_MAX_REVIEW_ROUNDS,
+                    ),
+                    timeout=settings.TASK_EXECUTION_TIMEOUT,
                 )
+            except TimeoutError:
+                logger.warning("规划任务超时 task_id=%s timeout=%s", task_id, settings.TASK_EXECUTION_TIMEOUT)
+                task.status = "failed"
+                task.error_message = "规划任务执行超时"
+                task.finished_at = datetime.now(UTC)
+                await db.commit()
+                return
             except Exception as exc:
                 logger.exception("Agent 执行失败 task_id=%s", task_id)
                 task.status = "failed"
@@ -281,21 +332,3 @@ def task_to_out(task: PlanTask) -> PlanTaskOut:
         trace=task.trace,
         plan=task.plan,
     )
-
-
-def _normalize_trace(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """把多 Agent 的 trace 步骤（含 agent 名）转成前端兼容的 AgentTraceStep 结构。
-
-    {agent, action, observation, status} → {thought: agent, action, observation}。
-    """
-    out = []
-    for s in steps or []:
-        if not isinstance(s, dict):
-            continue
-        out.append({
-            "thought": s.get("agent") or s.get("thought") or "",
-            "action": s.get("action") or "",
-            "action_input": "",
-            "observation": s.get("observation") or "",
-        })
-    return out

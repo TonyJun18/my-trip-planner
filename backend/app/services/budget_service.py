@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from app.models import Trip
 
-
 # 酒店估算：城市基准价（元/晚，中档）— 竞品分析确认的高优先缺口，代码确定性估算
 _HOTEL_CITY_BASE: dict[str, float] = {
     "北京": 520.0, "上海": 560.0, "广州": 420.0, "深圳": 480.0,

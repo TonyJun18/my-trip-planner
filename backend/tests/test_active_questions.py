@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import date, timedelta
-from typing import Any
 
 import pytest
 from langchain_core.messages import AIMessage

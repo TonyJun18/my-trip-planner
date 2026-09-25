@@ -19,14 +19,12 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.agent.agents import plan_revise_agent
 from app.core.exceptions import AppError
 from app.models import Stop, Trip, TripDay, TripPlan
-from app.schemas import ReviseDiff
-
-_TRIP_LOADS = (selectinload(Trip.days).selectinload(TripDay.stops),)
+from app.services._common import TRIP_LOADS as _TRIP_LOADS
+from app.services._common import normalize_trace as _normalize_trace
 
 
 async def revise_trip(
@@ -60,7 +58,7 @@ async def revise_trip(
         _apply_diff(trip, diff)
     except AppError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise AppError(f"行程修订应用失败: {exc}", code="revise_apply_failed") from exc
 
     # 2.5) 自驾约束门（DrivingGate）：修订后站点组合超距/超时 → 整体拒绝
@@ -82,24 +80,6 @@ async def revise_trip(
         "provider": revise.get("provider"),
         "model": revise.get("model"),
     }
-
-
-def _normalize_trace(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """把 PlanReviseAgent 的 trace（{agent, action, observation, status}）转成
-    AgentTraceStep（{thought, action, action_input, observation}），与
-    planning_service._normalize_trace 一致。
-    """
-    out = []
-    for s in steps or []:
-        if not isinstance(s, dict):
-            continue
-        out.append({
-            "thought": s.get("agent") or s.get("thought") or "",
-            "action": s.get("action") or "",
-            "action_input": s.get("action_input") or "",
-            "observation": s.get("observation") or "",
-        })
-    return out
 
 
 # ── 内部：加载 / 快照 ──────────────────────────────────────

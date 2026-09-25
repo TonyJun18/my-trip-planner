@@ -343,7 +343,6 @@ async def test_revise_trip_flow(client, auth_user, monkeypatch):
     """POST /trips/{id}/revise：AI 生成 diff → 代码原子应用 → 落库生效。"""
     from langchain_core.messages import AIMessage
 
-    from app.agent import tools as agent_tools
     from app.agent.providers import PROVIDER_REGISTRY
 
     _, headers = auth_user
@@ -645,7 +644,7 @@ async def test_share_owner_isolation(client):
     assert resp.status_code == 404
 
     # 匿名访问未分享行程 → 404
-    resp = await client.get(f"/api/v1/trips/share/whatever")
+    resp = await client.get("/api/v1/trips/share/whatever")
     assert resp.status_code == 404
 
 # ── 手动细粒度编辑（task-manual-edit） ───────────────────────
@@ -696,7 +695,7 @@ async def test_update_stop_manual_edit(client, auth_user):
 async def test_update_stop_clear_nullable(client, auth_user):
     """显式传 null 可清空可空字段（lat/lng/description）。"""
     _, headers = auth_user
-    trip_id, day_id, ids = await _make_day_with_stops(client, headers, n=1)
+    _, day_id, ids = await _make_day_with_stops(client, headers, n=1)
     stop_id = ids[0]
     # 先写入 lat/lng/description
     await client.patch(f"/api/v1/trips/days/{day_id}/stops/{stop_id}", json={
@@ -716,7 +715,7 @@ async def test_update_stop_clear_nullable(client, auth_user):
 async def test_update_stop_validation(client, auth_user):
     """空名称 → 422；ge=0 约束 → 422。"""
     _, headers = auth_user
-    trip_id, day_id, ids = await _make_day_with_stops(client, headers, n=1)
+    _, day_id, ids = await _make_day_with_stops(client, headers, n=1)
     stop_id = ids[0]
     resp = await client.patch(f"/api/v1/trips/days/{day_id}/stops/{stop_id}", json={"name": ""}, headers=headers)
     assert resp.status_code == 422
@@ -743,7 +742,7 @@ async def test_reorder_stops(client, auth_user):
 async def test_reorder_stops_invalid(client, auth_user):
     """缺漏/多传/乱传 id → 400；空列表 → 422。"""
     _, headers = auth_user
-    trip_id, day_id, ids = await _make_day_with_stops(client, headers, n=2)
+    _, day_id, ids = await _make_day_with_stops(client, headers, n=2)
 
     # 缺一个
     resp = await client.put(f"/api/v1/trips/days/{day_id}/stops/order", json={"order": [ids[0]]}, headers=headers)
@@ -766,7 +765,7 @@ async def test_manual_edit_owner_isolation(client):
     rb = await client.post("/api/v1/auth/register", json={"email": eb, "password": "test1234"})
     headers_b = {"Authorization": f"Bearer {rb.json()['access_token']}"}
 
-    trip_id, day_id, ids = await _make_day_with_stops(client, headers_a, n=1)
+    _, day_id, ids = await _make_day_with_stops(client, headers_a, n=1)
     stop_id = ids[0]
 
     resp = await client.patch(f"/api/v1/trips/days/{day_id}/stops/{stop_id}", json={"name": "被篡改"}, headers=headers_b)
@@ -777,3 +776,39 @@ async def test_manual_edit_owner_isolation(client):
     # 未登录 → 401
     resp = await client.patch(f"/api/v1/trips/days/{day_id}/stops/{stop_id}", json={"name": "x"})
     assert resp.status_code == 401
+
+
+async def test_delete_owner_isolation(client):
+    """B 不能删除 A 的日程/站点（越权删除 IDOR 回归）。"""
+    ea = _rand_email()
+    ra = await client.post("/api/v1/auth/register", json={"email": ea, "password": "test1234"})
+    headers_a = {"Authorization": f"Bearer {ra.json()['access_token']}"}
+    eb = _rand_email()
+    rb = await client.post("/api/v1/auth/register", json={"email": eb, "password": "test1234"})
+    headers_b = {"Authorization": f"Bearer {rb.json()['access_token']}"}
+
+    trip_id, day_id, ids = await _make_day_with_stops(client, headers_a, n=2)
+
+    # B 删 A 的日程 → 404
+    resp = await client.delete(f"/api/v1/trips/days/{day_id}", headers=headers_b)
+    assert resp.status_code == 404
+    # B 删 A 的站点 → 404
+    resp = await client.delete(f"/api/v1/trips/days/{day_id}/stops/{ids[0]}", headers=headers_b)
+    assert resp.status_code == 404
+
+    # A 的数据完好
+    resp = await client.get(f"/api/v1/trips/{trip_id}", headers=headers_a)
+    assert resp.status_code == 200
+    days = resp.json()["days"]
+    assert len(days) == 1
+    assert len(days[0]["stops"]) == 2
+
+    # 未登录 → 401
+    resp = await client.delete(f"/api/v1/trips/days/{day_id}", headers=None)
+    assert resp.status_code == 401
+
+    # A 自己能删
+    resp = await client.delete(f"/api/v1/trips/days/{day_id}/stops/{ids[0]}", headers=headers_a)
+    assert resp.status_code == 204
+    resp = await client.get(f"/api/v1/trips/{trip_id}", headers=headers_a)
+    assert len(resp.json()["days"][0]["stops"]) == 1

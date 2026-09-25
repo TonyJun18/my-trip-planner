@@ -17,8 +17,8 @@ StopType = Literal["attraction", "food", "hotel"]
 class StopIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     stop_type: StopType = "attraction"
-    lat: float | None = None
-    lng: float | None = None
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lng: float | None = Field(default=None, ge=-180, le=180)
     description: str | None = None
     estimated_cost: float | None = Field(default=None, ge=0)
     estimated_duration_minutes: int | None = Field(default=None, ge=0)
@@ -37,8 +37,8 @@ class StopUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     stop_type: StopType | None = None
-    lat: float | None = None
-    lng: float | None = None
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lng: float | None = Field(default=None, ge=-180, le=180)
     description: str | None = None
     estimated_cost: float | None = Field(default=None, ge=0)
     estimated_duration_minutes: int | None = Field(default=None, ge=0)
