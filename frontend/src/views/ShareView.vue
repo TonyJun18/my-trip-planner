@@ -1,11 +1,13 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import * as api from '@/api'
 import TripMap from '@/components/TripMap.vue'
 
 const route = useRoute()
+const { t } = useI18n()
 const loading = ref(false)
 const error = ref('')
 const trip = ref(null)
@@ -48,14 +50,18 @@ const markers = computed(() => {
   return list
 })
 
-const statusMap = {
-  draft: { label: '草稿', type: 'info' },
-  planning: { label: '规划中', type: 'warning' },
-  confirmed: { label: '已确认', type: 'success' },
-  archived: { label: '已归档', type: 'info' },
-}
+const statusMap = computed(() => ({
+  draft: { label: t('tripList.statusDraft'), type: 'info' },
+  planning: { label: t('tripList.statusPlanning'), type: 'warning' },
+  confirmed: { label: t('tripList.statusConfirmed'), type: 'success' },
+  archived: { label: t('tripList.statusArchived'), type: 'info' },
+}))
 
-const typeLabel = { attraction: '景点', food: '餐饮', hotel: '住宿' }
+const typeLabel = computed(() => ({
+  attraction: t('common.typeAttraction'),
+  food: t('common.typeFood'),
+  hotel: t('common.typeHotel'),
+}))
 const typeColor = { attraction: 'var(--brand)', food: '#c2410c', hotel: '#0d8a5f' }
 const typeEmoji = { attraction: '🏞️', food: '🍜', hotel: '🏨' }
 
@@ -76,7 +82,7 @@ async function load() {
       : await api.getSharedTrip(route.params.token)
     await Promise.all([loadComments(), loadVotes()])
   } catch (e) {
-    error.value = editMode.value ? '协作编辑链接无效或已失效' : '分享链接无效或已失效'
+    error.value = editMode.value ? t('share.editLinkInvalid') : t('share.linkInvalid')
   } finally {
     loading.value = false
   }
@@ -161,7 +167,7 @@ function cancelEditStop() {
 async function saveEditStop(stop) {
   const name = (editBuf.value.name || '').trim()
   if (!name) {
-    ElMessage.warning('名称不能为空')
+    ElMessage.warning(t('share.nameRequired'))
     return
   }
   savingStop.value = true
@@ -202,14 +208,14 @@ onMounted(load)
     <!-- 提示条：只读 or 受邀编辑 -->
     <div class="share-banner" :class="{ edit: editMode }">
       <el-icon style="margin-right: 6px"><component :is="editMode ? 'EditPen' : 'View'" /></el-icon>
-      <span v-if="!editMode">这是分享的只读行程 · 无法编辑</span>
-      <span v-else>受邀编辑模式 · 你的修改会同步给行程 owner（名称 / 备注 / 勾选 / 顺序）</span>
+      <span v-if="!editMode">{{ $t('share.readonlyBanner') }}</span>
+      <span v-else>{{ $t('share.editBanner') }}</span>
     </div>
 
     <div v-if="error" class="share-error">
       <el-result icon="warning" :title="error">
         <template #extra>
-          <span class="share-error-hint">如需查看请联系行程分享者重新发送链接</span>
+          <span class="share-error-hint">{{ $t('share.errorHint') }}</span>
         </template>
       </el-result>
     </div>
@@ -224,8 +230,8 @@ onMounted(load)
             <div class="hero-meta">
               <span class="hero-pill"><el-icon><Location /></el-icon>{{ trip.destination }}</span>
               <span class="hero-pill"><el-icon><Calendar /></el-icon>{{ trip.start_date }} ~ {{ trip.end_date }}</span>
-              <span class="hero-pill"><el-icon><User /></el-icon>{{ trip.travelers }} 人</span>
-              <span class="hero-pill" v-if="trip.budget != null"><el-icon><Wallet /></el-icon>预算 ¥{{ trip.budget }}</span>
+              <span class="hero-pill"><el-icon><User /></el-icon>{{ trip.travelers }} {{ $t('common.peopleUnit') }}</span>
+              <span class="hero-pill" v-if="trip.budget != null"><el-icon><Wallet /></el-icon>{{ $t('common.budget') }} ¥{{ trip.budget }}</span>
             </div>
           </div>
           <span class="status-badge" :class="(statusMap[trip.status] || statusMap.draft).type">
@@ -238,41 +244,41 @@ onMounted(load)
       <div class="map-budget-row">
         <div class="map-card">
           <div class="card-head">
-            <span class="card-title">行程地图</span>
-            <span class="map-hint">按游玩顺序连线 · 点击标记查看详情</span>
+            <span class="card-title">{{ $t('common.mapTitle') }}</span>
+            <span class="map-hint">{{ $t('common.mapHint') }}</span>
           </div>
           <TripMap :markers="markers" height="420px" />
         </div>
         <div class="budget-card">
-          <div class="card-head"><span class="card-title">预算明细</span></div>
+          <div class="card-head"><span class="card-title">{{ $t('common.budgetTitle') }}</span></div>
           <template v-if="budget">
             <div class="budget-ring-wrap">
               <div class="budget-ring" :style="{ '--pct': budgetPercent != null ? budgetPercent : 0 }">
                 <div class="budget-ring-inner">
                   <div class="ring-total">¥{{ budget.total_estimated }}</div>
-                  <div class="ring-label">已估算</div>
+                  <div class="ring-label">{{ $t('common.estimated') }}</div>
                 </div>
               </div>
               <div class="ring-caption" v-if="budgetPercent != null">
-                占设定预算 {{ budgetPercent }}%
+                {{ $t('common.percentOfBudget', { pct: budgetPercent }) }}
               </div>
             </div>
             <div class="budget-lines">
-              <div v-for="(label, k) in { attraction: '景点', food: '餐饮', hotel: '住宿' }" :key="k" class="budget-line">
+              <div v-for="(label, k) in { attraction: $t('common.typeAttraction'), food: $t('common.typeFood'), hotel: $t('common.typeHotel') }" :key="k" class="budget-line">
                 <span class="budget-dot" :style="{ background: typeColor[k] }" />
                 <span>{{ label }}</span>
                 <span class="budget-line-val">¥{{ budget.by_type?.[k] || 0 }}</span>
               </div>
               <div class="budget-line total">
-                <span>合计</span>
+                <span>{{ $t('common.total') }}</span>
                 <span class="total-val">¥{{ budget.total_estimated }}</span>
               </div>
             </div>
             <div class="budget-daily" v-if="budget.daily_average">
-              <el-icon><TrendCharts /></el-icon> 日均约 ¥{{ budget.daily_average }}
+              <el-icon><TrendCharts /></el-icon> {{ $t('common.dailyAvg', { amount: budget.daily_average }) }}
             </div>
           </template>
-          <el-empty v-else description="暂无预算数据" :image-size="60" />
+          <el-empty v-else :description="$t('common.noBudget')" :image-size="60" />
         </div>
       </div>
 
@@ -282,8 +288,8 @@ onMounted(load)
           <div class="day-headline">
             <span class="day-badge">Day {{ day.day_number }}</span>
             <div>
-              <div class="day-title">{{ day.date || `第 ${day.day_number} 天` }}</div>
-              <div class="day-note">{{ day.note || '自由探索' }}</div>
+              <div class="day-title">{{ day.date || $t('common.dayN', { n: day.day_number }) }}</div>
+              <div class="day-note">{{ day.note || $t('common.freeExplore') }}</div>
             </div>
           </div>
         </div>
@@ -316,31 +322,31 @@ onMounted(load)
               </div>
               <div class="stop-meta">
                 <span v-if="stop.estimated_cost != null"><el-icon><Wallet /></el-icon>¥{{ stop.estimated_cost }}</span>
-                <span v-if="stop.estimated_duration_minutes"><el-icon><Clock /></el-icon>{{ stop.estimated_duration_minutes }} 分钟</span>
+                <span v-if="stop.estimated_duration_minutes"><el-icon><Clock /></el-icon>{{ stop.estimated_duration_minutes }} {{ $t('common.minutes') }}</span>
                 <span v-if="!editMode" class="vote-group">
                   <button
                     class="vote-btn"
                     :class="{ active: myVote(stop.id) === 1 }"
                     :disabled="voting[stop.id]"
                     @click="castVote(stop.id, 1)"
-                    title="想去 👍"
+                    :title="$t('share.wantGo')"
                   >👍 {{ voteCount(stop.id, 'up') }}</button>
                   <button
                     class="vote-btn"
                     :class="{ active: myVote(stop.id) === -1 }"
                     :disabled="voting[stop.id]"
                     @click="castVote(stop.id, -1)"
-                    title="不想去 👎"
+                    :title="$t('share.notGo')"
                   >👎 {{ voteCount(stop.id, 'down') }}</button>
                 </span>
                 <!-- 受邀编辑：行内编辑 + 上移下移 -->
                 <span v-else class="edit-group">
                   <template v-if="editingStop === stop.id">
-                    <el-button size="small" type="primary" text :loading="savingStop" @click="saveEditStop(stop)">保存</el-button>
-                    <el-button size="small" text @click="cancelEditStop">取消</el-button>
+                    <el-button size="small" type="primary" text :loading="savingStop" @click="saveEditStop(stop)">{{ $t('common.save') }}</el-button>
+                    <el-button size="small" text @click="cancelEditStop">{{ $t('common.cancel') }}</el-button>
                   </template>
                   <template v-else>
-                    <el-button size="small" text @click="startEditStop(stop)">✏️ 改名/备注</el-button>
+                    <el-button size="small" text @click="startEditStop(stop)">{{ $t('share.editNameNote') }}</el-button>
                   </template>
                   <el-button size="small" text :disabled="idx === 0" @click="moveStop(day, stop, -1)">↑</el-button>
                   <el-button size="small" text :disabled="idx >= day.stops.length - 1" @click="moveStop(day, stop, 1)">↓</el-button>
@@ -353,50 +359,50 @@ onMounted(load)
                   type="textarea"
                   :rows="2"
                   maxlength="2000"
-                  placeholder="备注（可选）"
+                  :placeholder="$t('share.notePh')"
                 />
               </div>
               <div v-else-if="stop.description" class="stop-desc">{{ stop.description }}</div>
             </div>
           </div>
         </div>
-        <el-empty v-else description="这一天还没有站点" :image-size="60" />
+        <el-empty v-else :description="$t('common.dayEmpty')" :image-size="60" />
       </div>
 
       <!-- 分享页协作：评论区（免登录，凭分享链接） -->
       <div class="comments-card">
         <div class="card-head">
-          <span class="card-title">协作讨论</span>
-          <span class="map-hint">凭分享链接即可参与 · 无需登录</span>
+          <span class="card-title">{{ $t('share.comments') }}</span>
+          <span class="map-hint">{{ $t('share.commentsHint') }}</span>
         </div>
 
         <div v-if="comments.length" class="comment-list">
           <div v-for="c in comments" :key="c.id" class="comment-item">
-            <div class="comment-avatar">{{ (c.author_name || '匿')[0] }}</div>
+            <div class="comment-avatar">{{ (c.author_name || $t('share.anon'))[0] }}</div>
             <div class="comment-main">
               <div class="comment-head">
-                <span class="comment-name">{{ c.author_name || '匿名访客' }}</span>
+                <span class="comment-name">{{ c.author_name || $t('share.anonGuest') }}</span>
                 <span class="comment-time">{{ fmtTime(c.created_at) }}</span>
               </div>
               <div class="comment-text">{{ c.content }}</div>
             </div>
           </div>
         </div>
-        <el-empty v-else-if="!commentLoading" description="还没有评论，来抢沙发" :image-size="50" />
+        <el-empty v-else-if="!commentLoading" :description="$t('share.noComments')" :image-size="50" />
 
         <div class="comment-composer">
-          <el-input v-model="commentName" placeholder="昵称（可选）" class="comment-name-input" maxlength="50" clearable />
+          <el-input v-model="commentName" :placeholder="$t('share.namePh')" class="comment-name-input" maxlength="50" clearable />
           <el-input
             v-model="commentText"
             type="textarea"
             :rows="2"
             maxlength="500"
             show-word-limit
-            placeholder="对这个行程有什么想说的？"
+            :placeholder="$t('share.commentPh')"
           />
           <div class="comment-actions">
             <el-button type="primary" :loading="commentSubmitting" :disabled="!commentText.trim()" @click="submitComment">
-              发表评论
+              {{ $t('share.postComment') }}
             </el-button>
           </div>
         </div>
@@ -404,7 +410,6 @@ onMounted(load)
     </template>
   </div>
 </template>
-
 <style scoped>
 .share-page { max-width: 1080px; margin: 0 auto; padding-top: 8px; }
 

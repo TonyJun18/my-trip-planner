@@ -12,17 +12,20 @@
   ],
   "completed": [
     "competitive-analysis",
-    "content-readme"
+    "content-readme",
+    "task-i18n-views"
   ],
-  "current_index": 2,
+  "current_index": 3,
   "issues": [
     "09-25 跨夜重建：09-24 全部分支已由用户合并进 main（21:38-21:41 连续 8 个 merge）；main 的 docs/night-build-todo.md 勾选状态未同步（任务完成状态以 checkpoint 为准）。todo 从 main todo 文件 [ ] 项排除 checkpoint HEAD completed 项重建：剩余 content-readme（09-24 夜唯一未完成）+ task-i18n-views（09-24 拆出）；首项恒为 competitive-analysis（每夜一次，更新竞品格局）。",
     "web_extract 在 cron 沙箱被网络策略拦截（连续多夜），竞品分析基于 web_search 摘要完成，价格/功能以官网及评测摘要为准。",
-    "工作区存在用户未提交改动（backend 重构/前端修改/docs/code-review/ 为用户白天产物，共 26 文件），本 worker 只 add 自己产生的文件（checkpoint/todo/分析报告），绝不触碰用户改动。",
-    "content-readme 完成时核对：main HEAD 测试函数 95 个（工作区多 2 个未提交），README 测试数按 main 记为 95。"
+    "工作区存在用户未提交改动（backend 重构/前端修改/docs/code-review/ 为用户白天产物，共 26 文件），本 worker 只 add 自己产出的文件，绝不触碰用户改动。",
+    "content-readme 完成时核对：main HEAD 测试函数 95 个（工作区多 2 个未提交），README 测试数按 main 记为 95。",
+    "worker-3（task-i18n-views）：main 上 checkpoint.json 仍停在 09-24 旧版（completed_with_issues/current_index=8），本夜链的真实状态在分支 1/2 的 checkpoint（09-25 重建链）；本 worker 基于 worker-2 链值（current_index=2）推进到 3。task-i18n-views 完成：dce9255 提交 locales 资源+部分迁移 + 3877138 提交三大视图全部文案迁移（zh/en 对称 275 键，三视图引用 144 键零缺失，npm run build 通过 3.24s）。用户白天 stash（WIP-user-20260925-planwizard-tripdetail）留在 stash 列表未动。"
   ],
   "branches": [
     "nightly/2026-09-25/1-competitive-analysis",
-    "nightly/2026-09-25/2-content-readme"
+    "nightly/2026-09-25/2-content-readme",
+    "nightly/2026-09-25/3-task-i18n-views"
   ]
 }

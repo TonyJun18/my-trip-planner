@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as api from '@/api'
 import TripMap from '@/components/TripMap.vue'
@@ -10,6 +11,7 @@ import { exportImage, exportPdf } from '@/utils/export'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 
 const trip = ref(null)
 const loading = ref(false)
@@ -24,28 +26,30 @@ const revising = ref(false)
 const lastReviseSummary = ref('')
 const lastReviseDiff = ref([])
 
-// diff 动作 → 人类可读文案（后端已给 op_label/target_name/day_number/fields）
-const diffLabel = {
-  replace: '修改',
-  add: '新增',
-  remove: '删除',
-  reorder: '调整顺序',
+// diff 动作 → 人类可读文案（后端已给 op/target_name/day_number/fields）
+const diffOpKeys = {
+  replace: 'diffReplace',
+  add: 'diffAdd',
+  remove: 'diffRemove',
+  reorder: 'diffReorder',
 }
 function diffText(a) {
   const day = a.day_number ? `Day${a.day_number} · ` : ''
   const target = a.target_name || ''
   if (a.op === 'reorder') {
-    return `${day}调整站点顺序（移至第 ${(a.index ?? 0) + 1} 位）`
+    // 后端 ReviseAction.index 是 1-based（移到第 N 位），直接显示即可
+    return t('tripDetail.diffReorderText', { day, n: a.index ?? '?' })
   }
   const fieldKeys = Object.keys(a.fields || {})
   const fieldText = fieldKeys.length ? `（${fieldKeys.join('、')}）` : ''
-  return `${day}${diffLabel[a.op] || a.op}「${target}」${fieldText}`
+  const opLabel = diffOpKeys[a.op] ? t(`tripDetail.${diffOpKeys[a.op]}`) : a.op
+  return t('tripDetail.diffActionText', { day, op: opLabel, target, fields: fieldText })
 }
 
 async function revise() {
   const msg = reviseMsg.value.trim()
   if (!msg) {
-    ElMessage.warning('先告诉我你想怎么调整')
+    ElMessage.warning(t('tripDetail.reviseWarning'))
     return
   }
   revising.value = true
@@ -54,14 +58,14 @@ async function revise() {
     const r = await api.reviseTrip(route.params.id, { message: msg, provider: 'auto' })
     lastReviseSummary.value = r.summary || ''
     lastReviseDiff.value = Array.isArray(r.diff) ? r.diff : []
-    ElMessage.success(r.summary || '行程已更新')
+    ElMessage.success(r.summary || t('tripDetail.revised'))
     reviseMsg.value = ''
     budget.value = null
     await load()
   } catch (e) {
     // api 拦截器已 toast 具体错误；补充可操作的下一步提示
     lastReviseSummary.value = ''
-    ElMessage.error('调整失败：请确认描述里的站点名称与当前行程一致后重试')
+    ElMessage.error(t('tripDetail.reviseFailHint'))
   } finally {
     revising.value = false
   }
@@ -104,7 +108,7 @@ async function saveEditStop() {
   if (payload.estimated_cost === '' || payload.estimated_cost == null) payload.estimated_cost = null
   if (payload.estimated_duration_minutes === '' || payload.estimated_duration_minutes == null) payload.estimated_duration_minutes = null
   await api.updateStop(editDayId.value, editStopId.value, payload)
-  ElMessage.success('站点已更新')
+  ElMessage.success(t('tripDetail.stopUpdated'))
   dialogVisible.value = false
   load()
 }
@@ -119,7 +123,7 @@ async function moveStop(day, stop, dir) {
   ;[order[idx], order[target]] = [order[target], order[idx]]
   try {
     await api.reorderStops(day.id, order)
-    ElMessage.success(dir < 0 ? '已上移' : '已下移')
+    ElMessage.success(dir < 0 ? t('tripDetail.movedUp') : t('tripDetail.movedDown'))
     load()
   } catch (e) {
     // api 拦截器已 toast
@@ -138,14 +142,14 @@ const markers = computed(() => {
   return list
 })
 
-// 行程状态：展示 + 切换
-const statusMap = {
-  draft: { label: '草稿', type: 'info' },
-  planning: { label: '规划中', type: 'warning' },
-  confirmed: { label: '已确认', type: 'success' },
-  archived: { label: '已归档', type: 'info' },
-}
-const statusOptions = Object.entries(statusMap).map(([value, s]) => ({ value, label: s.label }))
+// 行程状态：展示 + 切换（label 走 i18n）
+const statusMap = computed(() => ({
+  draft: { label: t('tripList.statusDraft'), type: 'info' },
+  planning: { label: t('tripList.statusPlanning'), type: 'warning' },
+  confirmed: { label: t('tripList.statusConfirmed'), type: 'success' },
+  archived: { label: t('tripList.statusArchived'), type: 'info' },
+}))
+const statusOptions = computed(() => Object.entries(statusMap.value).map(([value, s]) => ({ value, label: s.label })))
 
 // ── 状态切换（PATCH /trips/{id} status 字段，后端已支持） ──
 const statusUpdating = ref(false)
@@ -154,7 +158,7 @@ async function changeStatus() {
   statusUpdating.value = true
   try {
     await api.updateTrip(route.params.id, { status: newStatus })
-    ElMessage.success(`已切换为「${(statusMap[newStatus] || {}).label || newStatus}」`)
+    ElMessage.success(t('tripDetail.statusChanged', { label: (statusMap.value[newStatus] || {}).label || newStatus }))
   } catch {
     // 失败时回滚为当前真实状态
     await load()
@@ -163,7 +167,11 @@ async function changeStatus() {
   }
 }
 
-const typeLabel = { attraction: '景点', food: '餐饮', hotel: '住宿' }
+const typeLabel = computed(() => ({
+  attraction: t('common.typeAttraction'),
+  food: t('common.typeFood'),
+  hotel: t('common.typeHotel'),
+}))
 const typeColor = { attraction: 'var(--brand)', food: '#c2410c', hotel: '#0d8a5f' }
 const typeEmoji = { attraction: '🏞️', food: '🍜', hotel: '🏨' }
 
@@ -197,10 +205,10 @@ async function doExportImage() {
   exporting.value = true
   try {
     await nextTick()
-    await exportImage(exportEl.value, `${trip.value.destination}-行程`)
-    ElMessage.success('图片已导出')
+    await exportImage(exportEl.value, `${trip.value.destination}-${t('tripDetail.exportImage')}`)
+    ElMessage.success(t('tripDetail.imageExported'))
   } catch (e) {
-    ElMessage.error('导出失败: ' + e.message)
+    ElMessage.error(t('tripDetail.exportFail', { msg: e.message }))
   } finally {
     exporting.value = false
   }
@@ -209,10 +217,10 @@ async function doExportPdf() {
   exporting.value = true
   try {
     await nextTick()
-    await exportPdf(exportEl.value, `${trip.value.destination}-行程`)
-    ElMessage.success('PDF 已导出')
+    await exportPdf(exportEl.value, `${trip.value.destination}-${t('tripDetail.exportPdf')}`)
+    ElMessage.success(t('tripDetail.pdfExported'))
   } catch (e) {
-    ElMessage.error('导出失败: ' + e.message)
+    ElMessage.error(t('tripDetail.exportFail', { msg: e.message }))
   } finally {
     exporting.value = false
   }
@@ -227,12 +235,12 @@ async function doShare() {
     const url = r.share_url
     try {
       await navigator.clipboard.writeText(url)
-      ElMessage.success('分享链接已复制，持链接者可只读查看行程')
+      ElMessage.success(t('tripDetail.shareLinkCopied'))
     } catch {
-      ElMessage.success(`分享链接：${url}`)
+      ElMessage.success(t('tripDetail.shareLink', { url }))
     }
   } catch (e) {
-    ElMessage.error('生成分享链接失败')
+    ElMessage.error(t('tripDetail.shareFail'))
   } finally {
     sharing.value = false
   }
@@ -248,28 +256,28 @@ async function doShareEdit() {
     const url = r.edit_url
     try {
       await navigator.clipboard.writeText(url)
-      ElMessage.success('受邀编辑链接已复制，持链接者可直接改行程（可随时收回）')
+      ElMessage.success(t('tripDetail.editLinkCopied'))
     } catch {
-      ElMessage.success(`受邀编辑链接：${url}`)
+      ElMessage.success(t('tripDetail.editLink', { url }))
     }
     await load()
   } catch (e) {
-    ElMessage.error('开放受邀编辑失败')
+    ElMessage.error(t('tripDetail.openEditFail'))
   } finally {
     editSharing.value = false
   }
 }
 async function doRevokeShareEdit() {
   try {
-    await ElMessageBox.confirm('收回后，已发出的受邀编辑链接立即失效（只读分享不受影响）。确认收回？', '收回受邀编辑权', { type: 'warning' })
+    await ElMessageBox.confirm(t('tripDetail.revokeConfirmMsg'), t('tripDetail.revokeConfirmTitle'), { type: 'warning' })
   } catch { return }
   editRevoking.value = true
   try {
     await api.revokeShareEdit(trip.value.id)
-    ElMessage.success('已收回受邀编辑权')
+    ElMessage.success(t('tripDetail.revoked'))
     await load()
   } catch (e) {
-    ElMessage.error('收回失败')
+    ElMessage.error(t('tripDetail.revokeFail'))
   } finally {
     editRevoking.value = false
   }
@@ -281,14 +289,14 @@ const genRange = ref([])
 const genDaysLoading = ref(false)
 async function genDays() {
   if (!genRange.value?.length) {
-    ElMessage.warning('请选择日期范围')
+    ElMessage.warning(t('tripDetail.selectRange'))
     return
   }
   genDaysLoading.value = true
   try {
     const [start, end] = genRange.value
     const days = await api.generateDays(route.params.id, start, end)
-    ElMessage.success(`已生成 ${days.length} 天日程`)
+    ElMessage.success(t('tripDetail.daysGenerated', { n: days.length }))
     genDaysVisible.value = false
     genRange.value = []
     await load()
@@ -315,7 +323,7 @@ async function saveTrip() {
   if (tripForm.value.travelers !== trip.value.travelers) data.travelers = tripForm.value.travelers
   if (tripForm.value.budget !== trip.value.budget) data.budget = tripForm.value.budget
   await api.updateTrip(trip.value.id, data)
-  ElMessage.success('已保存')
+  ElMessage.success(t('tripDetail.saved'))
   dialogVisible.value = false
   load()
 }
@@ -329,7 +337,7 @@ function openAddDay() {
 }
 async function saveDay() {
   await api.addDay(trip.value.id, dayForm.value)
-  ElMessage.success('已添加日程')
+  ElMessage.success(t('tripDetail.dayAdded'))
   dialogVisible.value = false
   load()
 }
@@ -350,7 +358,7 @@ async function saveStop() {
   if (payload.estimated_cost === '' || payload.estimated_cost == null) payload.estimated_cost = null
   if (payload.estimated_duration_minutes === '' || payload.estimated_duration_minutes == null) payload.estimated_duration_minutes = null
   await api.addStop(editDayId.value, payload)
-  ElMessage.success('已添加站点')
+  ElMessage.success(t('tripDetail.stopAdded'))
   dialogVisible.value = false
   load()
 }
@@ -358,26 +366,26 @@ async function saveStop() {
 // ── 删除 ───────────────────────────────────
 async function removeStop(day, stop) {
   try {
-    await ElMessageBox.confirm(`删除站点「${stop.name}」？`, '确认', { type: 'warning' })
+    await ElMessageBox.confirm(t('tripDetail.deleteStopConfirm', { name: stop.name }), t('common.confirm'), { type: 'warning' })
   } catch { return }
   await api.deleteStop(day.id, stop.id)
-  ElMessage.success('已删除站点')
+  ElMessage.success(t('tripDetail.deleted'))
   load()
 }
 async function removeDay(day) {
   try {
-    await ElMessageBox.confirm(`删除第 ${day.day_number} 天日程？其下所有站点将一并删除。`, '确认', { type: 'warning' })
+    await ElMessageBox.confirm(t('tripDetail.deleteDayConfirm', { n: day.day_number }), t('common.confirm'), { type: 'warning' })
   } catch { return }
   await api.deleteDay(day.id)
-  ElMessage.success('已删除日程')
+  ElMessage.success(t('tripDetail.deleted'))
   load()
 }
 async function removeTrip() {
   try {
-    await ElMessageBox.confirm(`删除整个行程「${trip.value.title}」？`, '确认', { type: 'warning' })
+    await ElMessageBox.confirm(t('tripDetail.deleteTripConfirm', { title: trip.value.title }), t('common.confirm'), { type: 'warning' })
   } catch { return }
   await api.deleteTrip(trip.value.id)
-  ElMessage.success('已删除')
+  ElMessage.success(t('tripDetail.deleted'))
   router.push('/')
 }
 
@@ -389,11 +397,11 @@ onMounted(load)
     <!-- 返回 -->
     <div class="topbar">
       <button class="back-btn" @click="router.push('/')">
-        <el-icon><ArrowLeft /></el-icon> 我的行程
+        <el-icon><ArrowLeft /></el-icon> {{ $t('tripDetail.backToTrips') }}
       </button>
       <div class="topbar-actions">
         <el-button type="success" plain :loading="sharing" @click="doShare">
-          <el-icon style="margin-right: 4px"><Share /></el-icon>分享行程
+          <el-icon style="margin-right: 4px"><Share /></el-icon>{{ $t('tripDetail.shareTrip') }}
         </el-button>
         <el-button
           v-if="!trip?.edit_token"
@@ -402,7 +410,7 @@ onMounted(load)
           :loading="editSharing"
           @click="doShareEdit"
         >
-          <el-icon style="margin-right: 4px"><EditPen /></el-icon>开放受邀编辑
+          <el-icon style="margin-right: 4px"><EditPen /></el-icon>{{ $t('tripDetail.openEdit') }}
         </el-button>
         <el-button
           v-else
@@ -411,10 +419,10 @@ onMounted(load)
           :loading="editRevoking"
           @click="doRevokeShareEdit"
         >
-          <el-icon style="margin-right: 4px"><Lock /></el-icon>收回受邀编辑
+          <el-icon style="margin-right: 4px"><Lock /></el-icon>{{ $t('tripDetail.revokeEdit') }}
         </el-button>
-        <el-button @click="openEditTrip">编辑基本信息</el-button>
-        <el-button type="danger" plain @click="removeTrip">删除行程</el-button>
+        <el-button @click="openEditTrip">{{ $t('tripDetail.editBasic') }}</el-button>
+        <el-button type="danger" plain @click="removeTrip">{{ $t('tripDetail.deleteTrip') }}</el-button>
       </div>
     </div>
 
@@ -430,8 +438,8 @@ onMounted(load)
               <div class="hero-meta">
                 <span class="hero-pill"><el-icon><Location /></el-icon>{{ trip.destination }}</span>
                 <span class="hero-pill"><el-icon><Calendar /></el-icon>{{ trip.start_date }} ~ {{ trip.end_date }}</span>
-                <span class="hero-pill"><el-icon><User /></el-icon>{{ trip.travelers }} 人</span>
-                <span class="hero-pill" v-if="trip.budget != null"><el-icon><Wallet /></el-icon>预算 ¥{{ trip.budget }}</span>
+                <span class="hero-pill"><el-icon><User /></el-icon>{{ trip.travelers }} {{ $t('common.peopleUnit') }}</span>
+                <span class="hero-pill" v-if="trip.budget != null"><el-icon><Wallet /></el-icon>{{ $t('common.budget') }} ¥{{ trip.budget }}</span>
               </div>
             </div>
             <span class="status-group">
@@ -455,60 +463,60 @@ onMounted(load)
         <div class="map-budget-row">
           <div class="map-card">
             <div class="card-head">
-              <span class="card-title">行程地图</span>
-              <span class="map-hint">按游玩顺序连线 · 点击标记查看详情</span>
+              <span class="card-title">{{ $t('common.mapTitle') }}</span>
+              <span class="map-hint">{{ $t('common.mapHint') }}</span>
             </div>
             <TripMap :markers="markers" height="420px" />
           </div>
           <div class="budget-card">
-            <div class="card-head"><span class="card-title">预算明细</span></div>
+            <div class="card-head"><span class="card-title">{{ $t('common.budgetTitle') }}</span></div>
             <template v-if="budget">
               <div class="budget-ring-wrap">
                 <div class="budget-ring" :style="{ '--pct': budgetPercent != null ? budgetPercent : 0 }">
                   <div class="budget-ring-inner">
                     <div class="ring-total">¥{{ budget.total_estimated }}</div>
-                    <div class="ring-label">已估算</div>
+                    <div class="ring-label">{{ $t('common.estimated') }}</div>
                   </div>
                 </div>
                 <div class="ring-caption" v-if="budgetPercent != null">
-                  占设定预算 {{ budgetPercent }}%
+                  {{ $t('common.percentOfBudget', { pct: budgetPercent }) }}
                 </div>
               </div>
               <div class="budget-lines">
-                <div v-for="(label, k) in { attraction: '景点', food: '餐饮', hotel: '住宿' }" :key="k" class="budget-line">
+                <div v-for="(label, k) in { attraction: $t('common.typeAttraction'), food: $t('common.typeFood'), hotel: $t('common.typeHotel') }" :key="k" class="budget-line">
                   <span class="budget-dot" :style="{ background: typeColor[k] }" />
                   <span>{{ label }}</span>
                   <span class="budget-line-val">¥{{ budget.by_type?.[k] || 0 }}</span>
                 </div>
                 <div class="budget-line total">
-                  <span>合计</span>
+                  <span>{{ $t('common.total') }}</span>
                   <span class="total-val">¥{{ budget.total_estimated }}</span>
                 </div>
               </div>
               <div class="budget-daily" v-if="budget.daily_average">
-                <el-icon><TrendCharts /></el-icon> 日均约 ¥{{ budget.daily_average }}
+                <el-icon><TrendCharts /></el-icon> {{ $t('common.dailyAvg', { amount: budget.daily_average }) }}
               </div>
             </template>
-            <el-empty v-else description="暂无预算数据" :image-size="60" />
+            <el-empty v-else :description="$t('common.noBudget')" :image-size="60" />
           </div>
         </div>
 
         <!-- AI 调整行程（方案 B：对话式修订） -->
         <div class="revise-card">
           <div class="revise-head">
-            <span class="revise-title"><el-icon style="margin-right: 6px"><ChatDotRound /></el-icon>让 AI 调整行程</span>
-            <span class="revise-hint">用一句话告诉它你想怎么改</span>
+            <span class="revise-title"><el-icon style="margin-right: 6px"><ChatDotRound /></el-icon>{{ $t('tripDetail.reviseTitle') }}</span>
+            <span class="revise-hint">{{ $t('tripDetail.reviseHint') }}</span>
           </div>
           <div class="revise-row">
             <el-input
               v-model="reviseMsg"
-              placeholder="例如：第三天太赶了，西湖只留半天，晚上加个知味观"
+              :placeholder="$t('tripDetail.revisePlaceholder')"
               size="large"
               clearable
               @keyup.enter="revise"
             />
             <el-button type="primary" size="large" :loading="revising" @click="revise">
-              <el-icon style="margin-right: 4px"><MagicStick /></el-icon>调整
+              <el-icon style="margin-right: 4px"><MagicStick /></el-icon>{{ $t('tripDetail.reviseBtn') }}
             </el-button>
           </div>
           <transition name="el-fade-in">
@@ -521,8 +529,8 @@ onMounted(load)
           <transition name="el-fade-in">
             <div v-if="lastReviseDiff.length" class="revise-diff">
               <div class="revise-diff-head">
-                <span class="revise-diff-title"><el-icon style="margin-right: 5px"><List /></el-icon>本次改动</span>
-                <span class="revise-diff-count">{{ lastReviseDiff.length }} 项</span>
+                <span class="revise-diff-title"><el-icon style="margin-right: 5px"><List /></el-icon>{{ $t('tripDetail.diffTitle') }}</span>
+                <span class="revise-diff-count">{{ $t('tripDetail.diffCount', { n: lastReviseDiff.length }) }}</span>
               </div>
               <div v-for="(a, i) in lastReviseDiff" :key="i" class="revise-diff-item" :class="'op-' + (a.op || '')">
                 <el-icon class="revise-diff-icon"><template v-if="a.op === 'add'"><Plus /></template><template v-else-if="a.op === 'remove'"><Minus /></template><template v-else><Edit /></template></el-icon>
@@ -549,13 +557,13 @@ onMounted(load)
             <div class="day-headline">
               <span class="day-badge">Day {{ day.day_number }}</span>
               <div>
-                <div class="day-title">{{ day.date || `第 ${day.day_number} 天` }}</div>
-                <div class="day-note">{{ day.note || '自由探索' }}</div>
+                <div class="day-title">{{ day.date || $t('common.dayN', { n: day.day_number }) }}</div>
+                <div class="day-note">{{ day.note || $t('common.freeExplore') }}</div>
               </div>
             </div>
             <div class="day-actions">
-              <el-button size="small" type="primary" plain @click="openAddStop(day.id)">+ 添加站点</el-button>
-              <el-button size="small" type="danger" plain @click="removeDay(day)">删除日程</el-button>
+              <el-button size="small" type="primary" plain @click="openAddStop(day.id)">+ {{ $t('tripDetail.addStop') }}</el-button>
+              <el-button size="small" type="danger" plain @click="removeDay(day)">{{ $t('tripDetail.removeDay') }}</el-button>
             </div>
           </div>
 
@@ -575,102 +583,97 @@ onMounted(load)
                 </div>
                 <div class="stop-meta">
                   <span v-if="stop.estimated_cost != null"><el-icon><Wallet /></el-icon>¥{{ stop.estimated_cost }}</span>
-                  <span v-if="stop.estimated_duration_minutes"><el-icon><Clock /></el-icon>{{ stop.estimated_duration_minutes }} 分钟</span>
+                  <span v-if="stop.estimated_duration_minutes"><el-icon><Clock /></el-icon>{{ stop.estimated_duration_minutes }} {{ $t('common.minutes') }}</span>
                 </div>
                 <div v-if="stop.description" class="stop-desc">{{ stop.description }}</div>
                 <div class="stop-actions">
-                  <el-button link size="small" @click="moveStop(day, stop, -1)" :disabled="idx === 0">上移</el-button>
-                  <el-button link size="small" @click="moveStop(day, stop, 1)" :disabled="idx === day.stops.length - 1">下移</el-button>
-                  <el-button link type="primary" @click="openEditStop(day, stop)">编辑</el-button>
-                  <el-button link type="danger" @click="removeStop(day, stop)">删除</el-button>
+                  <el-button link size="small" @click="moveStop(day, stop, -1)" :disabled="idx === 0">{{ $t('tripDetail.moveUp') }}</el-button>
+                  <el-button link size="small" @click="moveStop(day, stop, 1)" :disabled="idx === day.stops.length - 1">{{ $t('tripDetail.moveDown') }}</el-button>
+                  <el-button link type="primary" @click="openEditStop(day, stop)">{{ $t('tripDetail.editStop') }}</el-button>
+                  <el-button link type="danger" @click="removeStop(day, stop)">{{ $t('tripDetail.deleteStop') }}</el-button>
                 </div>
               </div>
             </div>
           </div>
-          <el-empty v-else description="这一天还没有站点" :image-size="60" />
+          <el-empty v-else :description="$t('common.dayEmpty')" :image-size="60" />
         </div>
       </div>
 
       <!-- 底部操作 -->
       <div class="bottom-bar">
-        <el-button @click="openAddDay"><el-icon style="margin-right: 4px"><Plus /></el-icon>添加日程</el-button>
-        <el-button @click="genDaysVisible = true"><el-icon style="margin-right: 4px"><Calendar /></el-icon>按日期生成日程</el-button>
+        <el-button @click="openAddDay"><el-icon style="margin-right: 4px"><Plus /></el-icon>{{ $t('tripDetail.addDay') }}</el-button>
+        <el-button @click="genDaysVisible = true"><el-icon style="margin-right: 4px"><Calendar /></el-icon>{{ $t('tripDetail.genDays') }}</el-button>
         <el-button type="success" plain :loading="exporting" @click="doExportImage">
-          <el-icon style="margin-right: 4px"><Picture /></el-icon>导出图片
+          <el-icon style="margin-right: 4px"><Picture /></el-icon>{{ $t('tripDetail.exportImage') }}
         </el-button>
         <el-button type="primary" plain :loading="exporting" @click="doExportPdf">
-          <el-icon style="margin-right: 4px"><Document /></el-icon>导出 PDF
+          <el-icon style="margin-right: 4px"><Document /></el-icon>{{ $t('tripDetail.exportPdf') }}
         </el-button>
       </div>
     </template>
 
     <!-- 批量生成日程对话框 -->
-    <el-dialog v-model="genDaysVisible" title="按日期批量生成日程" width="440px">
+    <el-dialog v-model="genDaysVisible" :title="$t('tripDetail.genDaysTitle')" width="440px">
       <el-form label-width="80px">
-        <el-form-item label="日期范围">
+        <el-form-item :label="$t('tripDetail.genRange')">
           <el-date-picker
             v-model="genRange"
             type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
+            :range-separator="$t('tripDetail.genRangeSep')"
+            :start-placeholder="$t('tripDetail.genStartPh')"
+            :end-placeholder="$t('tripDetail.genEndPh')"
             value-format="YYYY-MM-DD"
             style="width: 100%"
           />
         </el-form-item>
-        <div class="gen-days-hint">将按范围内每一天生成一个日程（跳过已存在的天数）</div>
+        <div class="gen-days-hint">{{ $t('tripDetail.genDaysHint') }}</div>
       </el-form>
       <template #footer>
-        <el-button @click="genDaysVisible = false">取消</el-button>
-        <el-button type="primary" :loading="genDaysLoading" @click="genDays">生成</el-button>
+        <el-button @click="genDaysVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="genDaysLoading" @click="genDays">{{ $t('tripDetail.genBtn') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 编辑对话框（三合一） -->
     <el-dialog
       v-model="dialogVisible"
-      :title="editType === 'edit-trip' ? '编辑行程信息' : editType === 'add-day' ? '添加日程' : editType === 'edit-stop' ? '编辑站点' : '添加站点'"
+      :title="editType === 'edit-trip' ? $t('tripDetail.editTripTitle') : editType === 'add-day' ? $t('tripDetail.addDayTitle') : editType === 'edit-stop' ? $t('tripDetail.editStopTitle') : $t('tripDetail.addStopTitle')"
       width="480px"
     >
       <el-form v-if="editType === 'edit-trip'" :model="tripForm" label-width="80px">
-        <el-form-item label="标题"><el-input v-model="tripForm.title" /></el-form-item>
-        <el-form-item label="目的地"><el-input v-model="tripForm.destination" /></el-form-item>
-        <el-form-item label="人数"><el-input-number v-model="tripForm.travelers" :min="1" /></el-form-item>
-        <el-form-item label="预算"><el-input-number v-model="tripForm.budget" :min="0" :step="500" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblTitle')"><el-input v-model="tripForm.title" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblDestination')"><el-input v-model="tripForm.destination" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblTravelers')"><el-input-number v-model="tripForm.travelers" :min="1" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblBudget')"><el-input-number v-model="tripForm.budget" :min="0" :step="500" /></el-form-item>
       </el-form>
 
       <el-form v-else-if="editType === 'add-day'" :model="dayForm" label-width="80px">
-        <el-form-item label="天数编号"><el-input-number v-model="dayForm.day_number" :min="1" /></el-form-item>
-        <el-form-item label="日期"><el-date-picker v-model="dayForm.date" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item>
-        <el-form-item label="备注"><el-input v-model="dayForm.note" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblDayNumber')"><el-input-number v-model="dayForm.day_number" :min="1" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblDate')"><el-date-picker v-model="dayForm.date" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblNote')"><el-input v-model="dayForm.note" type="textarea" :rows="2" /></el-form-item>
       </el-form>
 
       <el-form v-else ref="stopFormRef" :model="stopForm" label-width="90px">
-        <el-form-item label="名称" prop="name" :rules="[{ required: true, message: '请输入名称' }]">
-          <el-input v-model="stopForm.name" placeholder="如：西湖、楼外楼" />
+        <el-form-item :label="$t('tripDetail.lblName')" prop="name" :rules="[{ required: true, message: $t('tripDetail.stopNameRequired') }]">
+          <el-input v-model="stopForm.name" :placeholder="$t('tripDetail.stopNamePh')" />
         </el-form-item>
-        <el-form-item label="类型">
+        <el-form-item :label="$t('tripDetail.lblType')">
           <el-radio-group v-model="stopForm.stop_type">
-            <el-radio-button value="attraction">景点</el-radio-button>
-            <el-radio-button value="food">餐饮</el-radio-button>
-            <el-radio-button value="hotel">住宿</el-radio-button>
+            <el-radio-button value="attraction">{{ $t('common.typeAttraction') }}</el-radio-button>
+            <el-radio-button value="food">{{ $t('common.typeFood') }}</el-radio-button>
+            <el-radio-button value="hotel">{{ $t('common.typeHotel') }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="经纬度">
+        <el-form-item :label="$t('tripDetail.lblLatLng')">
           <div class="latlng">
-            <el-input v-model="stopForm.lat" placeholder="纬度 lat (可选)" />
-            <el-input v-model="stopForm.lng" placeholder="经度 lng (可选)" />
+            <el-input v-model="stopForm.lat" :placeholder="$t('tripDetail.latPh')" />
+            <el-input v-model="stopForm.lng" :placeholder="$t('tripDetail.lngPh')" />
           </div>
         </el-form-item>
-        <el-form-item label="预估费用"><el-input-number v-model="stopForm.estimated_cost" :min="0" :step="50" /></el-form-item>
-        <el-form-item label="时长(分钟)"><el-input-number v-model="stopForm.estimated_duration_minutes" :min="0" :step="30" /></el-form-item>
-        <el-form-item label="描述"><el-input v-model="stopForm.description" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblEstCost')"><el-input-number v-model="stopForm.estimated_cost" :min="0" :step="50" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblDuration')"><el-input-number v-model="stopForm.estimated_duration_minutes" :min="0" :step="30" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblDesc')"><el-input v-model="stopForm.description" type="textarea" :rows="2" /></el-form-item>
       </el-form>
-
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="editType === 'edit-trip' ? saveTrip() : editType === 'add-day' ? saveDay() : editType === 'edit-stop' ? saveEditStop() : saveStop()">保存</el-button>
-      </template>
     </el-dialog>
   </div>
 </template>
