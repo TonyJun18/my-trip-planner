@@ -269,6 +269,12 @@ export default {
     deleteDayConfirm: '删除第 {n} 天日程？其下所有站点将一并删除。',
     deleteTripConfirm: '删除整个行程「{title}」？',
     deleted: '已删除',
+    // ── 备选方案（Plan B） ──
+    planMain: '主案',
+    planB: '备选',
+    planBTitle: '行程备选方案',
+    planBBudgetLabel: '备选预算约',
+    planBHint: '备选由确定性规则生成（无 AI 成本），仅供参考对比；「切换」不修改主案，需要落地时请使用上方 AI 调整或手动编辑。',
   },
   share: {
     readonlyBanner: '这是分享的只读行程 · 无法编辑',

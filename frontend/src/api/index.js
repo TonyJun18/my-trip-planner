@@ -71,6 +71,9 @@ export const reviseTrip = (tripId, data) => http.post(`/trips/${tripId}/revise`,
 export const createShare = (tripId) => http.post(`/trips/${tripId}/share`).then((r) => r.data)
 export const getSharedTrip = (token) => http.get(`/trips/share/${token}`).then((r) => r.data)
 
+// ── 行程备选方案（Plan B：确定性规则生成，无 LLM） ─────────
+export const getPlanB = (tripId) => http.get(`/trips/${tripId}/plan-b`).then((r) => r.data)
+
 // ── 受邀编辑（edit_token：owner 开放/收回编辑权，受邀者免登录受限编辑） ──
 export const createShareEdit = (tripId) => http.post(`/trips/${tripId}/share/edit`).then((r) => r.data)
 export const revokeShareEdit = (tripId) => http.delete(`/trips/${tripId}/share/edit`).then((r) => r.data)
