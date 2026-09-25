@@ -46,6 +46,10 @@ def estimate_hotel_cost(
     - 城市命中已知基准 → 用之；否则全国兜底 380
     - 名称含档位关键词（经济/快捷/豪华/五星…）→ 乘对应倍率
     - rating 4.5+ 上浮 15%，3.5- 下浮 15%
+
+    口径标注（09-26 竞品分析补充验收：iPlan.ai 预算偏差 20-30% 翻车 → 诚实估算差异化）：
+    本函数返回的是「规划层参考价」，基于静态城市基准价（2024 年中档酒店均价口径），
+    非实时房价；前端须展示「估算口径」而非当作真实价格。
     """
     name = (name or "").strip()
     if not name:
@@ -67,6 +71,22 @@ def estimate_hotel_cost(
     return round(cost, 2)
 
 
+def hotel_estimate_basis(estimated_count: int) -> dict:
+    """酒店预算估算口径标注（09-26 竞品分析补充验收）。
+
+    返回描述估算来源 / 基准口径 / 置信度的结构化信息，供预算视图展示
+    「估算 vs 实际可验证」，对齐 iPlan.ai 翻车教训：预算必须是可审计的诚实估算。
+    """
+    return {
+        "source": "city_base_2024",
+        "base_note": "城市中档酒店基准价 × 档位倍率（静态口径，非实时房价）",
+        "confidence": "medium",
+        "estimated_count": estimated_count,
+        "actual_count": 0,
+        "updated_at": "2026-09-26",
+    }
+
+
 def compute_budget(trip: Trip) -> dict:
     """根据行程中的站点费用汇总预算明细。
 
@@ -75,21 +95,30 @@ def compute_budget(trip: Trip) -> dict:
       "total_estimated": float,
       "by_type": {"attraction": float, "food": float, "hotel": float},
       "daily_average": float | None,
-      "currency": "CNY"
+      "currency": "CNY",
+      "estimate_basis": {"hotel": {...}}   # 09-26 补充：估算口径标注
     }
     """
     by_type: dict[str, float] = {"attraction": 0.0, "food": 0.0, "hotel": 0.0}
     total = 0.0
+    hotel_count = 0  # 酒店站点数量（用于口径标注）
     for day in trip.days:
         for stop in day.stops:
             cost = stop.estimated_cost or 0.0
             by_type[stop.stop_type] = by_type.get(stop.stop_type, 0.0) + cost
             total += cost
+            if stop.stop_type == "hotel":
+                hotel_count += 1
 
     n_days = (trip.end_date - trip.start_date).days + 1
-    return {
+    result = {
         "total_estimated": round(total, 2),
         "by_type": {k: round(v, 2) for k, v in by_type.items()},
         "daily_average": round(total / n_days, 2) if n_days > 0 and total else None,
         "currency": "CNY",
     }
+    # 估算口径标注：hotel 项全部来自代码估算（静态基准价），标注来源/置信度
+    # （09-26 竞品分析补充验收：iPlan.ai 预算偏差 20-30% → 诚实估算差异化）
+    if hotel_count > 0:
+        result["estimate_basis"] = {"hotel": hotel_estimate_basis(hotel_count)}
+    return result
