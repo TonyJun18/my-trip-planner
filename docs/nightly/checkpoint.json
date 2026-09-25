@@ -11,15 +11,18 @@
     "content-quality-fallback"
   ],
   "completed": [
-    "competitive-analysis"
+    "competitive-analysis",
+    "content-readme"
   ],
-  "current_index": 1,
+  "current_index": 2,
   "issues": [
     "09-25 跨夜重建：09-24 全部分支已由用户合并进 main（21:38-21:41 连续 8 个 merge）；main 的 docs/night-build-todo.md 勾选状态未同步（任务完成状态以 checkpoint 为准）。todo 从 main todo 文件 [ ] 项排除 checkpoint HEAD completed 项重建：剩余 content-readme（09-24 夜唯一未完成）+ task-i18n-views（09-24 拆出）；首项恒为 competitive-analysis（每夜一次，更新竞品格局）。",
     "web_extract 在 cron 沙箱被网络策略拦截（连续多夜），竞品分析基于 web_search 摘要完成，价格/功能以官网及评测摘要为准。",
-    "工作区存在用户未提交改动（backend 重构/前端修改/docs/code-review/ 为用户白天产物，共 26 文件），本 worker 只 add 自己产生的文件（checkpoint/todo/分析报告），绝不触碰用户改动。"
+    "工作区存在用户未提交改动（backend 重构/前端修改/docs/code-review/ 为用户白天产物，共 26 文件），本 worker 只 add 自己产生的文件（checkpoint/todo/分析报告），绝不触碰用户改动。",
+    "content-readme 完成时核对：main HEAD 测试函数 95 个（工作区多 2 个未提交），README 测试数按 main 记为 95。"
   ],
   "branches": [
-    "nightly/2026-09-25/1-competitive-analysis"
+    "nightly/2026-09-25/1-competitive-analysis",
+    "nightly/2026-09-25/2-content-readme"
   ]
 }
