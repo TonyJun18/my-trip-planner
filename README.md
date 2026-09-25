@@ -394,6 +394,36 @@ curl http://127.0.0.1:8090/api/v1/planner/tasks/xxx \
 **LLM Provider**：配置 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY`（或本地 Ollama）后即可使用真实模型。
 未配置任何 key 时，`/planner/plan` 返回明确错误（**不再有 mock 降级**）。
 
+## 质量与兜底（Quality & Fallback）
+
+OTA 用真人兜底（携程人工定制师、马蜂窝当地指路人）——开源自托管工具没有人肉兜底，这是客观短板；
+但我们的「兜底」是**工程化的降级链 + 可回溯的质检 trace**：坏答案比没答案更危险，所以每一层都设计了
+「失败时往哪退、退到什么」的显式路径，且每一步都有结构化日志可查。
+
+**LLM 调用降级链（主路径 → 兜底 → 结构化降级响应）**：
+
+1. **指数退避重试**：瞬时故障（网络/超时/限流/5xx）按 `LLM_MAX_RETRIES`（默认 3）指数退避重试；
+2. **进程内熔断器**：滑动窗口统计失败率（`LLM_BREAKER_FAILURE_THRESHOLD` / `LLM_BREAKER_RECOVERY_TIMEOUT`），
+   连续失败跳闸 OPEN，冷却期后 HALF-OPEN 试探恢复——保护下游 LLM 不被打爆；
+3. **Provider 兜底链**：`ENABLE_PROVIDER_FALLBACK=true` 时主 provider（如 deepseek）失败自动切换
+   openai → ollama（`app/agent/providers.py::_fallback_chain_for`）；
+4. **采集源降级**：高德未配置时 POI/天气自动降级 Tavily + wttr.in（`app/agent/tools.py`，无 key 也能跑）；
+5. **质检（Critic）失败降级放行**：`TravelCriticAgent` 自身抛错或校验失败 → 构造「通过」的默认质检报告
+   （`agents.py`），**绝不阻断主流程**——质检是质量优化，不是单点故障；
+6. **健康检查 degraded 语义**：DB 故障时 `/health` 返回 `degraded` 而非 500，负载均衡据此摘除实例。
+
+**质检 trace（可回溯性）**：Planner 产出 → `TravelCriticAgent` 按 schedule / budget / geography / logistics
+四维打分，未过 `CRITIC_PASS_SCORE`（80）带结构化 issues 反馈 Planner 重生成，最多 `AGENT_MAX_REVIEW_ROUNDS`
+（默认 2）轮后**强制定稿**；全程 T-A-O 轨迹（Thought-Action-Observation）随任务状态返回前端实时展示——
+**每个错误答案都能回溯到是哪个 Agent、哪一步、哪个校验**，而不是黑盒。
+
+**预算与地理的确定性兜底**：天气是「城市 → 数据」的确定性路径做成纯工具（零 token、零幻觉）；
+预算是纯计算，交给 `compute_budget` / `estimate_hotel_cost` 代码（城市基准价 × 档位倍率 × 评分修正）；
+自驾校验（DrivingGate）是确定性规则——**LLM 只做它擅长的理解与编排，数学与事实交给代码**。
+
+> 一句话定位：**我们没有 7×24 人工客服，但我们保证每一个自动产出都可验证、可回溯、可回滚。**
+> 这也正是「规划层」透明定位的一部分——详见文章 03（容错工程）与 07（独立规划层生存策略）。
+
 ## 夜间开发流水线（自动化）
 
 本仓库采用**无人值守的夜间开发流水线**：每天深夜由 Hermes cron 自动跑一轮「竞品分析 → 差距补功能 → 测试全绿 → 新分支本地提交」。所有任务、状态与产出都在 `docs/` 下，用户白天 review 后决定是否合并。
@@ -444,6 +474,7 @@ uv run alembic downgrade -1                        # 回滚
 | 移动端体验未专门优化 | 前端面向桌面 Web 设计，小屏适配一般 | 可选改进：响应式布局打磨 |
 | 多语言覆盖尚在进行 | 三大业务视图文案迁移未完成，en-US 下部分硬编码中文 | ✅ 进行中：task-i18n-views（PlanWizard / TripDetailView / ShareView） |
 | Google 登录需要用户自备 OAuth Client ID | `VITE_GOOGLE_CLIENT_ID` 未配置时隐藏按钮；ID Token 校验依赖 Google 公钥 | 部署方需在 Google Cloud Console 创建 Web OAuth 凭据 |
+| 无 7×24 人工兜底（OTA 有定制师/指路人） | 极端边缘场景没有真人介入，用户自助 | ✅ **差异化缓解（工程化兜底）**：降级链（重试 → 熔断 → provider/数据源兜底 → Critic 降级放行）+ 可回溯质检 trace + 确定性代码兜底（详见「质量与兜底」小节）；自托管者也可自行加人工评审 |
 
 ## 开源许可
 

@@ -1,6 +1,6 @@
 {
   "night": "2026-09-25",
-  "status": "in_progress",
+  "status": "completed",
   "todo": [
     "competitive-analysis",
     "content-readme",
@@ -16,9 +16,10 @@
     "task-i18n-views",
     "task-note-import",
     "task-plan-b",
-    "content-domestic-planning-layer"
+    "content-domestic-planning-layer",
+    "content-quality-fallback"
   ],
-  "current_index": 6,
+  "current_index": 7,
   "issues": [
     "09-25 跨夜重建：09-24 全部分支已由用户合并进 main（21:38-21:41 连续 8 个 merge）；main 的 docs/night-build-todo.md 勾选状态未同步（任务完成状态以 checkpoint 为准）。todo 从 main todo 文件 [ ] 项排除 checkpoint HEAD completed 项重建：剩余 content-readme（09-24 夜唯一未完成）+ task-i18n-views（09-24 拆出）；首项恒为 competitive-analysis（每夜一次，更新竞品格局）。",
     "web_extract 在 cron 沙箱被网络策略拦截（连续多夜），竞品分析基于 web_search 摘要完成，价格/功能以官网及评测摘要为准。",
@@ -27,7 +28,8 @@
     "worker-3（task-i18n-views）：main 上 checkpoint.json 仍停在 09-24 旧版（completed_with_issues/current_index=8），本夜链的真实状态在分支 1/2 的 checkpoint（09-25 重建链）；本 worker 基于 worker-2 链值（current_index=2）推进到 3。task-i18n-views 完成：dce9255 提交 locales 资源+部分迁移 + 3877138 提交三大视图全部文案迁移（zh/en 对称 275 键，三视图引用 144 键零缺失，npm run build 通过 3.24s）。用户白天 stash（WIP-user-20260925-planwizard-tripdetail）留在 stash 列表未动。",
     "worker-4（task-note-import）：任务来自 09-25 竞品分析 commit dc5732e（当前工作区 todo 文件缺该段，已补）。实现为纯规则解析器（无 LLM/无 API key），端点 POST /api/v1/trips/note/import 独立 router+独立 schema 文件（避开用户未提交的 trips.py/schemas/__init__.py/test_api.py）。全套件 118 passed。分支 nightly/2026-09-25/4-task-note-import（cb8b224 功能 + b7c6215 测试）。",
     "worker-5（task-plan-b）：主线从 main 拉出（main 无 09-25 链，链在分支 HEAD aa7e6e5 上，worker-3/4 同模式）。实现：app/services/plan_b.py 纯确定性规则三变体（节奏/预算档/取舍，无 LLM/无 API key）+ 独立 schemas/plan_b.py + api/v1/plan_b.py（GET /trips/{id}/plan-b，owner 鉴权 + selectinload 防 MissingGreenlet，无行程 404）+ 前端详情页 el-segmented 主案/备选切换卡片 + i18n（zh/en 对称 5 键）。全套件 130 passed（新增 12 例），npm run build 通过 3.78s。分支 nightly/2026-09-25/5-task-plan-b：a0ba215（后端）+ a5f559b（前端）+ 5dee0c5（测试）。",
-    "worker-6（content-domestic-planning-layer）：纯内容沉淀（不改代码），验收按手册 6.2（文章完整+发布清单补卡片+引用与 main 实际一致），无需跑测试/build。文章 docs/articles/08-domestic-planning-layer.md（141 行）以 09-25 竞品分析（携程/去哪儿/马蜂窝/飞猪）为引承接 07 文做国内姊妹篇；代码引用逐项验证（revise_service.revise_trip/_apply_diff/_recompute_budget、budget_service._HOTEL_CITY_BASE/_HOTEL_TIER/estimate_hotel_cost、agents.py CRITIC_PASS_SCORE=80/run_planning_agents、collab_service._belongs_to_trip/edit_token/cast_vote、utils/export.js html2canvas+jsPDF、PlanWizard「查看 AI 专家协作过程」T-A-O 轨迹）。矩阵标 note-import/plan-b 为 09-25 分支在途（合并 main 后生效），其余以 main 为准。发布清单补文章⑧卡片。todo 补 09-25 段并勾选本任务（content-quality-fallback 保持待办）。分支 nightly/2026-09-25/6-content-domestic-planning-layer：b86c882 文章 + 992d98e 发布清单/todo。工作区用户未提交改动（backend 重构等 26 文件）未触碰。"
+    "worker-6（content-domestic-planning-layer）：纯内容沉淀（不改代码），验收按手册 6.2（文章完整+发布清单补卡片+引用与 main 实际一致），无需跑测试/build。文章 docs/articles/08-domestic-planning-layer.md（141 行）以 09-25 竞品分析（携程/去哪儿/马蜂窝/飞猪）为引承接 07 文做国内姊妹篇；代码引用逐项验证（revise_service.revise_trip/_apply_diff/_recompute_budget、budget_service._HOTEL_CITY_BASE/_HOTEL_TIER/estimate_hotel_cost、agents.py CRITIC_PASS_SCORE=80/run_planning_agents、collab_service._belongs_to_trip/edit_token/cast_vote、utils/export.js html2canvas+jsPDF、PlanWizard「查看 AI 专家协作过程」T-A-O 轨迹）。矩阵标 note-import/plan-b 为 09-25 分支在途（合并 main 后生效），其余以 main 为准。发布清单补文章⑧卡片。todo 补 09-25 段并勾选本任务（content-quality-fallback 保持待办）。分支 nightly/2026-09-25/6-content-domestic-planning-layer：b86c882 文章 + 992d98e 发布清单/todo。工作区用户未提交改动（backend 重构等 26 文件）未触碰。",
+    "worker-7（content-quality-fallback，本夜末位）：README 增加「质量与兜底」小节（降级链：指数退避重试 → 进程内熔断 → provider 兜底链 _fallback_chain_for(ENABLE_PROVIDER_FALLBACK) → 采集源降级 Tavily/wttr.in → Critic 降级放行 → health degraded 语义）+ 质检 trace（CRITIC_PASS_SCORE=80 四维打分、AGENT_MAX_REVIEW_ROUNDS=2 强制定稿、T-A-O 轨迹可回溯）+ 确定性代码兜底（compute_budget/estimate_hotel_cost/DrivingGate），已知局限表补「无 7×24 人工兜底」行。所有代码符号与 main 实际实现核对一致。兼收 worker-2 content-readme 的 README 基线（分支 2 未合并，从 main 拉分支后检出分支 2 的 README 作为基线再叠加本次）。分支 nightly/2026-09-25/7-content-quality-fallback：97abac9（README 127 行改动）。todo 文件：checkout main 后丢失 09-25 段（main 无该段），从分支 6 检出恢复并勾选本任务。纯内容任务不改代码，未跑测试/build；本夜链 7/7 全部完成。"
   ],
   "branches": [
     "nightly/2026-09-25/1-competitive-analysis",
@@ -35,6 +37,7 @@
     "nightly/2026-09-25/3-task-i18n-views",
     "nightly/2026-09-25/4-task-note-import",
     "nightly/2026-09-25/5-task-plan-b",
-    "nightly/2026-09-25/6-content-domestic-planning-layer"
+    "nightly/2026-09-25/6-content-domestic-planning-layer",
+    "nightly/2026-09-25/7-content-quality-fallback"
   ]
 }
