@@ -20,14 +20,63 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.agent.agents import run_planning_agents
+from app.agent.agents import run_planning_agents, set_plan_event_callback
 from app.common.config import settings
 from app.core.logging import get_logger
 from app.models import PlanTask, Stop, Trip, TripDay, TripPlan
 from app.schemas import PlanRequest, PlanTaskOut
 from app.services._common import normalize_trace as _normalize_trace
+from app.services.ws_broadcast import hub
 
 logger = get_logger(__name__)
+
+
+# ── WebSocket 实时推送：把 task_id 注入 agent 事件，转发到广播中枢 ──
+async def _plan_event_bridge(task_id: str, event: dict[str, Any]) -> None:
+    """把 agents 层事件加上 task_id,发布到 ``planner:{task_id}`` 频道,并持久化。"""
+    message = {"task_id": task_id, **event}
+    await hub.publish(f"planner:{task_id}", message)
+    # 持久化:轮询/断线重连也拿得到阶段与制品(独立 session,失败静默)
+    factory = _archive_session_factory
+    if factory is None:
+        return
+    try:
+        async with factory() as db:
+            task = await db.get(PlanTask, task_id)
+            if task is None:
+                return
+            event_copy = {k: v for k, v in event.items() if k != "task_id"}
+            task.events = [*(task.events or []), event_copy]
+            # 阶段事件同步推进状态机
+            if event.get("type") == "phase":
+                task.state = event.get("phase")
+            await db.commit()
+    except Exception:  # noqa: BLE001 — 事件持久化失败绝不阻断 Agent 执行
+        logger.debug("规划事件持久化失败 task_id=%s event=%s", task_id, event.get("type"))
+
+
+# 事件归档器使用独立的 session 工厂(在 executor 初始化时注入,
+# 避免与 worker 的执行 session 共用连接/事务边界)
+_archive_session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+def set_archive_session_factory(factory: async_sessionmaker[AsyncSession]) -> None:
+    global _archive_session_factory
+    _archive_session_factory = factory
+
+
+def _publish_status(task: PlanTask) -> None:
+    """任务状态变更推送给正在观看的 WS 订阅者（无订阅者为 no-op）。"""
+    asyncio.create_task(
+        hub.publish(f"planner:{task.id}", {
+            "type": "status",
+            "task_id": task.id,
+            "status": task.status,
+            "trip_id": task.trip_id,
+            "error": task.error_message,
+            "plan": task.plan,
+        })
+    )
 
 
 # ── 任务执行器（单 worker + 队列） ────────────────────────────
@@ -43,6 +92,8 @@ class PlanningExecutor:
     def start(self) -> None:
         if self._worker_task is None or self._worker_task.done():
             self._worker_task = asyncio.create_task(self._worker_loop())
+        # 事件归档器使用同一 session 工厂(独立连接,避免与执行 session 共享事务)
+        set_archive_session_factory(self._session_factory)
         # 启动恢复扫描：进程重启后把崩溃遗留的 running 任务标记为失败
         # （此前 running 任务会永远卡住，轮询接口无法收敛）
         if self._recovery_task is None or self._recovery_task.done():
@@ -118,9 +169,13 @@ class PlanningExecutor:
             task.status = "running"
             task.started_at = datetime.now(UTC)
             await db.commit()
+            _publish_status(task)
 
             request_data = task.request_data or {}
             provider = request_data.get("provider", "auto")
+
+            # 注入事件桥：agent 层每次 trace 回调，带上本任务 id
+            set_plan_event_callback(lambda evt, tid=task_id: _plan_event_bridge(tid, evt))
 
             try:
                 result = await asyncio.wait_for(
@@ -138,6 +193,7 @@ class PlanningExecutor:
                 task.error_message = "规划任务执行超时"
                 task.finished_at = datetime.now(UTC)
                 await db.commit()
+                _publish_status(task)
                 return
             except Exception as exc:
                 logger.exception("Agent 执行失败 task_id=%s", task_id)
@@ -145,6 +201,7 @@ class PlanningExecutor:
                 task.error_message = str(exc)
                 task.finished_at = datetime.now(UTC)
                 await db.commit()
+                _publish_status(task)
                 return
 
             if result.get("status") != "completed" or result.get("plan") is None:
@@ -152,6 +209,7 @@ class PlanningExecutor:
                 task.error_message = result.get("error") or "AI 未能生成完整行程计划"
                 task.finished_at = datetime.now(UTC)
                 await db.commit()
+                _publish_status(task)
                 return
 
             # 成功：回写行程骨架 + TripPlan 快照（原子）
@@ -164,6 +222,7 @@ class PlanningExecutor:
                 task.error_message = f"行程落库失败: {exc}"
                 task.finished_at = datetime.now(UTC)
                 await db.commit()
+                _publish_status(task)
                 return
 
             task.status = "completed"
@@ -174,6 +233,7 @@ class PlanningExecutor:
             task.trip_id = trip_id
             task.finished_at = datetime.now(UTC)
             await db.commit()
+            _publish_status(task)
 
             logger.info("规划任务完成 task_id=%s trip_id=%s provider=%s days=%d agents=%s",
                         task_id, trip_id, result.get("provider"), len(plan.get("days", [])),
@@ -330,5 +390,7 @@ def task_to_out(task: PlanTask) -> PlanTaskOut:
         trip_id=task.trip_id,
         error=task.error_message,
         trace=task.trace,
+        events=task.events,
+        state=task.state,
         plan=task.plan,
     )

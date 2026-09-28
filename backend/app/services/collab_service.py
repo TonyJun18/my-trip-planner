@@ -12,12 +12,28 @@ from app.models import Stop, StopVote, Trip, TripComment, TripDay
 from app.schemas.collab import CommentIn, InvitedStopUpdate, VoteIn
 
 
+# ── 协作实时广播（WS） ─────────────────────────────────────────
+def publish_collab(trip_id: str, event: dict[str, Any]) -> None:
+    """向 ``collab:{trip_id}`` 频道的订阅者广播一条协作事件（无订阅为 no-op）。
+
+    由 REST handler 落库成功后调用（事件只做通知，不承载权威状态——
+    订阅者收到后自行 re-fetch 或本地合并）。异步 fire-and-forget，
+    广播失败不影响 REST 响应。
+    """
+    from app.services.ws_broadcast import hub
+
+    import asyncio
+
+    asyncio.create_task(hub.publish(f"collab:{trip_id}", {"trip_id": trip_id, **event}))
+
+
 # ── 分享令牌基础：所有协作接口都要求持有效令牌（与只读分享同信任级别） ──
 async def _get_trip_by_token(db: AsyncSession, token: str) -> Trip:
     stmt = select(Trip).where(Trip.share_token == token)
     trip = (await db.execute(stmt)).scalar_one_or_none()
     if trip is None:
         raise NotFoundError("分享链接无效或已失效", code="share_token_invalid")
+    await _check_token_lifecycle(db, trip, kind="share")
     return trip
 
 
@@ -27,7 +43,21 @@ async def _get_trip_by_edit_token(db: AsyncSession, token: str) -> Trip:
     trip = (await db.execute(stmt)).scalar_one_or_none()
     if trip is None:
         raise NotFoundError("协作编辑链接无效或已失效", code="edit_token_invalid")
+    await _check_token_lifecycle(db, trip, kind="edit")
     return trip
+
+
+async def _check_token_lifecycle(db: AsyncSession, trip: Trip, *, kind: str) -> None:
+    """生命周期门禁：share/edit 令牌过期或吊销后，评论/投票/受邀编辑一并失效。
+
+    与 trip_service 读取端点共用 share_lifecycle 的判定（410 过期 / 403 吊销），
+    旧令牌（无记录）按永久兼容。审计 last_used 也在此统一更新。
+    """
+    from app.services import share_lifecycle
+
+    rec = await share_lifecycle.ensure_share_token_record(db, trip, kind=kind)
+    share_lifecycle.raise_if_token_inactive(rec)
+    await share_lifecycle.touch_token_usage(db, rec)
 
 
 async def _belongs_to_trip(db: AsyncSession, stop_id: str, trip_id: str) -> Stop:

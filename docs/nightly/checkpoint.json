@@ -1,13 +1,9 @@
 {
-  "night": "2026-09-26",
-  "status": "in_progress",
+  "night": "2026-09-27",
+  "status": "failed",
   "todo": [
     "competitive-analysis",
     "oss-license",
-    "oss-gitignore",
-    "content-readme",
-    "content-article-publish-list",
-    "task-hotel-budget",
     "task-revise-ux",
     "task-deploy-pack",
     "task-trip-share",
@@ -26,30 +22,10 @@
     "content-budget-transparency",
     "task-pwa-offline"
   ],
-  "completed": [
-    "competitive-analysis",
-    "oss-license",
-    "oss-gitignore",
-    "content-readme",
-    "content-article-publish-list",
-    "task-hotel-budget"
-  ],
-  "current_index": 6,
+  "completed": [],
+  "current_index": 0,
   "issues": [
-    "跨夜重建（night 2026-09-25 → 2026-09-26）：todo 列表按 docs/night-build-todo.md 重建。",
-    "注意：用户白天在 feat/driving-route-and-share-token-lifecycle 分支有未提交 WIP（driving-real-routes / share-token-lifecycle），夜间不触碰、不 stash。",
-    "todo 文件勾选状态与 main 已合并分支不完全一致（部分任务已随分支合并但 todo 仍标 [ ]），建议用户抽空核对待办状态。",
-    "oss-license：验收标准（LICENSE 存在 + README 开源许可小节）已在 main 上由图谱 commit 90dc87a（9-24 夜完成并合并）满足；本夜核对工作区与 main 零差异，无代码改动，未创建新分支（避免空分支噪音）。",
-    "oss-gitignore：审查三份 .gitignore（根/backend/frontend）覆盖完整——实测 git check-ignore 15 项关键路径全部 IGNORED（.env/.env.*/.venv/dist/node_modules/__pycache__/.pytest_cache/logs/*.db/*.egg-info/IDE 等）；git ls-files 仅跟踪 .env.example 无泄漏；git status 无垃圾产物；磁盘实际存在的 backend/.env 已被正确忽略。与 main 零差异（diff main 三文件均为空），验收已满足，无代码改动，未创建新分支（与 oss-license 同处理）。备注：frontend/.gitignore 未含 .env 规则，依赖根目录规则递归生效（实测 IGNORED 有效）；若需 frontend 目录自包含可白天补 1 行，非阻塞。",
-    "content-readme：README 修正 4 处与仓库实际不一致——①已知局限表 i18n 行「进行中」→「已完成」（main 上 task-i18n-views 已合并，PlanWizard/TripDetailView/ShareView 三视图均含 useI18n + t()）；②核心功能第 17 条「三大业务视图迁移进行中」同步为已完成；③④测试数 95→126（main 上 pytest 静态统计 13 文件 126 个真实用例）。另核实：README 夜间流水线小节/质量兜底小节与 manual 一致，自驾行保留（main 仍 haversine，amap 在用户 WIP）。主线验收机关：main 测试因 planning_service 引用未提交的 app/services/_common.py 而收集失败（用户 WIP 半提交状态），已用 git worktree + 静态统计替代运行验证，未触碰 WIP。建议用户尽快提交/整理 feat/driving-route-and-share-token-lifecycle 的 WIP，并合并本分支。",
-    "worker-5（content-article-publish-list）：checkout main 拉分支时发现 main 的 docs/nightly/checkpoint.json 与 docs/night-build-todo.md 停在 09-25 旧版（main 未合并 09-26 链），checkout 把这两个被跟踪文件回退成旧版；已从 nightly/2026-09-26/3-content-readme 检出恢复 09-26 链版（checkpoint 恢复 23 项 todo + completed 4 项 + current_index=4，todo 恢复 09-22~09-26 各段与勾选），恢复后 WIP 完好。建议：夜间流水线合并进 main 时注意同步 checkpoint/todo（09-25 夜同样踩过此坑），白天把 09-26 分支链合并后 main 即恢复最新。",
-    "content-article-publish-list：docs/nightly/publish-list.md 已产出（8 篇文章卡片：标题变体×3/平台适配/首图建议/发布时机；发布顺序速查表；发布前检查清单；A 验证信号）。发布清单核对发现文章⑤（docs/articles/05-map-edit-paradigms.md）尾部缺项目源码链接与系列互链（其余 7 篇均有），已在清单「发布前检查清单」标记，白天发布前补上即可。",
-    "task-hotel-budget：基础实现（城市基准价×档位倍率→estimated_cost + 6 单测）已于 09-21 合并进 main（commit 200dd00），但 todo 未勾选且 09-26 竞品分析补充了「估算口径标注」验收口径 → 本夜补上：estimate_hotel_cost 增加口径说明 + compute_budget 输出 estimate_basis（source=city_base_2024 / base_note / confidence=medium / estimated_count）+ 3 个新测试，全套件 156 passed。注意：分支 nightly/2026-09-26/5-task-hotel-budget 基于 main 创建（含用户 WIP 未提交状态原样保留），commit c8f4006 仅含 budget_service.py + test_budget_service.py 两个文件，未触碰/未提交任何用户 WIP 文件。"
+    "09-27 夜全部 night-worker 因 scheduler 重启未产出（unknown 态），night-worker-2 Broken pipe；0/19 完成，报告见 reports/2026-09-27.md"
   ],
-  "branches": [
-    "nightly/2026-09-26/0-competitive-analysis",
-    "nightly/2026-09-26/3-content-readme",
-    "nightly/2026-09-26/4-content-article-publish-list",
-    "nightly/2026-09-26/5-task-hotel-budget"
-  ]
+  "branches": []
 }

@@ -114,6 +114,41 @@ class ShareOut(BaseModel):
     share_url: str
 
 
+# ── 分享令牌生命周期（方案 2：task-share-token-lifecycle） ────────
+class ShareTokenLifecycleOut(BaseModel):
+    """分享/受邀编辑令牌的生命周期状态（owner 视角，含审计汇总）。
+
+    expires_at 为 null 表示永久；revoked_at 非空表示已吊销。
+    legacy=True 表示令牌仍在 trips 旧列、本表无记录（按永久兼容）。
+    """
+
+    trip_id: str
+    kind: str  # share / edit
+    token: str
+    share_url: str | None = None
+    expires_at: datetime | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime | None = None
+    last_used_at: datetime | None = None
+    legacy: bool = False
+
+
+class ShareRevokeIn(BaseModel):
+    """吊销请求：按 kind 吊销对应令牌（share=只读分享 / edit=受邀编辑）。"""
+
+    kind: Literal["share", "edit"] = "share"
+
+
+class ShareTtlIn(BaseModel):
+    """设置分享令牌有效期：days = 1 / 7 / 30（天），0 = 永久。
+
+    expires_at 由服务端按 now + days 计算；重复设置覆盖旧值（幂等）。
+    """
+
+    kind: Literal["share", "edit"] = "share"
+    days: Literal[0, 1, 7, 30] = Field(description="有效期天数：0=永久，1/7/30 天")
+
+
 class TripListOut(BaseModel):
     items: list[TripOut]
     total: int
@@ -236,6 +271,10 @@ class PlanTaskOut(BaseModel):
     error: str | None = None
     trace: list[AgentTraceStep] | None = None
     plan: dict | None = None
+    # 规划过程事件流(phase / artifact),前端阶段视图直接消费
+    events: list[dict] | None = None
+    # 阶段状态机(2期门控预留):collecting/assembling/reviewing/completed
+    state: str | None = None
 
 
 # ── Health ────────────────────────────────────────────────────
@@ -292,4 +331,25 @@ class GoogleLoginIn(BaseModel):
 
 class UserCreateOut(UserMeOut):
     """（预留）管理员创建用户响应。"""
+
+
+# ── 收藏灵感夹（方案 2：task-share-token-lifecycle） ────────────
+class FavoriteOut(BaseModel):
+    """一条收藏：展示行程摘要 + 分享令牌（前端可直接打开分享页）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    trip_id: str
+    title: str
+    destination: str
+    start_date: date
+    end_date: date
+    share_token: str | None = None
+    created_at: datetime
+
+
+class FavoriteListOut(BaseModel):
+    items: list[FavoriteOut]
+    total: int
 

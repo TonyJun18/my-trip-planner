@@ -40,9 +40,30 @@ from app.agent.providers import get_provider, invoke_with_resilience
 from app.common.config import settings
 from app.core.logging import get_logger
 from app.schemas.plan import validate_critique, validate_plan
-from app.services.driving_service import check_plan_driving
+from app.services.driving_service import check_plan_driving_async
 
 logger = get_logger(__name__)
+
+# WebSocket 实时推送：默认空实现（None），run_planning_agents 每产生一条
+# trace 就调用 on_event；由规划任务端点（ws router）注入真正的发布函数。
+# 用「可注入回调」而非直接 import hub，避免 agents 层与传输层耦合。
+_on_plan_event: Any = None
+
+
+def set_plan_event_callback(cb: Any) -> None:
+    """注入规划事件回调（ws 端点启动时调用；测试可注入收集器）。"""
+    global _on_plan_event
+    _on_plan_event = cb
+
+
+async def _emit_plan_event(event: dict[str, Any]) -> None:
+    """向 WS 订阅者发布一条规划事件（trace 追加 / 状态变更 / 完成）。"""
+    cb = _on_plan_event
+    if cb is not None:
+        try:
+            await cb(event)
+        except Exception:  # noqa: BLE001 — 推送失败绝不阻断 Agent 执行
+            logger.debug("规划事件推送失败: %s", event.get("type"))
 
 
 # ═══════════════════════════════════════════════════════════
@@ -824,13 +845,18 @@ async def run_planning_agents(
 
     a_res, w_res, h_res = await asyncio.gather(attraction_task, weather_task, hotel_task)
 
-    trace.append({"agent": "AttractionSearchAgent", "action": "search_attractions",
+    def _append_trace(entry: dict[str, Any]) -> None:
+        """追加一条 trace 并向 WS 订阅者实时推送（推送失败不影响主流程）。"""
+        trace.append(entry)
+        asyncio.create_task(_emit_plan_event({"type": "trace", "trace": entry}))
+
+    _append_trace({"agent": "AttractionSearchAgent", "action": "search_attractions",
                   "observation": f"{city} 景点 {len(a_res.get('pois', []))} 个",
                   "status": a_res.get("status")})
-    trace.append({"agent": "WeatherQueryAgent", "action": "query_weather",
+    _append_trace({"agent": "WeatherQueryAgent", "action": "query_weather",
                   "observation": f"{city} 未来天气（source={w_res.get('weather', {}).get('source', '?')}）",
                   "status": w_res.get("status")})
-    trace.append({"agent": "HotelAgent", "action": "search_hotels",
+    _append_trace({"agent": "HotelAgent", "action": "search_hotels",
                   "observation": f"{city} 酒店 {len(h_res.get('pois', []))} 个",
                   "status": h_res.get("status")})
 
@@ -839,10 +865,10 @@ async def run_planning_agents(
     try:
         food_res = await agent_tools.search_foods(city, query="必吃 美食 餐厅", limit=5)
         foods = food_res.get("results", [])
-        trace.append({"agent": "orchestrator", "action": "search_food",
+        _append_trace({"agent": "orchestrator", "action": "search_food",
                       "observation": f"{city} 餐厅 {len(foods)} 个", "status": "completed"})
     except Exception as exc:  # noqa: BLE001
-        trace.append({"agent": "orchestrator", "action": "search_food",
+        _append_trace({"agent": "orchestrator", "action": "search_food",
                       "observation": f"餐厅搜索失败: {exc}", "status": "failed"})
         logger.warning("餐饮搜索失败 city=%s err=%s", city, exc)
 
@@ -864,7 +890,7 @@ async def run_planning_agents(
             request, materials, provider=provider, max_corrections=max_corrections,
             review_feedback=review_feedback,
         )
-        trace.append({
+        _append_trace({
             "agent": "PlannerAgent",
             "action": "integrate" if round_idx == 0 else f"revise (round {round_idx})",
             "observation": (
@@ -885,13 +911,13 @@ async def run_planning_agents(
         candidate["budget"] = agent_tools.compute_budget(all_stops)
         candidate["hotels"] = _normalize_hotels(materials.get("hotels") or [])
 
-        # ── DrivingGate：自驾约束校验（确定性代码，超距/超时/折返） ──
-        driving = check_plan_driving(candidate)
+        # ── DrivingGate：自驾约束校验（确定性代码，超距/超时/折返；真实路径优先） ──
+        driving = await check_plan_driving_async(candidate)
         driving_reports.append(driving)
         if not driving["passed"] and round_idx < max_review_rounds:
             # 拒绝该站点组合：带自驾反馈重新生成（不进 Critic，省一次评审 token）
             logger.info("自驾校验未通过 round=%d critical=%d，进入修订", round_idx + 1, driving["critical_count"])
-            trace.append({
+            _append_trace({
                 "agent": "DrivingGate",
                 "action": "check_driving",
                 "observation": (
@@ -909,7 +935,7 @@ async def run_planning_agents(
         # 交给 TravelCriticAgent 评审（最后一代无需再评：强制定稿）
         if round_idx >= max_review_rounds:
             plan = candidate
-            trace.append({"agent": "TravelCriticAgent", "action": "review",
+            _append_trace({"agent": "TravelCriticAgent", "action": "review",
                           "observation": f"达到最大评审轮数（{max_review_rounds}），强制定稿", "status": "completed"})
             break
 
@@ -917,7 +943,7 @@ async def run_planning_agents(
         critique = critic.get("critique") or _pass_critique("质检未返回报告，按通过处理")
         review_history.append(critique)
         n_issues = len(critique.get("issues") or [])
-        trace.append({
+        _append_trace({
             "agent": "TravelCriticAgent",
             "action": "review",
             "observation": (
@@ -951,7 +977,7 @@ async def run_planning_agents(
             "history": [{"passed": r.get("passed"), "critical_count": r.get("critical_count"),
                          "summary": r.get("summary")} for r in driving_reports],
         }
-        trace.append({
+        _append_trace({
             "agent": "DrivingGate",
             "action": "check_driving",
             "observation": (

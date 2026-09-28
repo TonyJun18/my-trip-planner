@@ -136,6 +136,10 @@ class PlanTask(Base):
     trace: Mapped[list | None] = mapped_column(JSON, nullable=True)
     plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     trip_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    # 规划过程事件流(phase / artifact),供轮询快照读取、前端阶段视图渲染
+    events: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # 阶段状态机(2期检查点门控预留):collecting/awaiting_review/assembling/reviewing/completed
+    state: Mapped[str | None] = mapped_column(String(20), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -169,4 +173,45 @@ class StopVote(Base):
     stop_id: Mapped[str] = mapped_column(ForeignKey("stops.id", ondelete="CASCADE"), index=True)
     voter_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     value: Mapped[int] = mapped_column(Integer, nullable=False)  # 1=👍 / -1=👎
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ShareToken(Base):
+    """分享/受邀编辑令牌的生命周期记录（方案 2：task-share-token-lifecycle）。
+
+    与 trips.share_token / trips.edit_token 列并存（旧列承载「当前生效令牌」，
+    本表承载「过期 / 吊销 / 最近使用」等生命周期元数据）：
+
+    - kind: share=只读分享 / edit=受邀编辑
+    - expires_at: null=永久有效；非 null 且已过期 → 读取侧按失效处理
+    - revoked_at: owner 吊销时间；非 null → 立即失效（幂等）
+    - last_used_at: 最近一次成功访问（审计），由读取端点更新
+    - 旧数据（trips 列已有 token 但本表无记录）→ 按永久、未吊销、免审计兼容
+    """
+
+    __tablename__ = "share_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False, index=True)  # share / edit
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TripFavorite(Base):
+    """收藏灵感夹：登录用户收藏他人分享的行程。
+
+    - 与 share 解耦：收藏只读引用（不复制行程），分享失效后收藏自然失效。
+    - 同一 user + trip 唯一（幂等收藏/取消）。
+    """
+
+    __tablename__ = "trip_favorites"
+    __table_args__ = (UniqueConstraint("user_id", "trip_id", name="uq_trip_favorites_user_trip"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

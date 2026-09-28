@@ -71,6 +71,16 @@ export const reviseTrip = (tripId, data) => http.post(`/trips/${tripId}/revise`,
 export const createShare = (tripId) => http.post(`/trips/${tripId}/share`).then((r) => r.data)
 export const getSharedTrip = (token) => http.get(`/trips/share/${token}`).then((r) => r.data)
 
+// ── 分享令牌生命周期（TTL / 吊销 / 审计） ─────────────────
+export const getShareLifecycle = (tripId) => http.get(`/trips/${tripId}/share/lifecycle`).then((r) => r.data)
+export const revokeShareToken = (tripId, kind) => http.post(`/trips/${tripId}/share/revoke`, { kind }).then((r) => r.data)
+export const setShareTokenTtl = (tripId, kind, days) => http.post(`/trips/${tripId}/share/ttl`, { kind, days }).then((r) => r.data)
+
+// ── 收藏灵感夹（登录用户收藏他人分享的行程） ───────────────
+export const listFavorites = (params = {}) => http.get('/trips/favorites', { params }).then((r) => r.data)
+export const addFavorite = (tripId) => http.post(`/trips/favorites/${tripId}`).then((r) => r.data)
+export const removeFavorite = (tripId) => http.delete(`/trips/favorites/${tripId}`).then((r) => r.data)
+
 // ── 行程备选方案（Plan B：确定性规则生成，无 LLM） ─────────
 export const getPlanB = (tripId) => http.get(`/trips/${tripId}/plan-b`).then((r) => r.data)
 

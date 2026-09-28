@@ -201,6 +201,12 @@ async function load() {
         planB.value = null // 404/无站点 → 无备选，静默降级（不展示入口）
       }
     }
+    // 收藏状态（分享后才有收藏入口，非分享行程跳过）
+    if (trip.value?.share_token) {
+      await checkFavorite()
+    } else {
+      isFavorite.value = false
+    }
   } finally {
     loading.value = false
   }
@@ -327,6 +333,121 @@ async function doRevokeShareEdit() {
   }
 }
 
+// ── 分享设置（生命周期：TTL / 吊销 / 审计） ──────────────
+const shareSettingsVisible = ref(false)
+const lifecycleItems = ref([])
+const lifecycleLoading = ref(false)
+const ttlUpdating = ref(false)
+const revokingKind = ref('')
+
+async function openShareSettings() {
+  shareSettingsVisible.value = true
+  await loadShareLifecycle()
+}
+
+// 重新拉取生命周期状态（打开弹窗 / TTL / 吊销成功后）
+async function loadShareLifecycle() {
+  lifecycleLoading.value = true
+  try {
+    lifecycleItems.value = await api.getShareLifecycle(trip.value.id)
+  } catch (e) {
+    lifecycleItems.value = []
+    ElMessage.error(t('tripDetail.shareLinkFetchFail'))
+  } finally {
+    lifecycleLoading.value = false
+  }
+}
+
+// 状态计算：active/expired/revoked（revoked 优先展示）
+const lifecycleStatus = (item) => {
+  if (item.revoked_at) return 'revoked'
+  if (item.expires_at && new Date(item.expires_at).getTime() <= Date.now()) return 'expired'
+  return 'active'
+}
+
+// 复制某个链接（share_url / 编辑链接）
+function copyShareUrl(item) {
+  const url = item.kind === 'edit' ? `${window.location.origin}/share/${item.token}?edit=1` : item.share_url
+  if (!url) return
+  navigator.clipboard.writeText(url).then(() => ElMessage.success(t('tripDetail.linkCopied')))
+}
+
+// 设置 TTL（0 永久 / 1 / 7 / 30 天）
+async function setTtl(kind, days) {
+  ttlUpdating.value = true
+  try {
+    await api.setShareTokenTtl(trip.value.id, kind, days)
+    ElMessage.success(t('tripDetail.shareTtlUpdated'))
+    await loadShareLifecycle()
+  } catch (e) {
+    ElMessage.error(t('tripDetail.shareTtlFail'))
+  } finally {
+    ttlUpdating.value = false
+  }
+}
+
+// 吊销某个令牌（确认后）
+async function revokeShareLink(item) {
+  if (revokingKind.value) return
+  try {
+    await ElMessageBox.confirm(t('tripDetail.shareRevokeConfirmMsg'), t('tripDetail.shareRevokeConfirmTitle'), { type: 'warning' })
+  } catch { return }
+  revokingKind.value = item.kind
+  try {
+    await api.revokeShareToken(trip.value.id, item.kind)
+    ElMessage.success(t('tripDetail.shareRevoked'))
+    await loadShareLifecycle()
+  } catch (e) {
+    ElMessage.error(t('tripDetail.shareRevokeFail'))
+  } finally {
+    revokingKind.value = ''
+  }
+}
+
+// TTL 选项文案（0/1/7/30）
+const ttlOptions = computed(() => [
+  { label: t('tripDetail.ttlPermanent'), value: 0 },
+  { label: t('tripDetail.ttl1d'), value: 1 },
+  { label: t('tripDetail.ttl7d'), value: 7 },
+  { label: t('tripDetail.ttl30d'), value: 30 },
+])
+// 弹窗内展示完整链接用（编辑链接由前端拼 origin + share path）
+const windowOrigin = window.location.origin
+
+// ── 收藏灵感夹（当前行程是否已收藏） ──────────────────────
+const isFavorite = ref(false)
+const favoriting = ref(false)
+const hasSharedToken = computed(() => !!trip.value?.share_token)
+
+async function checkFavorite() {
+  if (!trip.value?.id) return
+  try {
+    const favs = await api.listFavorites({ limit: 200 })
+    isFavorite.value = favs.items?.some((f) => f.trip_id === trip.value.id) || false
+  } catch {
+    isFavorite.value = false
+  }
+}
+async function toggleFavorite() {
+  if (!trip.value?.id) return
+  favoriting.value = true
+  try {
+    if (isFavorite.value) {
+      await api.removeFavorite(trip.value.id)
+      ElMessage.success(t('tripDetail.favoriteRemoved'))
+      isFavorite.value = false
+    } else {
+      await api.addFavorite(trip.value.id)
+      ElMessage.success(t('tripDetail.favoriteAdded'))
+      isFavorite.value = true
+    }
+  } catch (e) {
+    ElMessage.error(t('tripDetail.favoriteFail'))
+  } finally {
+    favoriting.value = false
+  }
+}
+
 // ── 批量生成日程（按日期范围） ──────────────
 const genDaysVisible = ref(false)
 const genRange = ref([])
@@ -444,8 +565,20 @@ onMounted(load)
         <el-icon><ArrowLeft /></el-icon> {{ $t('tripDetail.backToTrips') }}
       </button>
       <div class="topbar-actions">
+        <el-button
+          v-if="hasSharedToken"
+          type="info"
+          plain
+          :loading="favoriting"
+          @click="toggleFavorite"
+        >
+          <el-icon style="margin-right: 4px"><StarFilled v-if="isFavorite" /><Star v-else /></el-icon>{{ isFavorite ? $t('tripDetail.favorited') : $t('tripDetail.favorite') }}
+        </el-button>
         <el-button type="success" plain :loading="sharing" @click="doShare">
           <el-icon style="margin-right: 4px"><Share /></el-icon>{{ $t('tripDetail.shareTrip') }}
+        </el-button>
+        <el-button plain @click="openShareSettings">
+          <el-icon style="margin-right: 4px"><Setting /></el-icon>{{ $t('tripDetail.shareSettings') }}
         </el-button>
         <el-button
           v-if="!trip?.edit_token"
@@ -702,6 +835,61 @@ onMounted(load)
       <template #footer>
         <el-button @click="genDaysVisible = false">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="genDaysLoading" @click="genDays">{{ $t('tripDetail.genBtn') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 分享设置（生命周期：TTL / 吊销 / 审计） -->
+    <el-dialog v-model="shareSettingsVisible" :title="$t('tripDetail.shareSettingsTitle')" width="680px" @open="loadShareLifecycle">
+      <div class="share-settings-hint">{{ $t('tripDetail.shareSettingsHint') }}</div>
+      <div v-loading="lifecycleLoading" class="share-settings-body">
+        <div v-if="!lifecycleLoading && !lifecycleItems.length" class="share-settings-empty">
+          {{ $t('tripDetail.shareLinkFetchFail') }}
+        </div>
+        <div v-for="item in lifecycleItems" :key="item.kind" class="share-setting-card" :class="lifecycleStatus(item)">
+          <div class="ss-head">
+            <span class="ss-kind">{{ item.kind === 'edit' ? $t('tripDetail.shareKindEdit') : $t('tripDetail.shareKindShare') }}</span>
+            <el-tag size="small" round :type="lifecycleStatus(item) === 'revoked' ? 'danger' : lifecycleStatus(item) === 'expired' ? 'warning' : 'success'">
+              {{ lifecycleStatus(item) === 'revoked' ? $t('tripDetail.shareStatusRevoked') : lifecycleStatus(item) === 'expired' ? $t('tripDetail.shareStatusExpired') : $t('tripDetail.shareStatusActive') }}
+            </el-tag>
+          </div>
+
+          <div class="ss-row">
+            <span class="ss-label">{{ $t('tripDetail.shareUrl') }}</span>
+            <span class="ss-value ss-url">
+              <template v-if="item.kind === 'edit'">{{ windowOrigin }}/share/{{ item.token }}?edit=1</template>
+              <template v-else>{{ item.share_url }}</template>
+            </span>
+            <el-button link type="primary" size="small" @click="copyShareUrl(item)">{{ $t('tripDetail.copyLink') }}</el-button>
+          </div>
+
+          <div class="ss-row">
+            <span class="ss-label">{{ $t('tripDetail.shareExpires') }}</span>
+            <span class="ss-value">{{ item.expires_at ? new Date(item.expires_at).toLocaleString() : $t('tripDetail.shareNever') }}</span>
+            <el-select
+              :model-value="0"
+              size="small"
+              style="width: 120px"
+              :disabled="lifecycleStatus(item) !== 'active'"
+              @change="(v) => setTtl(item.kind, v)"
+            >
+              <el-option v-for="opt in ttlOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
+            </el-select>
+          </div>
+
+          <div class="ss-row">
+            <span class="ss-label">{{ $t('tripDetail.shareLastUsed') }}</span>
+            <span class="ss-value">{{ item.last_used_at ? new Date(item.last_used_at).toLocaleString() : $t('tripDetail.shareNeverUsed') }}</span>
+          </div>
+
+          <div class="ss-actions" v-if="lifecycleStatus(item) === 'active'">
+            <el-button type="danger" plain size="small" :loading="revokingKind === item.kind" @click="revokeShareLink(item)">
+              {{ $t('tripDetail.shareStatusRevoked') }}
+            </el-button>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="shareSettingsVisible = false">{{ $t('common.cancel') }}</el-button>
       </template>
     </el-dialog>
 
@@ -970,6 +1158,27 @@ onMounted(load)
   margin-left: 10px; font-weight: 500; color: var(--muted);
 }
 .planb-hint { margin-top: 8px; font-size: 12px; color: var(--faint); }
+
+/* ── 分享设置弹窗（生命周期：TTL / 吊销 / 审计） ── */
+.share-settings-hint { font-size: 13px; color: var(--muted); margin-bottom: 14px; }
+.share-settings-body { min-height: 80px; }
+.share-settings-empty { text-align: center; color: var(--faint); padding: 24px 0; }
+.share-setting-card {
+  border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 14px 16px; margin-bottom: 12px; background: #fff;
+}
+.share-setting-card.revoked { opacity: 0.65; background: #fafafa; }
+.ss-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.ss-kind { font-size: 14px; font-weight: 600; color: var(--ink); }
+.ss-row {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--ink-2); padding: 5px 0;
+  flex-wrap: wrap;
+}
+.ss-label { color: var(--faint); flex-shrink: 0; min-width: 64px; }
+.ss-value { flex: 1; min-width: 0; word-break: break-all; }
+.ss-url { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--brand); }
+.ss-actions { margin-top: 6px; display: flex; justify-content: flex-end; }
 
 /* 响应式 */
 @media (max-width: 860px) {

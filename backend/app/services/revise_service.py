@@ -62,7 +62,7 @@ async def revise_trip(
         raise AppError(f"行程修订应用失败: {exc}", code="revise_apply_failed") from exc
 
     # 2.5) 自驾约束门（DrivingGate）：修订后站点组合超距/超时 → 整体拒绝
-    _enforce_driving_constraints(trip)
+    await _enforce_driving_constraints(trip)
 
     # 3) 落库 + 预算重算
     await db.flush()
@@ -305,7 +305,7 @@ def _renumber(day: TripDay) -> None:
 
 
 # ── 内部：预算重算 ──────────────────────────────────────────
-def _enforce_driving_constraints(trip: Trip) -> None:
+async def _enforce_driving_constraints(trip: Trip) -> None:
     """自驾约束门：修订后的行程若产生超距/超时的站点组合，整体拒绝。
 
     与规划编排的 DrivingGate 使用同一套确定性校验（driving_service），
@@ -314,10 +314,10 @@ def _enforce_driving_constraints(trip: Trip) -> None:
     Raises:
         AppError: 存在 critical 自驾问题（400 + detail 列出具体问题）。
     """
-    from app.services.driving_service import check_plan_driving
+    from app.services.driving_service import check_plan_driving_async
 
     plan_snapshot = _plan_snapshot(trip)
-    driving = check_plan_driving(plan_snapshot)
+    driving = await check_plan_driving_async(plan_snapshot)
     if driving["passed"]:
         return
     messages = [i.get("message", "") for i in driving["issues"] if i.get("severity") == "critical"]
@@ -341,8 +341,10 @@ async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
     budget = compute_budget(all_stops)
 
     # 自驾报告随修订一并写回 plan 快照（前端可在修订响应 plan.driving 里看到里程/时长）
+    from app.services.driving_service import check_plan_driving_async
+
     new_days = _plan_snapshot(trip)["days"]
-    driving = check_plan_driving({"days": new_days})
+    driving = await check_plan_driving_async({"days": new_days})
 
     # 更新最新 TripPlan 快照（若无则跳过；前端详情页主数据来自 trip 本身）
     stmt = select(TripPlan).where(TripPlan.trip_id == trip.id).order_by(TripPlan.created_at.desc())

@@ -88,6 +88,31 @@ def _is_backtrack(a: dict[str, Any], b: dict[str, Any], c: dict[str, Any]) -> bo
     return d_ac < d_ab * 0.4 and d_bc > d_ab * 0.6
 
 
+def _build_haversine_legs(stops: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """相邻站点 → 球面估算 legs（source=haversine）。
+
+    返回结构与 check_day_stops 的 legs 兼容，额外带 ``source`` 标注：
+    [{"from","to","distance_km","drive_minutes","source"}]
+    缺坐标的相邻对跳过（无法校验的段不进入 legs）。
+    """
+    legs: list[dict[str, Any]] = []
+    for i in range(1, len(stops)):
+        prev, stop = stops[i - 1], stops[i]
+        if not (isinstance(prev, dict) and isinstance(stop, dict)):
+            continue
+        prev_name = prev.get("name") or f"站点{i}"
+        name = stop.get("name") or f"站点{i + 1}"
+        d = leg_distance_km(prev, stop)
+        if d is None:
+            continue
+        legs.append({
+            "from": prev_name, "to": name,
+            "distance_km": round(d, 1), "drive_minutes": estimate_drive_minutes(d),
+            "source": "haversine",
+        })
+    return legs
+
+
 def check_day_stops(
     stops: list[dict[str, Any]],
     *,
@@ -96,19 +121,45 @@ def check_day_stops(
     max_leg_minutes: float = MAX_LEG_MINUTES,
     max_daily_km: float = MAX_DAILY_KM,
 ) -> dict[str, Any]:
-    """单日站点序列的驾车校验。
+    """单日站点序列的驾车校验（默认球面估算，无外部依赖）。
 
     返回：
     {
       "day_number": 1,
       "total_km": float,          # 相邻站点实际可算距离之和（缺坐标段不计）
-      "legs": [{"from","to","distance_km","drive_minutes"}],
+      "legs": [{"from","to","distance_km","drive_minutes","source"}],
       "issues": [CritiqueIssueSchema 兼容 dict],
       "passed": bool              # 无 critical 即通过（warning 不阻断）
     }
     """
+    legs = _build_haversine_legs(stops)
+    return _run_day_checks(
+        stops, legs,
+        day_number=day_number,
+        max_leg_km=max_leg_km, max_leg_minutes=max_leg_minutes, max_daily_km=max_daily_km,
+        source="haversine",
+    )
+
+
+def _run_day_checks(
+    stops: list[dict[str, Any]],
+    legs: list[dict[str, Any]],
+    *,
+    day_number: int = 1,
+    max_leg_km: float = MAX_LEG_KM,
+    max_leg_minutes: float = MAX_LEG_MINUTES,
+    max_daily_km: float = MAX_DAILY_KM,
+    source: str = "haversine",
+) -> dict[str, Any]:
+    """对给定 legs（已解析距离/时长，source=haversine|amap）执行单日校验与 issue 生成。
+
+    与 check_day_stops 共用：amap 真实路径层产出的 legs 也走这里，
+    保证超距/超时/累计/折返的判定逻辑唯一（确定性，可测试）。
+
+    legs 元素若带 ``rest_minutes``/``rest_km``（真实路径层的经停建议），
+    超限 issue 的 suggestion 会带上「中途经停」建议。
+    """
     issues: list[dict[str, Any]] = []
-    legs: list[dict[str, Any]] = []
     total_km = 0.0
 
     for i, stop in enumerate(stops):
@@ -123,20 +174,21 @@ def check_day_stops(
                 "suggestion": "补全站点经纬度后可启用自驾距离校验",
                 "day_number": day_number,
             })
-        if i == 0:
-            continue
-        prev = stops[i - 1]
-        if not isinstance(prev, dict):
-            continue
-        prev_name = prev.get("name") or f"站点{i}"
-        d = leg_distance_km(prev, stop)
-        if d is None:
-            continue
-        minutes = estimate_drive_minutes(d)
-        legs.append({"from": prev_name, "to": name, "distance_km": round(d, 1), "drive_minutes": minutes})
+
+    for leg in legs:
+        prev_name, name = leg["from"], leg["to"]
+        d = leg.get("distance_km", 0.0)
+        minutes = leg.get("drive_minutes", 0)
         total_km += d
 
-        if d > max_leg_km:
+        effective = d if d > 0 else 0.0
+        if effective > max_leg_km:
+            suggestion = f"把「{name}」调整到另一天，或拆成两天行程"
+            if leg.get("rest_minutes") and leg.get("rest_km"):
+                suggestion = (
+                    f"建议在行驶约 {leg['rest_km']:.0f}km 后安排一次约 {leg['rest_minutes']} 分钟的经停休息，"
+                    f"或把「{name}」调整到另一天"
+                )
             issues.append({
                 "severity": "critical",
                 "category": "geography",
@@ -144,10 +196,16 @@ def check_day_stops(
                     f"Day {day_number} 站点「{prev_name}」→「{name}」单段驾车约 {d:.0f}km，"
                     f"超过 {max_leg_km:.0f}km 上限"
                 ),
-                "suggestion": f"把「{name}」调整到另一天，或拆成两天行程",
+                "suggestion": suggestion,
                 "day_number": day_number,
             })
         elif minutes > max_leg_minutes:
+            suggestion = f"把「{name}」调整到另一天，避免单日长途赶路"
+            if leg.get("rest_minutes") and leg.get("rest_km"):
+                suggestion = (
+                    f"建议在行驶约 {leg['rest_km']:.0f}km 后安排一次约 {leg['rest_minutes']} 分钟的经停休息，"
+                    f"或把「{name}」调整到另一天"
+                )
             issues.append({
                 "severity": "critical",
                 "category": "geography",
@@ -155,7 +213,7 @@ def check_day_stops(
                     f"Day {day_number} 站点「{prev_name}」→「{name}」驾车约 {minutes} 分钟，"
                     f"超过 {max_leg_minutes:.0f} 分钟上限"
                 ),
-                "suggestion": f"把「{name}」调整到另一天，避免单日长途赶路",
+                "suggestion": suggestion,
                 "day_number": day_number,
             })
 
@@ -192,6 +250,7 @@ def check_day_stops(
         "legs": legs,
         "issues": issues,
         "passed": not any(i.get("severity") == "critical" for i in issues),
+        "source": source,
     }
 
 
@@ -209,18 +268,68 @@ def check_plan_driving(
       "total_km": float,        # 全部天累计可算驾驶里程
       "per_day": [check_day_stops 报告...],
       "issues": [全部 critical/warning 问题],
-      "summary": str
+      "summary": str,
+      "source": "haversine"     # 数据源标注
     }
     """
     per_day: list[dict[str, Any]] = []
-    issues: list[dict[str, Any]] = []
-    total_km = 0.0
 
     for day in plan.get("days") or []:
         report = check_day_stops(day.get("stops") or [], day_number=day.get("day_number", 0), **thresholds)
         per_day.append(report)
+
+    return _assemble_plan_report(per_day, force_source="haversine")
+
+
+async def check_plan_driving_async(
+    plan: dict[str, Any],
+    **thresholds: Any,
+) -> dict[str, Any]:
+    """异步版自驾校验：优先高德真实驾车路径，失败/未启用自动降级球面估算。
+
+    - DRIVING_ROUTE_SOURCE != 'amap' 或未配置 AMAP_API_KEY → 等效 check_plan_driving
+    - 高德熔断/单条失败 → 该行程整体降级 haversine（source 仍标注实际来源）
+    - 绝不抛异常（任何 IO 失败都被吞掉并降级）
+
+    返回结构与 check_plan_driving 完全一致，额外带 ``source``（amap|haversine）。
+    """
+    from app.services import amap_driving
+
+    per_day: list[dict[str, Any]] = []
+    for day in plan.get("days") or []:
+        stops = day.get("stops") or []
+        day_number = day.get("day_number", 0)
+        legs = await amap_driving.fetch_driving_legs(stops)
+        if legs is None:
+            # 未启用/熔断 → 整日 haversine
+            report = check_day_stops(stops, day_number=day_number, **thresholds)
+        else:
+            report = _run_day_checks(
+                stops, legs,
+                day_number=day_number,
+                **thresholds,
+                source="amap",
+            )
+        per_day.append(report)
+    return _assemble_plan_report(per_day)
+
+
+def _assemble_plan_report(
+    per_day: list[dict[str, Any]],
+    *,
+    force_source: str | None = None,
+) -> dict[str, Any]:
+    """把多日报告汇总为 plan 级报告（source 取最早非 haversine 的来源）。"""
+    issues: list[dict[str, Any]] = []
+    total_km = 0.0
+    source = "haversine"
+    for report in per_day:
         total_km += report["total_km"]
         issues.extend(report["issues"])
+        if force_source == "haversine":
+            continue
+        if report.get("source") == "amap":
+            source = "amap"
 
     critical_count = sum(1 for i in issues if i.get("severity") == "critical")
     if critical_count:
@@ -232,6 +341,7 @@ def check_plan_driving(
 
     return {
         "mode": "driving",
+        "source": source,
         "passed": critical_count == 0,
         "critical_count": critical_count,
         "total_km": round(total_km, 1),

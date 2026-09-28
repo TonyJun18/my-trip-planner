@@ -54,6 +54,17 @@ class Settings(BaseSettings):
     AMAP_API_KEY: str | None = None
     """高德开放平台 Web 服务 key（https://lbs.amap.com）。配置后景点/酒店搜索与天气走高德，否则自动降级 Tavily / wttr.in。"""
 
+    # ── 自驾真实路径（高德驾车路径 API） ──────────────────────
+    DRIVING_ROUTE_SOURCE: str = "haversine"
+    """自驾校验数据源：'haversine'（默认，球面估算，无外部依赖、离线可用）或 'amap'（高德驾车路径 API
+    真实距离/时长，需 AMAP_API_KEY；失败自动降级回 haversine，绝不阻断）。"""
+    DRIVING_ROUTE_TIMEOUT: float = 10.0
+    """高德驾车路径单次请求超时（秒）。"""
+    DRIVING_ROUTE_BREAKER_THRESHOLD: int = 3
+    """高德驾车路径连续失败次数达到该值 → 行程级熔断，本轮不再请求真实路径（降级 haversine）。"""
+    DRIVING_LEG_REST_MINUTES: int = 45
+    """超长单段（约 >2.5h）自动给出「中途经停」建议的经停时长阈值（分钟）。"""
+
     # ── 数据库 ──────────────────────────────────────────────
     DATABASE_URL: str | None = None
 

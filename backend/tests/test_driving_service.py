@@ -343,7 +343,7 @@ async def test_revise_rejects_overdistance_add(monkeypatch):
     }
     with pytest.raises(AppError) as exc_info:
         revise_service._apply_diff(trip, diff)
-        revise_service._enforce_driving_constraints(trip)
+        await revise_service._enforce_driving_constraints(trip)
     assert exc_info.value.code == "revise_driving_violation"
     assert "超距" in exc_info.value.message or "自驾" in exc_info.value.message
     assert exc_info.value.detail["issues"]

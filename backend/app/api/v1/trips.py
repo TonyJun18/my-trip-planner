@@ -7,12 +7,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.core.exceptions import NotFoundError
-from app.models import User
+from app.models import Trip, User
 from app.schemas import (
     DayIn,
     DayOut,
+    FavoriteListOut,
+    FavoriteOut,
     ReviseOut,
     ReviseRequest,
+    ShareRevokeIn,
+    ShareTokenLifecycleOut,
+    ShareTtlIn,
     SharedTripOut,
     ShareOut,
     StopIn,
@@ -33,6 +38,7 @@ from app.schemas.collab import (
     VoteOut,
 )
 from app.services import budget_service, collab_service, trip_service
+from app.services.collab_service import publish_collab
 
 router = APIRouter()
 
@@ -69,8 +75,15 @@ async def create_share_comment(
     data: CommentIn,
     db: AsyncSession = Depends(get_session),
 ) -> CommentOut:
-    """访客凭分享令牌发表评论（昵称可选，内容 ≤500 字）。"""
-    return await collab_service.create_comment(db, token, data)
+    """访客凭分享令牌发表评论（昵称可选，内容 ≤500 字）。落库后广播给协作频道。"""
+    comment = await collab_service.create_comment(db, token, data)
+    # 实时同步：通知所有打开分享页的连接（订阅者自行 re-fetch 权威数据）
+    trip = await trip_service.get_trip_by_share_token(db, token)
+    publish_collab(trip.id, {
+        "type": "comment",
+        "comment": CommentOut.model_validate(comment).model_dump(mode="json"),
+    })
+    return comment
 
 
 @router.get("/share/{token}/votes", response_model=dict[str, VoteOut], summary="分享页站点投票汇总（免登录）")
@@ -171,6 +184,156 @@ async def revoke_share_edit(
 ) -> Response:
     """owner 收回受邀编辑权：清空 edit_token，已有编辑链接立即失效（只读分享不受影响）。"""
     await trip_service.revoke_edit_token(db, trip_id, owner=user.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── 分享令牌生命周期（方案 2：task-share-token-lifecycle） ───────────
+@router.get(
+    "/{trip_id}/share/lifecycle",
+    response_model=list[ShareTokenLifecycleOut],
+    summary="分享/受邀编辑令牌生命周期状态（owner 视角，含最近使用审计）",
+)
+async def get_share_lifecycle(
+    trip_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> list[ShareTokenLifecycleOut]:
+    """owner 查看 share + edit 令牌的过期/吊销/最近使用状态。"""
+    from app.services import share_lifecycle
+
+    trip = await trip_service.get_trip(db, trip_id, owner=user.id)
+    base_url = str(request.base_url).rstrip("/")
+    items = await share_lifecycle.get_share_lifecycle(db, trip, base_url=base_url)
+    return [ShareTokenLifecycleOut(**item) for item in items]
+
+
+@router.post(
+    "/{trip_id}/share/revoke",
+    response_model=ShareTokenLifecycleOut,
+    summary="吊销分享/受邀编辑令牌（幂等，已有链接立即失效）",
+)
+async def revoke_share_token(
+    trip_id: str,
+    data: ShareRevokeIn,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> ShareTokenLifecycleOut:
+    """owner 吊销某个令牌（share/edit）。吊销后读取侧立即 403，保留审计记录。"""
+    from app.services import share_lifecycle
+
+    trip = await trip_service.get_trip(db, trip_id, owner=user.id)
+    await share_lifecycle.revoke_token(db, trip, kind=data.kind, owner=user.id)
+    # 吊销后返回最新生命周期状态（expires/revoked 已更新）
+    base_url = str(request.base_url).rstrip("/")
+    item = (await share_lifecycle.get_share_lifecycle(db, trip, base_url=base_url))
+    match = next((i for i in item if i["kind"] == data.kind), None)
+    if match is None:
+        raise NotFoundError("分享链接无效", code="share_token_not_found")
+    return ShareTokenLifecycleOut(**match)
+
+
+@router.post(
+    "/{trip_id}/share/ttl",
+    response_model=ShareTokenLifecycleOut,
+    summary="设置分享/受邀编辑令牌有效期（days=0 永久）",
+)
+async def set_share_token_ttl(
+    trip_id: str,
+    data: ShareTtlIn,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> ShareTokenLifecycleOut:
+    """owner 设置令牌 TTL：1/7/30 天过期，或 0 永久。重复设置覆盖旧值。"""
+    from app.services import share_lifecycle
+
+    trip = await trip_service.get_trip(db, trip_id, owner=user.id)
+    await share_lifecycle.set_token_ttl(db, trip, kind=data.kind, days=data.days, owner=user.id)
+    base_url = str(request.base_url).rstrip("/")
+    item = (await share_lifecycle.get_share_lifecycle(db, trip, base_url=base_url))
+    match = next((i for i in item if i["kind"] == data.kind), None)
+    if match is None:
+        raise NotFoundError("分享链接无效", code="share_token_not_found")
+    return ShareTokenLifecycleOut(**match)
+
+
+# ── 收藏灵感夹（方案 2：登录用户收藏他人分享的行程） ───────────────
+@router.get("/favorites", response_model=FavoriteListOut, summary="我的收藏灵感夹")
+async def list_favorites(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> FavoriteListOut:
+    """当前用户的收藏列表（倒序，含行程摘要 + share_token 便于直接打开分享页）。"""
+    from app.services import share_lifecycle
+
+    favorites = await share_lifecycle.list_favorites(db, user)
+    items: list[FavoriteOut] = []
+    for fav in favorites:
+        trip = await db.get(Trip, fav.trip_id)
+        if trip is None:
+            continue
+        items.append(
+            FavoriteOut(
+                id=fav.id,
+                trip_id=fav.trip_id,
+                title=trip.title,
+                destination=trip.destination,
+                start_date=trip.start_date,
+                end_date=trip.end_date,
+                share_token=trip.share_token,
+                created_at=fav.created_at,
+            )
+        )
+    return FavoriteListOut(items=items[offset : offset + limit], total=len(items))
+
+
+@router.post(
+    "/favorites/{trip_id}",
+    response_model=FavoriteOut,
+    summary="收藏一条行程（幂等）",
+)
+async def add_favorite(
+    trip_id: str,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> FavoriteOut:
+    """登录用户收藏指定行程（收藏的是只读引用，不复制行程）。"""
+    from app.services import share_lifecycle
+
+    fav = await share_lifecycle.add_favorite(db, trip_id, user)
+    trip = await db.get(Trip, fav.trip_id)
+    if trip is None:
+        raise NotFoundError("行程不存在", code="trip_not_found")
+    return FavoriteOut(
+        id=fav.id,
+        trip_id=fav.trip_id,
+        title=trip.title,
+        destination=trip.destination,
+        start_date=trip.start_date,
+        end_date=trip.end_date,
+        share_token=trip.share_token,
+        created_at=fav.created_at,
+    )
+
+
+@router.delete(
+    "/favorites/{trip_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="取消收藏（幂等）",
+)
+async def remove_favorite(
+    trip_id: str,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> Response:
+    """取消收藏（未收藏为 no-op）。"""
+    from app.services import share_lifecycle
+
+    await share_lifecycle.remove_favorite(db, trip_id, user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

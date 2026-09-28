@@ -71,12 +71,19 @@ async def get_trip_by_share_token(db: AsyncSession, token: str) -> Trip:
     """按分享令牌读取行程（免登录只读，持令牌即视为授权——与 git secret link 同语义）。
 
     - 不存在的令牌 → 404（避免泄露行程是否存在）
+    - 生命周期门禁：share_tokens 表有记录且已过期/吊销 → 410/403
+      （旧令牌无记录 → 永久兼容，不受影响）
     - 任何人都可查询，不做 owner 校验（分享的语义就是跨用户只读）
     """
     stmt = select(Trip).options(*_TRIP_LOADS).where(Trip.share_token == token)
     trip = (await db.execute(stmt)).scalar_one_or_none()
     if trip is None:
         raise NotFoundError("分享链接无效或已失效", code="share_token_invalid")
+    from app.services import share_lifecycle
+
+    rec = await share_lifecycle.ensure_share_token_record(db, trip, kind="share")
+    share_lifecycle.raise_if_token_inactive(rec)
+    await share_lifecycle.touch_token_usage(db, rec)
     return trip
 
 
@@ -106,11 +113,17 @@ async def get_trip_by_edit_token(db: AsyncSession, token: str) -> Trip:
     """按受邀编辑令牌读取行程（编辑权包含只读，受邀者可查看完整行程）。
 
     与只读 share_token 的信任语义一致：持令牌即视为授权，令牌不存在 → 404。
+    同样受生命周期门禁（share_tokens.kind='edit' 过期/吊销 → 410/403）。
     """
     stmt = select(Trip).options(*_TRIP_LOADS).where(Trip.edit_token == token)
     trip = (await db.execute(stmt)).scalar_one_or_none()
     if trip is None:
         raise NotFoundError("协作编辑链接无效或已失效", code="edit_token_invalid")
+    from app.services import share_lifecycle
+
+    rec = await share_lifecycle.ensure_share_token_record(db, trip, kind="edit")
+    share_lifecycle.raise_if_token_inactive(rec)
+    await share_lifecycle.touch_token_usage(db, rec)
     return trip
 
 

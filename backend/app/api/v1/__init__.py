@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1 import auth, health, note_import, plan_b, planner, profile, trips
+from app.api.v1 import auth, health, note_import, plan_b, planner, profile, trips, ws
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -12,4 +12,5 @@ api_router.include_router(trips.router, prefix="/trips", tags=["trips"])
 api_router.include_router(note_import.router, tags=["trips"])
 api_router.include_router(plan_b.router, tags=["trips"])
 api_router.include_router(planner.router, prefix="/planner", tags=["planner"])
+api_router.include_router(ws.router, tags=["ws"])  # WebSocket 端点（prefix 在 ws.py 内）
 api_router.include_router(profile.router, prefix="/profile", tags=["profile"])

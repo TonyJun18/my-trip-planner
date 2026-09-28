@@ -50,6 +50,13 @@ class PermissionDeniedError(AppError):
     code = "permission_denied"
 
 
+class GoneError(AppError):
+    """资源曾经存在但已失效（410，如分享链接已过期）。"""
+
+    status_code = 410
+    code = "gone"
+
+
 class ExternalServiceError(AppError):
     status_code = 502
     code = "external_service_error"
