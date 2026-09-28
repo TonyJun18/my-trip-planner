@@ -25,11 +25,15 @@
     "content-agentic-booking-endgame"
   ],
   "completed": [
-    "competitive-analysis"
+    "competitive-analysis",
+    "oss-license"
   ],
-  "current_index": 1,
-  "issues": [],
+  "current_index": 2,
+  "issues": [
+    "oss-license 实际已由 commit 90dc87a(2026-09-21) 完成（LICENSE + README 开源许可小节均在 main），但 todo 漏勾、checkpoint 未登记导致本夜重跑；worker-2 补登记完成（仅文档改动）"
+  ],
   "branches": [
-    "nightly/2026-09-29/1-competitive-analysis"
+    "nightly/2026-09-29/1-competitive-analysis",
+    "nightly/2026-09-29/2-oss-license"
   ]
 }
