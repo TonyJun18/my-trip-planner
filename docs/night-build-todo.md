@@ -72,3 +72,10 @@
 
 - [x] task-servicing-layer: 行程服务层（方案 B 第二段 servicing 产物）——①大交通方案 plan.transport：TransportAgent 采集（search_transport = 驾车真实路径 + Tavily 班次/价搜索），无出发地跳过、无来源/低置信条目硬闸门过滤（不编造）；②酒店入住办理指引 plan.checkin：checkin_service 模板基座 + LLM 润色，LLM 失败纯模板兜底，不收集证件号等敏感信息；③站点折扣比价 plan.discounts：servicing_service.build_discounts_view 对费用最高前 5 站点 Tavily 比价，无来源即丢弃；④市内通勤 plan.transit（确定性相邻站点建议）；⑤确定性折扣规则 plan.discount_rules（本地规则库，零外部依赖）。三段 servicing 完全解耦，失败只写 warnings 不阻断主流程；产物随 TripPlan 落库（PlanSchema 已加 transport/transit/checkin/discounts/discount_rules 字段）（验收：后端契约字段已随 TripPlan 落库 + 测试覆盖（transport 硬闸门/降级/无出发地跳过、checkin 模板兜底/LLM 润色/无酒店降级、discounts 空结果不崩、servicing 三段隔离）+ 前端 TripServicing.vue 服务层展示已接入 TripDetailView 与 PlanWizard + 前端 build 通过）
 - 注（大交通深度边界，不另建任务）：plan.transport 是「方案参考」（驾车真实路径 + Tavily 班次/价搜索），**不是实时可预订的班次表**——国内无免费官方交通班次 API；达到「点进去能买票」级别需接 12306/携程等商业 API，是另一个量级的集成（预订层），规划层定位保持「参考方案 + 官方渠道为准」
+
+## 2026-09-29 竞品分析追加（终局信号：agentic 预订成交 + 巨头整合 + post-booking 范式复活，来自 docs/nightly/competitive-analysis/2026-09-29.md）
+
+- [ ] task-email-import: 预订后整理最小版——「粘贴预订确认邮件文本」→ 复用 note-import 结构化提取管线识别航班/酒店/活动条目（日期时间/名称/地址/确认码/金额）→ 候选勾选并入行程（iGo 邮件自动提取/TripNoted booking email 为 post-booking 范式；我们不接 Gmail OAuth 凭证级集成，做零凭证的粘贴文本版，与 note-import 敌意输入处理同构）（验收：粘贴典型航司/酒店确认邮件生成结构化条目 + 金额进预算视图 + 恶意注入文本按敌意输入处理 + 测试覆盖；排在 task-screenshot-import 之后）
+- [ ] content-agentic-booking-endgame: 写一篇发布就绪文章《终局剧本：当 agentic 预订已经成交、独立工具已被收购——规划层还剩什么》（Mindtrip Flights 2026-05 Sabre+PayPal 对话内机票成交 / Expedia×Layla 2026-07 官宣 / Tripnotes 2023-12 关停 / Troupe 2026-06 倒闭为四信号，论证规划层「小而锋利」生存策略=可修订 diff+质检 trace+协作+诚实预算+输入自由，07/08 文姊妹篇收官）（验收：docs/articles/10-*.md 存在且内容完整，发布清单补卡片）
+- [ ] task-trip-collab-vote（验收升级）: 追加「渐进式推进」验收项——投票/确认达到 ≥50% 受邀成员即可标记「小组一致」，未响应成员不阻塞后续（TRIPTI.ai vs Troupe 教训：群组规划多数 commit 即锁定日期，不要求全员同意；JetBlue 旗下 Troupe 2026-06 确认倒闭）（验收：原验收 + 多数即推进、不响应不阻塞语义 + 测试覆盖）
+- [ ] task-screenshot-import（验收升级）: 追加「社交分享链接提取」可选分支——粘贴公开可读分享链接 → 尝试提取结构化信息，失败静默降级为链接收藏（TripNoted 1.0.20 social link→Idea→start trips 启发；截图 OCR 为主路径）（验收：原验收 + 公开链接提取成功/降级两路径 + schema 校验防注入）

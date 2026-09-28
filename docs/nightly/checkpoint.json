@@ -1,6 +1,6 @@
 {
-  "night": "2026-09-27",
-  "status": "failed",
+  "night": "2026-09-29",
+  "status": "in_progress",
   "todo": [
     "competitive-analysis",
     "oss-license",
@@ -20,12 +20,16 @@
     "task-budget-split",
     "task-screenshot-import",
     "content-budget-transparency",
-    "task-pwa-offline"
+    "task-pwa-offline",
+    "task-email-import",
+    "content-agentic-booking-endgame"
   ],
-  "completed": [],
-  "current_index": 0,
-  "issues": [
-    "09-27 夜全部 night-worker 因 scheduler 重启未产出（unknown 态），night-worker-2 Broken pipe；0/19 完成，报告见 reports/2026-09-27.md"
+  "completed": [
+    "competitive-analysis"
   ],
-  "branches": []
+  "current_index": 1,
+  "issues": [],
+  "branches": [
+    "nightly/2026-09-29/1-competitive-analysis"
+  ]
 }
