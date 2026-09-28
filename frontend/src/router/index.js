@@ -1,9 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
+  // 产品门面（未登录可访问）
+  { path: '/', name: 'landing', component: () => import('@/views/LandingPage.vue'), meta: { public: true } },
   { path: '/login', name: 'login', component: () => import('@/views/AuthView.vue'), meta: { public: true } },
   { path: '/share/:token', name: 'share', component: () => import('@/views/ShareView.vue'), meta: { public: true } },
-  { path: '/', name: 'home', component: () => import('@/views/TripListView.vue') },
+  // 登录后页面
+  { path: '/trips', name: 'trips', component: () => import('@/views/TripListView.vue') },
   { path: '/plan', name: 'plan', component: () => import('@/views/PlanWizard.vue') },
   {
     path: '/trips/:id',

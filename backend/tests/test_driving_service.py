@@ -164,10 +164,15 @@ def _install_offline_tools(monkeypatch):
              "source": "fake", "source_url": "", "geocoded": True}
         ]}
 
+    async def _fake_tavily(query, *, max_results=5, search_depth="basic"):
+        # servicing 折扣比价走 Tavily：测试里一并 mock（无网络）
+        return {"query": query, "count": 0, "results": []}
+
     monkeypatch.setattr(tools_mod, "search_attractions", _fake_search)
     monkeypatch.setattr(tools_mod, "search_hotels", _fake_search_hotels)
     monkeypatch.setattr(tools_mod, "search_foods", _fake_foods)
     monkeypatch.setattr(tools_mod, "query_weather", _fake_weather)
+    monkeypatch.setattr(tools_mod, "tavily_search", _fake_tavily)
 
 
 def _fake_provider(name: str, llm) -> None:

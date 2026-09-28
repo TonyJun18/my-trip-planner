@@ -421,7 +421,7 @@ async def _search_with_fallback(
     if primary is not None and _source_available("amap"):
         try:
             return await _run_source("amap", primary, city, query=query, limit=limit, want_type=want_type)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — 主源失败降级备源
             logger.warning("高德 POI 搜索失败，降级 Tavily (city=%s): %s", city, exc)
     return await _run_source("tavily", fallback, city, query=query, limit=limit, want_type=want_type)
 
@@ -546,6 +546,242 @@ def compute_budget(stops: list[dict[str, Any]]) -> dict[str, Any]:
         "by_type": {k: round(v, 2) for k, v in by_type.items()},
         "currency": "CNY",
     }
+
+
+# ═══════════════════════════════════════════════════════════
+#  大交通（TransportAgent）：出发地 → 目的地 的真实班次/价格搜索
+# ═══════════════════════════════════════════════════════════
+# 设计（契约优先，绝不编造价格）：
+# - 首选数据源高德驾车路线规划（真实距离/时长，仅同城/邻近城市有意义）；
+# - 跨城大交通（高铁/航班/长途巴士）无免费官方价格 API → Tavily 搜索公开讨论
+#   + 官方购买链接；价格一律标注「参考价，以官方为准」，来源缺失即丢弃。
+# - 所有 IO 复用 tools.py 顶部 _SourceCircuit 熔断（amap/tavily/nominatim）。
+
+_AMAP_ROUTE_ENDPOINT = "https://restapi.amap.com/v3/direction/transit/integrated"
+_ADVICE_QUERY_TEMPLATE = "{dep}到{arr} 高铁 机票 怎么去 攻略"
+
+
+async def _geocode_city(city: str) -> dict[str, Any] | None:
+    """把城市名地理编码为经纬度（复用 geocode 工具，source=nominatim）。"""
+    if not city:
+        return None
+    return await geocode(city)
+
+
+async def fetch_transport_options(
+    departure: str,
+    destination: str,
+    *,
+    date: str | None = None,
+    timeout: float | None = None,
+) -> dict[str, Any]:
+    """查询出发地 → 目的地的大交通方案（结构化、可审计、绝不编造）。
+
+    返回：
+    {
+      "from": departure, "to": destination,
+      "mode": "transport",
+      "options": [
+        {
+          "mode": "driving" | "train" | "flight" | "bus" | "driving_fallback",
+          "duration_minutes": int | None,
+          "distance_km": float | None,       # driving 时存在
+          "price_range": [min, max] | None,  # 参考价区间（元）；无可信来源为 None
+          "frequency": str | None,           # 班次密度描述（Tavily 提取）
+          "source": "amap" | "tavily" | "rule",
+          "source_url": str | None,          # 官方/来源链接（discount 硬闸门同款：缺失即低置信）
+          "confidence": float,               # 0-1；<0.5 的条目调用方应丢弃
+          "note": str | None
+        }
+      ],
+      "count": int, "status": "completed" | "degraded",
+    }
+
+    任何外部失败都降级（status=degraded，只保留规则条目），绝不抛异常。
+    """
+    options: list[dict[str, Any]] = []
+    degraded = False
+
+    # 1) 驾驶方案：高德驾车路径（同城/邻近）；失败/熔断 → 不编造，跳过
+    if settings.AMAP_API_KEY:
+        try:
+            legs = await _amap_driving_options(departure, destination, timeout=timeout)
+            if legs:
+                options.append(legs)
+                _source_circuits["amap"].record_success()
+            else:
+                _source_circuits["amap"].record_failure()
+                degraded = True
+        except Exception:  # noqa: BLE001
+            _source_circuits["amap"].record_failure()
+            degraded = True
+    else:
+        degraded = True  # 无 key：明确降级（Tavily 仍会尝试）
+
+    # 2) 跨城大交通：Tavily 搜索公开班次/价格讨论（带来源）
+    if _source_available("tavily"):
+        try:
+            adv = await _tavily_transport_advice(
+                departure, destination, date=date, timeout=timeout,
+            )
+            options.extend(adv)
+            _source_circuits["tavily"].record_success()
+        except Exception:  # noqa: BLE001
+            _source_circuits["tavily"].record_failure()
+            degraded = True
+    else:
+        degraded = True
+
+    return {
+        "from": departure,
+        "to": destination,
+        "mode": "transport",
+        "options": options,
+        "count": len(options),
+        "status": "completed" if not degraded else "degraded",
+        "note": None if not degraded else "部分数据源不可用，方案可能不完整（未编造缺失数据）",
+    }
+
+
+async def _amap_driving_options(
+    departure: str, destination: str, *, timeout: float | None = None,
+) -> dict[str, Any] | None:
+    """高德驾车路线方案（真实距离/时长；同城/邻近才有意义）。"""
+    key = settings.AMAP_API_KEY
+    if not key:
+        return None
+    origin = await _geocode_city(departure)
+    dest = await _geocode_city(destination)
+    if not origin or not dest:
+        return None
+    params = {
+        "key": key,
+        "origin": f"{origin['lng']},{origin['lat']}",  # 高德：经度,纬度
+        "destination": f"{dest['lng']},{dest['lat']}",
+        "strategy": "10",
+        "extensions": "base",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=timeout or settings.DRIVING_ROUTE_TIMEOUT) as client:
+            resp = await client.get(_AMAP_ROUTE_ENDPOINT, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+    except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as exc:
+        logger.warning("高德驾车路线失败 %s→%s err=%s", departure, destination, exc)
+        return None
+    if data.get("status") != "1":
+        logger.warning("高德驾车路线返回非成功: %s", data.get("info"))
+        return None
+    path = (data.get("route") or {}).get("paths") or []
+    if not path:
+        return None
+    try:
+        distance_m = float(path[0].get("distance") or 0)
+        duration_s = float(path[0].get("duration") or 0)
+    except (TypeError, ValueError):
+        return None
+    if distance_m <= 0:
+        return None
+    return {
+        "mode": "driving",
+        "duration_minutes": round(duration_s / 60.0),  # round(float) 已返回 int
+        "distance_km": round(distance_m / 1000.0, 1),
+        "price_range": None,  # 油价等无法可信估算 → 不给
+        "frequency": None,
+        "source": "amap",
+        "source_url": "https://www.amap.com/",
+        "confidence": 0.9,
+        "note": "高德驾车路线规划（真实路径）；跨城长途请另评估高铁/航班",
+    }
+
+
+async def _tavily_transport_advice(
+    departure: str, destination: str, *, date: str | None = None, timeout: float | None = None,
+) -> list[dict[str, Any]]:
+    """Tavily 搜索出发地→目的地的班次与价格讨论，提取带来源的可信条目。
+
+    硬闸门：无 source_url 或无法提取可信价格 → 不产出该条目（绝不编造）。
+    价格提取失败只返回 source_url 明确的「交通方式建议」条目（confidence 0.5-0.7）。
+    """
+    query = _ADVICE_QUERY_TEMPLATE.format(dep=departure, arr=destination)
+    if date:
+        query = f"{date} " + query
+    result = await tavily_search(query, max_results=5)
+    items: list[dict[str, Any]] = []
+    for r in result.get("results", []):
+        title = (r.get("title") or "").strip()
+        url = (r.get("url") or "").strip()
+        if not title or not url:
+            continue
+        entry: dict[str, Any] = {
+            "mode": "advice",
+            "duration_minutes": None,
+            "distance_km": None,
+            "price_range": None,
+            "frequency": _extract_frequency(title, r.get("content") or ""),
+            "source": "tavily",
+            "source_url": url,
+            "confidence": 0.6,
+            "note": title[:200],
+        }
+        # 价格启发式：内容里找 [¥¥]/数字+元 → 参考价区间（标注为参考）
+        price = _extract_price_range(r.get("content") or "")
+        if price:
+            entry["price_range"] = price
+            entry["confidence"] = 0.7
+        items.append(entry)
+    return items[:4]
+
+
+def _extract_price_range(text: str) -> list[float] | None:
+    """从文本提取参考价区间 [min, max]（元）；无可信价格返回 None。
+
+    识别两种写法：「¥150」与「300 元/300元」。区间过宽视为噪声。
+    """
+    import re as _re
+
+    prices: list[float] = []
+    for m in _re.finditer(r"[¥￥]\s*(\d+(?:\.\d+)?)", text):
+        v = float(m.group(1))
+        if 10 <= v <= 50000:
+            prices.append(v)
+    for m in _re.finditer(r"(\d+(?:\.\d+)?)\s*元", text):
+        v = float(m.group(1))
+        if 10 <= v <= 50000:
+            prices.append(v)
+    if not prices:
+        return None
+    lo, hi = min(prices), max(prices)
+    if hi - lo > 2000:  # 区间过大视为噪声，不给
+        return None
+    return [round(lo, 0), round(hi, 0)]
+
+
+def _extract_frequency(title: str, content: str) -> str | None:
+    """启发式提取班次密度描述（如「每日多班」「半小时一班」）；无则 None。"""
+    import re as _re
+
+    text = f"{title} {content[:300]}"
+    m = _re.search(
+        r"(每\s?\d+\s?分钟\s?一班|每\s?\d+\s?小时\s?一班|每日\s?\d+\s?班|每天\s?\d+\s?趟|\d+\s?趟?\s?/\s?天|每\s?\d+\s?分钟|每\s?\d+\s?小时)",
+        text,
+    )
+    return m.group(1) if m else None
+
+
+async def search_transport(
+    departure: str, destination: str, *, date: str | None = None, limit: int = 4,
+) -> dict[str, Any]:
+    """查询出发地→目的地的大交通方案（结构化 JSON）。
+
+    简单包装：TransportAgent（LangChain 工具）用，返回与 fetch_transport_options
+    相同的结构；limit 保留以对齐其他搜索工具签名。绝不编造缺失数据。
+    """
+    result = await fetch_transport_options(departure, destination, date=date)
+    # 按 limit 裁剪；来源缺失的低置信条目交由 agent/调用方丢弃
+    result["options"] = (result.get("options") or [])[: max(limit, 1)]
+    result["count"] = len(result["options"])
+    return result
 
 
 def plan_payload(destination: str, days: list[dict[str, Any]], budget: dict[str, Any]) -> dict[str, Any]:

@@ -6,7 +6,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import * as api from '@/api'
 import TripMap from '@/components/TripMap.vue'
 import HotelRecommend from '@/components/HotelRecommend.vue'
+import TripServicing from '@/components/TripServicing.vue'
 import QualityCard from '@/components/QualityCard.vue'
+import XhsNoteDialog from '@/components/XhsNoteDialog.vue'
 import { exportImage, exportPdf } from '@/utils/export'
 
 const route = useRoute()
@@ -250,6 +252,15 @@ function onPlanChange(p) {
 // ── 酒店推荐（公共组件 HotelRecommend 接收 plan.hotels + trip.days） ──
 const hotelCandidates = computed(() => plan.value?.hotels || [])
 
+// ── 行程服务层（方案 B 第二段 servicing 产物：交通/通勤/入住/折扣） ──
+const servicingProps = computed(() => ({
+  transport: plan.value?.transport || null,
+  transit: plan.value?.transit || null,
+  checkin: plan.value?.checkin || null,
+  discountRules: plan.value?.discount_rules || [],
+  discounts: plan.value?.discounts || null,
+}))
+
 // ── 导出 ───────────────────────────────────
 async function doExportImage() {
   exporting.value = true
@@ -278,6 +289,7 @@ async function doExportPdf() {
 
 // ── 分享（只读链接） ─────────────────────────────────────
 const sharing = ref(false)
+const xhsNoteVisible = ref(false)
 async function doShare() {
   sharing.value = true
   try {
@@ -551,7 +563,7 @@ async function removeTrip() {
   } catch { return }
   await api.deleteTrip(trip.value.id)
   ElMessage.success(t('tripDetail.deleted'))
-  router.push('/')
+  router.push('/trips')
 }
 
 onMounted(load)
@@ -561,7 +573,7 @@ onMounted(load)
   <div v-loading="loading" class="detail-page">
     <!-- 返回 -->
     <div class="topbar">
-      <button class="back-btn" @click="router.push('/')">
+      <button class="back-btn" @click="router.push('/trips')">
         <el-icon><ArrowLeft /></el-icon> {{ $t('tripDetail.backToTrips') }}
       </button>
       <div class="topbar-actions">
@@ -576,6 +588,9 @@ onMounted(load)
         </el-button>
         <el-button type="success" plain :loading="sharing" @click="doShare">
           <el-icon style="margin-right: 4px"><Share /></el-icon>{{ $t('tripDetail.shareTrip') }}
+        </el-button>
+        <el-button type="danger" plain @click="xhsNoteVisible = true">
+          <el-icon style="margin-right: 4px"><Promotion /></el-icon>{{ $t('tripDetail.shareToXhs') }}
         </el-button>
         <el-button plain @click="openShareSettings">
           <el-icon style="margin-right: 4px"><Setting /></el-icon>{{ $t('tripDetail.shareSettings') }}
@@ -755,6 +770,15 @@ onMounted(load)
           @arranged="load"
         />
 
+        <!-- 行程服务层（大交通 / 市内通勤 / 入住办理 / 折扣） -->
+        <TripServicing
+          :transport="servicingProps.transport"
+          :transit="servicingProps.transit"
+          :checkin="servicingProps.checkin"
+          :discount-rules="servicingProps.discountRules"
+          :discounts="servicingProps.discounts"
+        />
+
         <!-- 每日行程 -->
         <div class="day-section" v-for="day in trip.days" :key="day.id">
           <div class="day-head">
@@ -815,6 +839,9 @@ onMounted(load)
         </el-button>
       </div>
     </template>
+
+    <!-- 小红书笔记（生成文案/封面 → 复制 → App 发布） -->
+    <XhsNoteDialog v-model="xhsNoteVisible" :trip-id="trip?.id" :trip="trip" />
 
     <!-- 批量生成日程对话框 -->
     <el-dialog v-model="genDaysVisible" :title="$t('tripDetail.genDaysTitle')" width="440px">

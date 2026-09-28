@@ -321,10 +321,15 @@ def _install_offline_tools(monkeypatch):
              "source": "fake", "source_url": "", "geocoded": True}
         ]}
 
+    async def _fake_tavily(query, *, max_results=5, search_depth="basic"):
+        # servicing 折扣比价走 Tavily：测试里一并 mock（无网络）
+        return {"query": query, "count": 0, "results": []}
+
     monkeypatch.setattr(tools_mod, "search_attractions", _fake_search)
     monkeypatch.setattr(tools_mod, "search_hotels", _fake_search_hotels)
     monkeypatch.setattr(tools_mod, "search_foods", _fake_foods)
     monkeypatch.setattr(tools_mod, "query_weather", _fake_weather)
+    monkeypatch.setattr(tools_mod, "tavily_search", _fake_tavily)
     # agents.py 通过 agent_tools.* 引用同一模块对象，无需重复 patch
 
 
@@ -582,3 +587,120 @@ def test_get_provider_auto_no_key_raises(monkeypatch):
 
     with pytest.raises(LLMProviderError):
         get_provider("auto")
+
+
+# ── 规划事件流（phase / artifact，前端阶段状态机消费） ─────
+@pytest.mark.asyncio
+async def test_run_planning_agents_emits_phase_and_artifact_events(monkeypatch):
+    """run_planning_agents 应依次发出 phase 与 artifact 事件，供 WS 实时推送。
+
+    通过注入 collector 回调（set_plan_event_callback）收集事件，验证：
+    1. 事件按类型出现：phase(collecting→assembling→reviewing→completed)
+    2. artifact 覆盖 attractions/weather/hotels/foods/draft/quality
+    3. 阶段事件带 summary，制品事件带轻量 data
+    """
+    from app.agent import agents as agents_mod
+    from app.agent.providers import PROVIDER_REGISTRY
+
+    _install_offline_tools(monkeypatch)
+
+    events: list[dict] = []
+
+    async def _collector(event: dict) -> None:
+        events.append(event)
+
+    agents_mod.set_plan_event_callback(_collector)
+
+    class _EventLoopLLM:
+        _llm_type = "fake-event-loop"
+
+        def __init__(self):
+            self.planner_calls = 0
+            self.critic_calls = 0
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            sys_prompt = next((getattr(m, "content", "") or "" for m in messages
+                              if getattr(m, "type", "") == "system"), "")
+            if "行程质检专家" in sys_prompt:
+                self.critic_calls += 1
+                return AIMessage(content=json.dumps(
+                    {"score": 95, "passed": True, "issues": [], "summary": "通过"},
+                    ensure_ascii=False))
+            if "行程规划专家" in sys_prompt:
+                self.planner_calls += 1
+                return AIMessage(content=json.dumps(_critic_plan([
+                    {"name": "西湖", "type": "attraction", "lat": 30.245, "lng": 120.15,
+                     "estimated_cost": 0, "duration_minutes": 180, "description": "环湖"}]), ensure_ascii=False))
+            if "景点搜索专家" in sys_prompt:
+                return AIMessage(content="Thought: 搜索景点。",
+                                 tool_calls=[{"name": "search_attractions", "args": {"city": "杭州", "query": "自然风光"},
+                                              "id": "a1", "type": "tool_call"}])
+            if "酒店推荐专家" in sys_prompt:
+                return AIMessage(content="Thought: 查询酒店。",
+                                 tool_calls=[{"name": "search_hotels", "args": {"city": "杭州", "query": "经济酒店"},
+                                              "id": "h1", "type": "tool_call"}])
+            return AIMessage(content='{"error": "unknown role"}')
+
+    class _FakeProvider:
+        name = "fake-events"
+        model_id = "m"
+
+        def __init__(self):
+            self._llm = _EventLoopLLM()
+
+        def get_chat_model(self, temperature=0.2):
+            return self._llm
+
+    PROVIDER_REGISTRY["fake-events"] = _FakeProvider()  # type: ignore[assignment]
+    try:
+        await agents_mod.run_planning_agents(
+            {"destination": "杭州", "start_date": "2026-10-01", "end_date": "2026-10-01",
+             "travelers": 1, "budget": 2000, "preferences": ["自然风光"]},
+            provider="fake-events", max_review_rounds=2,
+        )
+    finally:
+        PROVIDER_REGISTRY.pop("fake-events", None)
+
+    # 事件是 fire-and-forget 的 create_task：run 返回后立即 pump 事件循环，
+    # 让尚未执行的事件任务落地（此时 callback 必须仍有效；且所有 fire 都发生在 run 完成前）
+    import asyncio as _aio
+    for _ in range(20):
+        await _aio.sleep(0.01)
+
+    agents_mod.set_plan_event_callback(None)
+
+    phases = [e for e in events if e.get("type") == "phase"]
+    artifacts = [e for e in events if e.get("type") == "artifact"]
+
+    # 阶段：collecting running → collecting completed → assembling running → (reviewing) → completed
+    phase_names = [e.get("phase") for e in phases]
+    assert "collecting" in phase_names
+    assert "assembling" in phase_names
+    assert "reviewing" in phase_names
+    assert "completed" in phase_names
+    # collecting 必须先从 running 变 completed
+    collecting_states = [(e.get("phase"), e.get("status")) for e in phases if e.get("phase") == "collecting"]
+    assert ("collecting", "running") in collecting_states
+    assert ("collecting", "completed") in collecting_states
+    collecting_ran = next(i for i, e in enumerate(phases) if e.get("phase") == "collecting" and e.get("status") == "running")
+    collecting_done = next(i for i, e in enumerate(phases) if e.get("phase") == "collecting" and e.get("status") == "completed")
+    assert collecting_ran < collecting_done
+
+    # 制品覆盖 6 类
+    art_names = {e.get("artifact") for e in artifacts}
+    assert {"attractions", "weather", "hotels", "foods", "draft", "quality"} <= art_names
+
+    # 采集完成事件带 summary
+    collect_done = next(e for e in phases if e.get("phase") == "collecting" and e.get("status") == "completed")
+    assert "景点" in (collect_done.get("summary") or "")
+
+    # 制品 data 是轻量展示字段（不膨胀）
+    attractions_art = next(e for e in artifacts if e.get("artifact") == "attractions")
+    assert isinstance(attractions_art.get("data"), list)
+    assert attractions_art["data"][0]["name"] == "西湖"
+    quality_art = next(e for e in artifacts if e.get("artifact") == "quality")
+    assert quality_art["data"]["score"] == 95
+    assert quality_art["data"]["passed"] is True

@@ -64,6 +64,47 @@ export const getTripPlan = (tripId) => http.get(`/trips/${tripId}/plan`).then((r
 export const planTrip = (data) => http.post('/planner/plan', data).then((r) => r.data)
 export const getPlanTask = (taskId) => http.get(`/planner/tasks/${taskId}`).then((r) => r.data)
 
+// ── 小红书笔记（方案 A：内容工厂） ─────────────────────────
+export const generateXhsNote = (tripId) => http.post(`/trips/${tripId}/xhs-note`, { provider: 'auto' }).then((r) => r.data)
+
+// ── 规划任务实时推送（WebSocket；断线由轮询兜底） ─────────
+const WS_BASE = () => {
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${window.location.host}/ws`
+}
+
+/**
+ * 订阅规划任务实时事件流。
+ * - onEvent(msg): 收到任一条 WS 消息（phase / artifact / trace / status）
+ * - onStatus(msg): 收到终态消息（status 快照，含 plan / trip_id）
+ * - onClose(): 连接关闭（调用方应切换轮询兜底）
+ * 返回一个 close() 函数。
+ */
+export function subscribePlanTask(taskId, { onEvent, onStatus, onClose }) {
+  const token = localStorage.getItem('trip_planner_token') || ''
+  const ws = new WebSocket(`${WS_BASE()}/planner/tasks/${taskId}?token=${encodeURIComponent(token)}`)
+  ws.onmessage = (evt) => {
+    let msg
+    try {
+      msg = JSON.parse(evt.data)
+    } catch {
+      return
+    }
+    if (msg.type === 'status' || msg.type === 'state') {
+      onStatus?.(msg)
+    } else {
+      onEvent?.(msg)
+    }
+  }
+  ws.onclose = () => onClose?.()
+  ws.onerror = () => {
+    try { ws.close() } catch { /* noop */ }
+  }
+  return () => {
+    try { ws.close() } catch { /* noop */ }
+  }
+}
+
 // ── 对话式修订行程（方案 B） ──────────────────────────────
 export const reviseTrip = (tripId, data) => http.post(`/trips/${tripId}/revise`, data).then((r) => r.data)
 

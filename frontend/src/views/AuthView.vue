@@ -61,7 +61,7 @@ async function submit() {
       await auth.register(payload)
       ElMessage.success(t('auth.registerSuccess'))
     }
-    const redirect = route.query.redirect || '/'
+    const redirect = route.query.redirect || '/trips'
     router.push(redirect)
   } catch {
     // 错误已由拦截器提示
@@ -106,7 +106,7 @@ async function handleGoogleCredential(credential) {
   try {
     await auth.loginWithGoogle(credential)
     ElMessage.success('Google 登录成功，欢迎回来！')
-    const redirect = route.query.redirect || '/'
+    const redirect = route.query.redirect || '/trips'
     router.push(redirect)
   } catch {
     // 错误已由拦截器提示；页面保留在原处

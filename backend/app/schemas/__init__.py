@@ -189,6 +189,7 @@ class PlanQuestion(BaseModel):
 
 class PlanRequest(BaseModel):
     destination: str = Field(min_length=1, max_length=200)
+    departure: str | None = Field(default=None, max_length=200, description="出发地（可选）；提供后 TransportAgent 会查询大交通方案并约束首日到达/末日离开安排")
     start_date: date
     end_date: date
     travelers: int = Field(default=1, ge=1)
@@ -331,6 +332,24 @@ class GoogleLoginIn(BaseModel):
 
 class UserCreateOut(UserMeOut):
     """（预留）管理员创建用户响应。"""
+
+
+# ── 小红书笔记（方案 A：内容工厂） ──────────────────────────────
+class XhsNoteRequest(BaseModel):
+    """生成小红书笔记请求。"""
+
+    provider: Literal["auto", "openai", "deepseek", "ollama"] = "auto"
+
+
+class XhsNoteOut(BaseModel):
+    """小红书笔记产物：标题/正文/话题 + 复制用完整文案 + 生成来源。"""
+
+    title: str
+    body: str
+    topics: list[str] = Field(default_factory=list)
+    full_text: str
+    source: str = "template"  # llm / template（标注生成方式，前端提示用）
+    image_spec: dict = Field(default_factory=dict)  # {width,height,ratio} 封面规格
 
 
 # ── 收藏灵感夹（方案 2：task-share-token-lifecycle） ────────────

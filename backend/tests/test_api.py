@@ -202,6 +202,12 @@ async def test_planner_async_task_flow(client, auth_user, monkeypatch):
     monkeypatch.setattr(agent_tools, "search_hotels", _fake_search_hotels)
     monkeypatch.setattr(agent_tools, "query_weather", _fake_weather)
 
+    # servicing 阶段折扣比价也走 Tavily：测试里一并 mock（无网络）
+    async def _fake_tavily(query, *, max_results=5, search_depth="basic"):
+        return {"query": query, "count": 0, "results": []}
+
+    monkeypatch.setattr(agent_tools, "tavily_search", _fake_tavily)
+
     # 2) FakeProvider 注册在 deepseek 名下（绕过 Literal 校验）
     class _FakeLLM:
         """按系统提示词区分角色：景点/酒店专家调工具，规划师直接出最终 JSON。"""

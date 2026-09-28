@@ -76,6 +76,17 @@ class PlanSchema(BaseModel):
     hotels: list[HotelSchema] = Field(default_factory=list, max_length=20)
     # 降级/告警信息：如"酒店搜索失败，已用通用描述替代"
     warnings: list[str] = Field(default_factory=list, max_length=20)
+    # ── 方案 B（两段式）契约字段：全部由编排层代码回填，LLM 不生成 ──
+    # 大交通方案（TransportAgent 采集阶段）；未提供出发地时为 None
+    transport: dict | None = None
+    # 城市级折扣规则（DiscountAgent 采集阶段，确定性规则库，无外部依赖）
+    discount_rules: list[dict] = Field(default_factory=list, max_length=30)
+    # 定稿后 servicing 产物：市内通勤视图（复用 driving legs，代码生成）
+    transit: dict | None = None
+    # 定稿后 servicing 产物：酒店入住办理指引（模板 + LLM 润色）
+    checkin: dict | None = None
+    # 定稿后 servicing 产物：选定站点折扣/优惠比价（Tavily，无来源硬闸门丢弃）
+    discounts: dict | None = None
 
 
 class CritiqueIssueSchema(BaseModel):

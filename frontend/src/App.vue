@@ -23,13 +23,18 @@ function logout() {
   auth.logout()
   router.push('/login')
 }
+
+// 品牌点击：登录态进我的行程，未登录态回 Landing（产品门面）
+function goHome() {
+  router.push(auth.isLoggedIn ? '/trips' : '/')
+}
 </script>
 
 <template>
   <el-config-provider :locale="elLocale">
     <el-container class="app-shell">
       <el-header class="app-header">
-        <div class="brand" @click="router.push('/')">
+        <div class="brand" @click="goHome">
           <span class="brand-logo">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 2C8.5 6.5 6 9.8 6 13.2 6 16.9 8.7 19.5 12 19.5s6-2.6 6-6.3C18 9.8 15.5 6.5 12 2z" fill="currentColor" />
@@ -42,7 +47,7 @@ function logout() {
         </div>
         <div class="nav">
           <template v-if="auth.isLoggedIn">
-            <button class="nav-link" :class="{ active: $route.path === '/' }" @click="router.push('/')">
+            <button class="nav-link" :class="{ active: $route.path === '/trips' }" @click="router.push('/trips')">
               {{ t('app.myTrips') }}
             </button>
             <button class="btn-primary" @click="router.push('/plan')">
@@ -68,6 +73,8 @@ function logout() {
             </el-dropdown>
           </template>
           <template v-else>
+            <a class="nav-link" href="#how">{{ t('app.features') }}</a>
+            <a class="nav-link" href="#inspiration">{{ t('app.inspiration') }}</a>
             <button class="btn-primary" @click="router.push('/login')">{{ t('app.loginRegister') }}</button>
           </template>
           <LangSwitcher />

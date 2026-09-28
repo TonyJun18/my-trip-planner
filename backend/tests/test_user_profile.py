@@ -184,6 +184,12 @@ async def test_plan_with_profile_end_to_end(client, auth_user, monkeypatch, db_s
     monkeypatch.setattr(agents.agent_tools, "query_weather", _fake_weather)
     monkeypatch.setattr(agents.agent_tools, "search_foods", _fake_search)
 
+    # servicing 阶段折扣比价也走 Tavily：测试里一并 mock（无网络）
+    async def _fake_tavily(query, *, max_results=5, search_depth="basic"):
+        return {"query": query, "count": 0, "results": []}
+
+    monkeypatch.setattr(agents.agent_tools, "tavily_search", _fake_tavily)
+
     # 3) FakeProvider：记录注入到各 Agent 的上下文，答案由行程规划专家直接给出
     class _FakeLLM:
         _llm_type = "fake-api"

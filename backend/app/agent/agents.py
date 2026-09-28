@@ -40,6 +40,7 @@ from app.agent.providers import get_provider, invoke_with_resilience
 from app.common.config import settings
 from app.core.logging import get_logger
 from app.schemas.plan import validate_critique, validate_plan
+from app.services.discount_service import discount_rules_for_request
 from app.services.driving_service import check_plan_driving_async
 
 logger = get_logger(__name__)
@@ -57,13 +58,47 @@ def set_plan_event_callback(cb: Any) -> None:
 
 
 async def _emit_plan_event(event: dict[str, Any]) -> None:
-    """向 WS 订阅者发布一条规划事件（trace 追加 / 状态变更 / 完成）。"""
+    """向 WS 订阅者发布一条规划事件（phase / artifact / trace / status）。
+
+    事件契约见 ``docs/interaction-redesign.md`` §4：
+    - phase:    ``{"type": "phase", "phase": "collecting", "status": "running|completed", ...}``
+    - artifact: ``{"type": "artifact", "artifact": "attractions", "data": [...]}``
+    - trace:    ``{"type": "trace", "trace": {...}}``（技术日志，前端折叠区展示）
+    - status:   ``{"type": "status", "status": "completed", ...}``（终态，由执行器补发）
+    """
     cb = _on_plan_event
     if cb is not None:
         try:
             await cb(event)
         except Exception:  # noqa: BLE001 — 推送失败绝不阻断 Agent 执行
             logger.debug("规划事件推送失败: %s", event.get("type"))
+
+
+# 事件发射辅助：fire-and-forget（推送失败/慢消费者不阻塞 Agent 主流程）
+def _fire_event(event: dict[str, Any]) -> None:
+    task = asyncio.create_task(_emit_plan_event(event))
+    # 回收异常：回调内部（如 DB 持久化）抛错时避免
+    # "Future exception was never retrieved" 噪音；推送失败本身已被静默
+    task.add_done_callback(_consume_event_task)
+
+
+def _consume_event_task(task: asyncio.Task) -> None:
+    try:
+        task.exception()
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        logger.debug("规划事件任务异常（已回收）", exc_info=True)
+
+
+def _fire_phase(phase: str, status: str, **extra: Any) -> None:
+    """发射一条阶段事件（running / completed 及可选 summary）。"""
+    _fire_event({"type": "phase", "phase": phase, "status": status, **extra})
+
+
+def _fire_artifact(artifact: str, data: Any) -> None:
+    """发射一条中间制品事件（轻量摘要；全量数据仍落 plan/trace 列）。"""
+    _fire_event({"type": "artifact", "artifact": artifact, "data": data})
 
 
 # ═══════════════════════════════════════════════════════════
@@ -90,10 +125,23 @@ async def query_weather(city: str, days: int = 3) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
+@lc_tool
+async def search_transport(departure: str, destination: str, date: str | None = None, limit: int = 4) -> str:
+    """查询出发地到目的地的大交通方案（驾车/高铁/航班），返回结构化 JSON。
+
+    价格可能缺失（无可信来源时不编造）；带 source_url 的条目才可引用。
+    """
+    result = await agent_tools.search_transport(departure, destination, date=date, limit=limit)
+    return json.dumps(result, ensure_ascii=False)
+
+
 ATTRACTION_TOOLS = [search_attractions]
 HOTEL_TOOLS = [search_hotels]
 WEATHER_TOOLS = [query_weather]
-TOOL_MAP: dict[str, Any] = {t.name: t for t in (search_attractions, search_hotels, query_weather)}
+TRANSPORT_TOOLS = [search_transport]
+TOOL_MAP: dict[str, Any] = {
+    t.name: t for t in (search_attractions, search_hotels, query_weather, search_transport)
+}
 
 
 # ═══════════════════════════════════════════════════════════
@@ -133,6 +181,50 @@ HOTEL_SYSTEM_PROMPT = """你是旅行规划团队中的【酒店推荐专家】�
 5. 最终输出：一个 JSON 数组，元素为 {name, type:"hotel", lat, lng, estimated_cost, duration_minutes, description}
 
 你只负责"找到并列出酒店"，不做行程编排。"""
+
+
+TRANSPORT_SYSTEM_PROMPT = """你是旅行规划团队中的【交通专家】。你的唯一任务：查询出发地到目的地的大交通方案（驾车/高铁/航班）。
+
+规则：
+1. 用户会给你：出发地 + 目的地（+ 日期）
+2. 调用工具 search_transport(departure, destination, date) 获取真实交通方案
+3. 不要编造班次/价格；工具返回什么就用什么；价格缺失就标 None
+4. 最终输出：一个 JSON 对象，结构为
+   {
+     "from": "出发地", "to": "目的地",
+     "options": [
+       {"mode": "driving|train|flight|bus|advice",
+        "duration_minutes": 数字或 null, "price_range": [min,max] 或 null,
+        "source": "amap|tavily", "source_url": "来源链接", "confidence": 0.9,
+        "note": "简短说明"}
+     ],
+     "summary": "一句话概括最推荐的方式"
+   }
+5. 只保留有 source_url 的条目；没有可信来源的不写进 options
+
+你只负责"查询并报告大交通"，不做行程编排。"""
+
+
+DISCOUNT_COLLECTOR_SYSTEM_PROMPT = """你是旅行规划团队中的【优惠收集专家】。你的唯一任务：收集目的地城市相关的折扣与优惠规则。
+
+规则：
+1. 用户会给你：目的地城市名
+2. 调用工具 collect_discount_rules(city) 获取确定性折扣规则（学生/老年/儿童/军人折扣、旅游年卡、平台通用优惠）
+3. 只能使用工具返回的规则；不要编造、不要添加工具没有的信息
+4. 最终输出：把工具返回的 JSON 原样返回（数组）
+
+你只负责"收集规则"，不做任何搜索、不生成实时比价。"""
+
+
+# DiscountAgent 工具（确定性本地规则，零外部依赖；单独包装避免污染 TOOL_MAP）
+@lc_tool
+async def collect_discount_rules(city: str) -> str:
+    """收集某城市的确定性折扣规则（学生/老年/儿童/军人折扣、旅游年卡、平台通用优惠），返回 JSON 数组。"""
+    rules = discount_rules_for_request({"destination": city})
+    return json.dumps(rules, ensure_ascii=False)
+
+
+DISCOUNT_TOOLS = [collect_discount_rules]
 
 
 PLANNER_SYSTEM_PROMPT = """你是旅行规划团队中的【行程规划专家】。你负责整合团队产出，输出最终完整行程。
@@ -493,6 +585,130 @@ async def hotel_agent(
 
 
 # ═══════════════════════════════════════════════════════════
+#  TransportAgent —— 大交通专家（出发地 → 目的地）
+# ═══════════════════════════════════════════════════════════
+async def transport_agent(
+    departure: str | None,
+    destination: str,
+    *,
+    date: str | None = None,
+    provider: str = "auto",
+    max_iterations: int | None = None,
+) -> dict[str, Any]:
+    """出发地 → 目的地 的大交通方案采集。
+
+    无出发地（用户未提供）→ 直接降级返回（status=skipped），不阻塞；
+    否则调用 search_transport 获取真实方案，输出 plan.transport 结构。
+    绝不编造价格：无可信来源的条目不返回（由工具层硬闸门保证）。
+    """
+    if not departure or not departure.strip():
+        return {"status": "skipped", "transport": None, "error": "未提供出发地"}
+
+    async def _node(state: dict[str, Any]) -> dict[str, Any]:
+        prov = get_provider(state.get("provider", "auto"))
+        messages: list[Any] = [SystemMessage(content=TRANSPORT_SYSTEM_PROMPT)]
+        messages.append(
+            HumanMessage(
+                content=(
+                    f"出发地：{state['departure']}\n"
+                    f"目的地：{state['destination']}\n"
+                    f"日期：{state.get('date') or '未指定'}\n"
+                    "请调用 search_transport 获取大交通方案。"
+                )
+            )
+        )
+        response = await invoke_with_resilience(prov, messages, tools=TRANSPORT_TOOLS)
+        tool_calls = getattr(response, "tool_calls", None) or []
+        if not tool_calls:
+            parsed = _extract_json(str(getattr(response, "content", "")))
+            if isinstance(parsed, dict) and parsed.get("options"):
+                return {"messages": [response], "status": "completed", "transport": parsed}
+            return {"messages": [response], "status": "failed", "error": "Agent 未调用交通工具"}
+        tool_calls = tool_calls[: max_iterations if max_iterations is not None else settings.AGENT_MAX_ITERATIONS]
+        tool_msgs = []
+        for tc in tool_calls:
+            fn = TOOL_MAP.get(tc.get("name") or "")
+            if fn is None:
+                return {"messages": [response], "status": "failed", "error": f"未知工具 {tc.get('name')}"}
+            try:
+                result = await fn.ainvoke(tc.get("args") or {})
+            except Exception as exc:  # noqa: BLE001
+                result = f'{{"error": "{exc}"}}'
+            tool_msgs.append(
+                ToolMessage(
+                    content=result if isinstance(result, str) else json.dumps(result, ensure_ascii=False),
+                    tool_call_id=tc.get("id") or "call-transport",
+                    name=tc["name"],
+                )
+            )
+        state["messages"] = [*state.get("messages", []), response, *tool_msgs]
+        # 从最后一个 ToolMessage 提取 transport 结构
+        transport: dict[str, Any] | None = None
+        for msg in reversed(state["messages"]):
+            if getattr(msg, "type", "") == "tool":
+                try:
+                    raw = json.loads(msg.content)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if isinstance(raw, dict) and raw.get("options") is not None:
+                    transport = {
+                        "from": raw.get("from") or state["departure"],
+                        "to": raw.get("to") or state["destination"],
+                        "options": raw.get("options") or [],
+                        "count": len(raw.get("options") or []),
+                        "status": raw.get("status", "completed"),
+                        "note": raw.get("note"),
+                    }
+                    break
+        if transport is None:
+            return {"messages": state["messages"], "status": "failed", "error": "无法解析交通方案"}
+        return {"messages": state["messages"], "status": "completed", "transport": transport}
+
+    state: dict[str, Any] = {
+        "departure": departure.strip(), "destination": destination,
+        "date": date, "provider": provider, "messages": [],
+    }
+    try:
+        result = await _node(state)
+        if result.get("status") != "completed":
+            return {"status": "failed", "error": result.get("error", "交通查询失败"), "transport": None}
+        # 硬闸门：过滤掉缺 source_url / confidence<0.5 的条目（不编造）
+        options = [
+            o for o in (result.get("transport") or {}).get("options", [])
+            if isinstance(o, dict) and o.get("source_url") and float(o.get("confidence", 0)) >= 0.5
+        ]
+        transport = result.get("transport") or {}
+        transport["options"] = options
+        transport["count"] = len(options)
+        return {"status": "completed", "transport": transport}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("TransportAgent 失败 %s→%s err=%s", departure, destination, exc)
+        return {"status": "failed", "error": str(exc), "transport": None}
+
+
+# ═══════════════════════════════════════════════════════════
+#  DiscountCollectorAgent —— 优惠规则收集专家（确定性本地规则）
+# ═══════════════════════════════════════════════════════════
+async def discount_agent(
+    city: str,
+    *,
+    provider: str = "auto",
+    max_iterations: int | None = None,
+) -> dict[str, Any]:
+    """目的地 → 确定性折扣规则列表（零外部依赖、零幻觉）。
+
+    输出与 PlanSchema.discount_rules 兼容：city_discount_rules 的结果原样。
+    失败（几乎不可能——纯本地调用）降级为空列表，不阻断主流程。
+    """
+    try:
+        rules = discount_rules_for_request({"destination": city})
+        return {"status": "completed", "rules": rules}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("DiscountAgent 失败 city=%s err=%s", city, exc)
+        return {"status": "failed", "error": str(exc), "rules": []}
+
+
+# ═══════════════════════════════════════════════════════════
 #  PlannerAgent —— 行程规划专家（无工具，强校验 + 自纠正）
 # ═══════════════════════════════════════════════════════════
 async def planner_agent(
@@ -589,6 +805,17 @@ def _planner_user_text(request: dict[str, Any], materials: dict[str, Any]) -> st
     if foods:
         lines.append(f"\n【餐厅列表】（{len(foods)} 个，来自餐厅搜索）")
         lines.append(json.dumps(foods, ensure_ascii=False)[:4000])
+
+    transport = materials.get("transport") or None
+    if transport:
+        lines.append("\n【大交通方案】（来自交通专家）")
+        lines.append(json.dumps(transport, ensure_ascii=False)[:2500])
+        lines.append("提示：首日到达时间/末日离开时间应参考大交通方案，避免行程与班次冲突。")
+
+    discount_rules = materials.get("discount_rules") or []
+    if discount_rules:
+        lines.append(f"\n【折扣规则】（{len(discount_rules)} 条，来自优惠收集专家，估算预算时可参考）")
+        lines.append(json.dumps(discount_rules, ensure_ascii=False)[:2000])
 
     lines.append("\n请整合以上全部信息，输出完整行程 JSON。")
     return "\n".join(lines)
@@ -836,14 +1063,24 @@ async def run_planning_agents(
     trace: list[dict[str, Any]] = []
     review_history: list[dict[str, Any]] = []  # 每次评审的报告（给 Planner 作为上下文）
 
-    # 1) 三个采集 Agent 并行（request 传入后，主动提问 Q&A 会并入搜索上下文）
+    # 阶段事件：任务开始 → collecting
+    _fire_phase("collecting", "running")
+
+    # 1) 五个采集 Agent 并行（request 传入后，主动提问 Q&A 会并入搜索上下文）
     #    采集 agent 内部最多调用工具一次，无 LLM 迭代循环，但通过参数显式带上限。
     agent_max_iter = max_iterations if max_iterations is not None else settings.AGENT_MAX_ITERATIONS
     attraction_task = attraction_agent(city, prefs, request=request, provider=provider, max_iterations=agent_max_iter)
     weather_task = weather_agent(city)
     hotel_task = hotel_agent(city, _accommodation_hints(request), request=request, provider=provider, max_iterations=agent_max_iter)
+    transport_task = transport_agent(
+        request.get("departure"), city,
+        date=request.get("start_date"), provider=provider, max_iterations=agent_max_iter,
+    )
+    discount_task = discount_agent(city)
 
-    a_res, w_res, h_res = await asyncio.gather(attraction_task, weather_task, hotel_task)
+    a_res, w_res, h_res, t_res, d_res = await asyncio.gather(
+        attraction_task, weather_task, hotel_task, transport_task, discount_task,
+    )
 
     def _append_trace(entry: dict[str, Any]) -> None:
         """追加一条 trace 并向 WS 订阅者实时推送（推送失败不影响主流程）。"""
@@ -859,6 +1096,15 @@ async def run_planning_agents(
     _append_trace({"agent": "HotelAgent", "action": "search_hotels",
                   "observation": f"{city} 酒店 {len(h_res.get('pois', []))} 个",
                   "status": h_res.get("status")})
+    _append_trace({"agent": "TransportAgent", "action": "search_transport",
+                  "observation": (
+                      f"{request.get('departure') or '未提供出发地'}→{city} 交通方案 "
+                      f"{len((t_res.get('transport') or {}).get('options', []))} 条"
+                  ),
+                  "status": t_res.get("status")})
+    _append_trace({"agent": "DiscountAgent", "action": "collect_discount_rules",
+                  "observation": f"{city} 折扣规则 {len(d_res.get('rules', []))} 条",
+                  "status": d_res.get("status")})
 
     # 2) 编排层补充餐饮（真实数据；失败不影响主流程）
     foods: list[dict[str, Any]] = []
@@ -872,12 +1118,50 @@ async def run_planning_agents(
                       "observation": f"餐厅搜索失败: {exc}", "status": "failed"})
         logger.warning("餐饮搜索失败 city=%s err=%s", city, exc)
 
+    # ── 采集完成：逐项发射中间制品（前端阶段视图实时展示候选）──
+    # 轻量摘要：只保留前端 chips 需要的字段（name/type/花费/时长），避免 events 行膨胀
+    attr_pois = [p for p in a_res.get("pois", []) if isinstance(p, dict) and p.get("name")]
+    hotel_pois = [p for p in h_res.get("pois", []) if isinstance(p, dict) and p.get("name")]
+    _fire_artifact("attractions", [
+        {"name": p.get("name"), "type": p.get("type") or "attraction",
+         "estimated_cost": p.get("estimated_cost"), "duration_minutes": p.get("duration_minutes")}
+        for p in attr_pois[:12]
+    ])
+    _fire_artifact("weather", (w_res.get("weather") or {}).get("days") or [])
+    _fire_artifact("hotels", [
+        {"name": p.get("name"), "type": "hotel",
+         "estimated_cost": p.get("estimated_cost"), "rating": p.get("rating")}
+        for p in hotel_pois[:10]
+    ])
+    foods_art = [
+        {"name": p.get("name"), "type": "food",
+         "estimated_cost": p.get("estimated_cost"), "duration_minutes": p.get("duration_minutes")}
+        for p in foods if isinstance(p, dict) and p.get("name")
+    ]
+    _fire_artifact("foods", foods_art[:10])
+    transport_art = (t_res.get("transport") or {}).get("options") or []
+    _fire_artifact("transport", [
+        {"mode": o.get("mode"), "duration_minutes": o.get("duration_minutes"),
+         "price_range": o.get("price_range"), "source": o.get("source"),
+         "note": (o.get("note") or "")[:60]}
+        for o in transport_art[:6] if isinstance(o, dict)
+    ])
+    _fire_artifact("discount_rules", (d_res.get("rules") or [])[:10])
+    _fire_phase("collecting", "completed", summary=(
+        f"景点 {len(attr_pois)} · 天气 {len((w_res.get('weather') or {}).get('days') or [])} 天"
+        f" · 酒店 {len(hotel_pois)} · 餐厅 {len(foods_art)}"
+        f" · 交通 {len(transport_art)} · 折扣 {len(d_res.get('rules', []))}"
+    ))
+    _fire_phase("assembling", "running")
+
     # 3) Planner 整合（无工具），Evaluator-Optimizer 评审循环 + 自驾 DrivingGate
     materials = {
         "attractions": a_res.get("pois", []),
         "hotels": h_res.get("pois", []),
         "foods": foods,
         "weather": (w_res.get("weather") or {}),
+        "transport": (t_res.get("transport") or None),
+        "discount_rules": d_res.get("rules", []),
     }
     plan: dict[str, Any] | None = None
     planner: dict[str, Any] = {"status": "failed", "error": "未执行"}  # 循环前预初始化（静态分析）
@@ -886,6 +1170,9 @@ async def run_planning_agents(
 
     for round_idx in range(max_review_rounds + 1):
         review_feedback = _critic_feedback(review_history[-1]) if review_history else None
+        if round_idx > 0:
+            _fire_phase("reviewing", "running")
+            _fire_phase("assembling", "running")
         planner = await planner_agent(
             request, materials, provider=provider, max_corrections=max_corrections,
             review_feedback=review_feedback,
@@ -910,6 +1197,16 @@ async def run_planning_agents(
         all_stops = [s for d in candidate.get("days", []) for s in d.get("stops", [])]
         candidate["budget"] = agent_tools.compute_budget(all_stops)
         candidate["hotels"] = _normalize_hotels(materials.get("hotels") or [])
+
+        # 行程草案制品（每代都发；前端「编排阶段」实时展示天数/主题）
+        _fire_artifact("draft", {
+            "days": len(candidate.get("days", [])),
+            "themes": [f"Day {d.get('day_number')} {d.get('theme') or ''}".strip()
+                       for d in candidate.get("days", [])][:10],
+            "round": round_idx + 1,
+        })
+        if round_idx == 0:
+            _fire_phase("assembling", "completed", summary=f"生成 {len(candidate.get('days', []))} 天草案")
 
         # ── DrivingGate：自驾约束校验（确定性代码，超距/超时/折返；真实路径优先） ──
         driving = await check_plan_driving_async(candidate)
@@ -943,6 +1240,16 @@ async def run_planning_agents(
         critique = critic.get("critique") or _pass_critique("质检未返回报告，按通过处理")
         review_history.append(critique)
         n_issues = len(critique.get("issues") or [])
+        # 质检评分制品：前端「AI 质检」阶段实时展示分数与问题数
+        _fire_artifact("quality", {
+            "score": critique.get("score"),
+            "passed": bool(critique.get("passed")),
+            "round": round_idx + 1,
+            "max_rounds": max_review_rounds,
+            "issues": critique.get("issues") or [],
+        })
+        if round_idx == 0:
+            _fire_phase("reviewing", "completed", summary=f"评分 {critique.get('score')}/100")
         _append_trace({
             "agent": "TravelCriticAgent",
             "action": "review",
@@ -987,6 +1294,55 @@ async def run_planning_agents(
             "status": "completed" if final_driving["passed"] else "warning",
         })
 
+    # 阶段收尾：assembling/reviewing 完成 → servicing（第二段） → 整体 completed
+    _fire_phase("assembling", "completed", summary=f"定稿 {len(plan.get('days', []))} 天行程")
+    _fire_phase("reviewing", "completed", summary="质检完成")
+
+    # ── 第二段 servicing：定稿后的可执行服务（市内通勤 / 入住办理 / 折扣比价）──
+    # 消费已定稿 plan，与采集/规划解耦；任一失败只记 warnings，绝不阻断主流程。
+    _fire_phase("servicing", "running")
+    from app.services.servicing_service import run_servicing
+
+    servicing = await run_servicing(plan, provider=provider)
+    if servicing.get("transit"):
+        plan["transit"] = servicing["transit"]
+        _fire_artifact("transit", {
+            "count": servicing["transit"].get("count", 0),
+            "legs": servicing["transit"].get("legs", [])[:10],
+        })
+    if servicing.get("checkin"):
+        plan["checkin"] = servicing["checkin"]
+        _fire_artifact("checkin", {
+            "hotel_name": servicing["checkin"].get("hotel_name"),
+            "docs_required": servicing["checkin"].get("docs_required", []),
+            "steps": servicing["checkin"].get("steps", [])[:8],
+            "source": servicing["checkin"].get("source"),
+        })
+    if servicing.get("discounts"):
+        plan["discounts"] = servicing["discounts"]
+        _fire_artifact("discounts", {
+            "count": servicing["discounts"].get("count", 0),
+            "items": servicing["discounts"].get("items", [])[:10],
+            "note": servicing["discounts"].get("note"),
+        })
+    _append_trace({
+        "agent": "ServicingGate", "action": "servicing",
+        "observation": (
+            f"市内通勤 {len((servicing.get('transit') or {}).get('legs', []))} 段"
+            f" · 入住指引 {('已生成' if servicing.get('checkin') else '降级')}"
+            f" · 折扣比价 {len((servicing.get('discounts') or {}).get('items', []))} 条"
+        ),
+        "status": "completed" if not servicing.get("warnings") else "warning",
+    })
+    for w in servicing.get("warnings", []):
+        plan.setdefault("warnings", []).append(w)
+    _fire_phase("servicing", "completed", summary=(
+        f"市内通勤 {len((servicing.get('transit') or {}).get('legs', []))} 段"
+        f" · 入住指引 {servicing.get('checkin', {}).get('source', '-')}"
+        f" · 折扣 {len((servicing.get('discounts') or {}).get('items', []))} 条"
+    ))
+    _fire_phase("completed", "completed")
+
     return {
         "plan": plan,
         "trace": trace,
@@ -1000,6 +1356,8 @@ async def run_planning_agents(
             "attractions": a_res.get("status"),
             "weather": w_res.get("status"),
             "hotels": h_res.get("status"),
+            "transport": t_res.get("status"),
+            "discounts": d_res.get("status"),
             "planner": planner.get("status"),
         },
     }

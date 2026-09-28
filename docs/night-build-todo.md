@@ -67,3 +67,8 @@
 - [ ] content-budget-transparency: 文章《预算是 AI 行程工具最不诚实的部分》——iPlan.ai 预算偏差 20-30%/Wonderplan 一般目的地数据/Wandercrafted 预算放付费墙为引，讲「估算透明 + 修订联动」哲学（标注口径的诚实估算 + 可修正），与 07/08 文构成价格维度姊妹篇（验收：docs/articles/09-*.md 存在且内容完整，代码引用与仓库实际一致，发布清单补卡片）
 - [ ] task-pwa-offline: PWA 离线——前端 Service Worker，缓存行程详情/api 响应，弱网时展示缓存行程 + 「离线模式」标识（AiGo PWA 离线为卖点，TripIt/Wanderlog 也有；行程是结构化 JSON 天然可离线缓存）（验收：build 通过 + SW 注册 + 行程详情可离线打开；低优先级）
 - 注（task-hotel-budget 补充验收口径）：落地时增加「估算口径标注」（source + 基准说明 + 置信度），预算视图展示「估算 vs 实际可验证」——对手 iPlan.ai 偏差 20-30% 翻车现场是「诚实估算」差异化背书
+
+## 用户白天下达任务（2026-09-28 追加，白天已完成实现，登记供检查点识别）
+
+- [x] task-servicing-layer: 行程服务层（方案 B 第二段 servicing 产物）——①大交通方案 plan.transport：TransportAgent 采集（search_transport = 驾车真实路径 + Tavily 班次/价搜索），无出发地跳过、无来源/低置信条目硬闸门过滤（不编造）；②酒店入住办理指引 plan.checkin：checkin_service 模板基座 + LLM 润色，LLM 失败纯模板兜底，不收集证件号等敏感信息；③站点折扣比价 plan.discounts：servicing_service.build_discounts_view 对费用最高前 5 站点 Tavily 比价，无来源即丢弃；④市内通勤 plan.transit（确定性相邻站点建议）；⑤确定性折扣规则 plan.discount_rules（本地规则库，零外部依赖）。三段 servicing 完全解耦，失败只写 warnings 不阻断主流程；产物随 TripPlan 落库（PlanSchema 已加 transport/transit/checkin/discounts/discount_rules 字段）（验收：后端契约字段已随 TripPlan 落库 + 测试覆盖（transport 硬闸门/降级/无出发地跳过、checkin 模板兜底/LLM 润色/无酒店降级、discounts 空结果不崩、servicing 三段隔离）+ 前端 TripServicing.vue 服务层展示已接入 TripDetailView 与 PlanWizard + 前端 build 通过）
+- 注（大交通深度边界，不另建任务）：plan.transport 是「方案参考」（驾车真实路径 + Tavily 班次/价搜索），**不是实时可预订的班次表**——国内无免费官方交通班次 API；达到「点进去能买票」级别需接 12306/携程等商业 API，是另一个量级的集成（预订层），规划层定位保持「参考方案 + 官方渠道为准」

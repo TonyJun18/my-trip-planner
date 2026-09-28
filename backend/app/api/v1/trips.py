@@ -28,6 +28,8 @@ from app.schemas import (
     TripListOut,
     TripOut,
     TripUpdate,
+    XhsNoteOut,
+    XhsNoteRequest,
 )
 from app.schemas.collab import (
     CommentIn,
@@ -37,7 +39,7 @@ from app.schemas.collab import (
     VoteIn,
     VoteOut,
 )
-from app.services import budget_service, collab_service, trip_service
+from app.services import budget_service, collab_service, trip_service, xhs_service
 from app.services.collab_service import publish_collab
 
 router = APIRouter()
@@ -364,6 +366,33 @@ async def get_trip(
     user: User = Depends(get_current_user),
 ) -> TripOut:
     return await trip_service.get_trip(db, trip_id, owner=user.id)
+
+
+# ── 小红书笔记（方案 A：内容工厂，用户复制后在 App 内发布） ──────
+@router.post("/{trip_id}/xhs-note", response_model=XhsNoteOut, summary="生成小红书笔记文案（AI 生成 + 规则兜底）")
+async def generate_xhs_note(
+    trip_id: str,
+    data: XhsNoteRequest,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> XhsNoteOut:
+    """为行程生成适配小红书发布的笔记（标题/正文/话题）。
+
+    - LLM 主路径：按小红书种草文风格生成；失败自动降级为规则模板（绝不无声失败）
+    - 返回 source 字段标注 llm / template，供前端提示「AI 生成」或「模板生成」
+    - 发布仍由用户完成（复制 → 小红书 App 粘贴），接口不含自动发布副作用
+    """
+    trip = await trip_service.get_trip(db, trip_id, owner=user.id)
+    note, source = await xhs_service.generate_xhs_note(trip, provider=data.provider)
+    spec = xhs_service.note_image_spec()
+    return XhsNoteOut(
+        title=note.title,
+        body=note.body,
+        topics=note.topics,
+        full_text=note.full_text,
+        source=source,
+        image_spec={"width": spec.width, "height": spec.height, "ratio": spec.ratio},
+    )
 
 
 @router.patch("/{trip_id}", response_model=TripOut, summary="更新行程")
