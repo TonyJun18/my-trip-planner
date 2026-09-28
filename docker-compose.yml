@@ -28,7 +28,9 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
-      - .env
+      # 可选：未创建 .env 时 compose 仍可 config/up（JWT_SECRET 等走随机/默认值，生产必须 cp .env.example .env 填写）
+      - path: .env
+        required: false
     environment:
       ENV: prod
       DEBUG: "false"
