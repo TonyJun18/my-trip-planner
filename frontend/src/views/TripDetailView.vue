@@ -30,6 +30,11 @@ const lastReviseDiff = ref([])
 const reviseError = ref('')
 const reviseDone = ref(false)
 
+// diff 预览折叠：超过 8 条默认收起，避免卡片过高
+const REVISE_DIFF_PREVIEW_MAX = 8
+const visibleReviseDiff = computed(() => lastReviseDiff.value.slice(0, REVISE_DIFF_PREVIEW_MAX))
+const reviseDiffMore = computed(() => Math.max(0, lastReviseDiff.value.length - REVISE_DIFF_PREVIEW_MAX))
+
 // diff 动作 → 人类可读文案（后端已给 op/target_name/day_number/fields）
 const diffOpKeys = {
   replace: 'diffReplace',
@@ -88,10 +93,10 @@ async function revise() {
     budget.value = null
     await load()
   } catch (e) {
-    // 全局拦截器已 toast 具体错误；内联横幅只给可操作的下一步提示（避免双 toast）
+    // 全局拦截器已 toast 具体错误；内联横幅展示后端 detail（若有）并提示保留输入（避免双 toast）
     lastReviseSummary.value = ''
     lastReviseDiff.value = []
-    reviseError.value = t('tripDetail.reviseFailHint')
+    reviseError.value = e?.response?.data?.detail || e?.response?.data?.error?.message || t('tripDetail.reviseFailHint')
   } finally {
     revising.value = false
   }
@@ -791,9 +796,12 @@ onMounted(load)
                 <span class="revise-diff-count" v-if="lastReviseDiff.length">{{ $t('tripDetail.diffCount', { n: lastReviseDiff.length }) }}</span>
               </div>
               <template v-if="lastReviseDiff.length">
-                <div v-for="(a, i) in lastReviseDiff" :key="i" class="revise-diff-item" :class="'op-' + (a.op || '')">
+                <div v-for="(a, i) in visibleReviseDiff" :key="i" class="revise-diff-item" :class="'op-' + (a.op || '')">
                   <el-icon class="revise-diff-icon"><template v-if="a.op === 'add'"><Plus /></template><template v-else-if="a.op === 'remove'"><Minus /></template><template v-else><Edit /></template></el-icon>
                   <span class="revise-diff-text">{{ diffText(a) }}</span>
+                </div>
+                <div v-if="reviseDiffMore" class="revise-diff-more">
+                  {{ $t('tripDetail.reviseDiffMore', { n: reviseDiffMore }) }}
                 </div>
               </template>
               <div v-else class="revise-diff-empty">{{ $t('tripDetail.diffEmpty') }}</div>
@@ -1158,6 +1166,10 @@ onMounted(load)
   font-size: 12.5px; color: var(--faint);
   padding: 6px 8px; background: rgba(0,0,0,.02);
   border-radius: var(--radius-sm);
+}
+.revise-diff-more {
+  margin-top: 6px; font-size: 12px; color: var(--faint);
+  padding: 4px 8px; border-top: 1px dashed var(--line);
 }
 .detail-quality { margin-top: 4px; }
 

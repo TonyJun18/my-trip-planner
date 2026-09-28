@@ -283,6 +283,7 @@ export default {
     fieldLng: 'Lng',
     diffTitle: 'Changes',
     diffCount: '{n} items',
+    reviseDiffMore: '{n} more not expanded',
     diffReplace: 'Modify',
     diffAdd: 'Add',
     diffRemove: 'Remove',

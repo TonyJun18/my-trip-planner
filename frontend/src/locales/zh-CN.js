@@ -283,6 +283,7 @@ export default {
     fieldLng: '经度',
     diffTitle: '本次改动',
     diffCount: '{n} 项',
+    reviseDiffMore: '还有 {n} 项未展开',
     diffReplace: '修改',
     diffAdd: '新增',
     diffRemove: '删除',
