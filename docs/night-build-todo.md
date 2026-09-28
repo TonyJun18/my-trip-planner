@@ -17,8 +17,8 @@
 
 ## 竞品分析后追加（夜间自动填充）
 
-- [ ] task-trip-share: 行程分享/群组协作最小版——生成分享链接 + 只读查看（Mindtrip 实时 co-edit + 投票、Layla 群组协调、MonkeyTravel 群组投票均为多人出行刚需）（验收：分享链接可打开只读行程页 + 测试覆盖）
-- [ ] task-roadtrip-mode: 自驾模式最小版——站点间驾车距离约束校验 + 超时/折返告警（TripPlanner AI 主打差异化：经停优化、避免折返）（验收：路由拒绝超距站点组合 + 测试覆盖）
+- [x] task-trip-share: 行程分享/群组协作最小版——生成分享链接 + 只读查看（Mindtrip 实时 co-edit + 投票、Layla 群组协调、MonkeyTravel 群组投票均为多人出行刚需）（验收：分享链接可打开只读行程页 + 测试覆盖）（2026-09-29 worker-5 补登记：主体已由 2026-09-21 commit 4051799(后端 share_token 生成 + 免登录只读 GET /trips/share/{token}) + 048b99c(前端详情页分享按钮 + ShareView 公开路由) 完成并经 92fec38 合并 main；test_api.py 分享链路 3 测试 + test_share_lifecycle/collab 覆盖，全套 187 绿）
+- [x] task-roadtrip-mode: 自驾模式最小版——站点间驾车距离约束校验 + 超时/折返告警（TripPlanner AI 主打差异化：经停优化、避免折返）（验收：路由拒绝超距站点组合 + 测试覆盖）（2026-09-29 worker-6 补登记：主体已由 2026-09-23 commit e443cd3（backend/app/services/driving_service.py DrivingGate：单段超距/超时/单日累计 critical + 折返/缺坐标 warning，check_day_stops/check_plan_driving/check_plan_driving_async，merge 进 run_planning_agents 评审循环 + revise_service 落库前约束）+ backend/tests/test_driving_service.py（含 DrivingGate 拒绝超距组合→修订→通过、强制定稿保留告警、revise 拒绝超距 add 等 14 测试）完成，并经 2026-09-28 ab8688f 合并 main；real-routes 层 amap_driving.py 属 task-driving-real-routes 范围不在此任务。全套 187 测试绿）
 - [ ] content-diff-positioning: 写一篇发布就绪文章《为什么 AI 行程工具应该把"修订"做成一等公民》（差异化定位：可执行/可修订/质检透明；Tripnotes.ai 停运留出市场窗口）（验收：docs/articles/04-diff-positioning.md 存在且内容完整）
 
 ## 竞品分析后追加（2026-09-22 国内平台，来自 docs/nightly/competitive-analysis/2026-09-22.md）
