@@ -1,6 +1,6 @@
 {
-  "night": "2026-09-27",
-  "status": "failed",
+  "night": "2026-09-29",
+  "status": "in_progress",
   "todo": [
     "competitive-analysis",
     "oss-license",
@@ -20,12 +20,28 @@
     "task-budget-split",
     "task-screenshot-import",
     "content-budget-transparency",
-    "task-pwa-offline"
+    "task-pwa-offline",
+    "task-email-import",
+    "content-agentic-booking-endgame"
   ],
-  "completed": [],
-  "current_index": 0,
+  "completed": [
+    "competitive-analysis",
+    "oss-license",
+    "task-revise-ux",
+    "task-deploy-pack",
+    "task-trip-share"
+  ],
+  "current_index": 5,
   "issues": [
-    "09-27 夜全部 night-worker 因 scheduler 重启未产出（unknown 态），night-worker-2 Broken pipe；0/19 完成，报告见 reports/2026-09-27.md"
+    "oss-license 实际已由 commit 90dc87a(2026-09-21) 完成（LICENSE + README 开源许可小节均在 main），但 todo 漏勾、checkpoint 未登记导致本夜重跑；worker-2 补登记完成（仅文档改动）",
+    "task-deploy-pack 主体已由 commit eab675f 完成（backend/frontend Dockerfile + docker-compose + deploy/README + nginx 反代，均已在 main），todo 漏勾导致本夜重跑；worker-4 补登记，并补全真实缺口：根 .env.example（原 README 指示 cp .env.example .env 但文件不存在）+ compose env_file 可选化（无 .env 时 docker compose config 从报错改为通过）",
+    "task-trip-share 主体已由 2026-09-21 commits 4051799（后端 share_token 生成 + 免登录只读 GET /trips/share/{token}，3 测试）+ 048b99c（前端详情页分享按钮 + ShareView 公开路由）完成并经 92fec38 合并 main；todo 漏勾导致本夜重跑；worker-5 补登记完成（仅文档改动，全套 187 测试绿）"
   ],
-  "branches": []
+  "branches": [
+    "nightly/2026-09-29/1-competitive-analysis",
+    "nightly/2026-09-29/2-oss-license",
+    "nightly/2026-09-29/3-task-revise-ux",
+    "nightly/2026-09-29/4-task-deploy-pack",
+    "nightly/2026-09-29/5-task-trip-share"
+  ]
 }
