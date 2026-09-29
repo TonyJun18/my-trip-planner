@@ -22,8 +22,10 @@
 
 ```bash
 # 1. 准备环境变量（JWT_SECRET 必须改成随机值；LLM/高德/Tavily key 按需填）
+#    `.env.example` 在仓库根目录（Docker 部署专用模板，含 POSTGRES_PASSWORD/POSTGRES_PORT 插值变量）
 cp .env.example .env
 #   JWT_SECRET=$(python3 -c "import secrets;print(secrets.token_hex(32))") 写入 .env 的 JWT_SECRET=
+# 不创建 .env 也能 `docker compose config`（env_file 已设为可选），但 JWT_SECRET 走进程级随机、重启失效——生产务必创建。
 
 # 2. 一键构建 + 启动
 docker compose up -d --build
