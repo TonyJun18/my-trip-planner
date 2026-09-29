@@ -27,6 +27,13 @@ const reviseMsg = ref('')
 const revising = ref(false)
 const lastReviseSummary = ref('')
 const lastReviseDiff = ref([])
+const reviseError = ref('')
+const reviseDone = ref(false)
+
+// diff 预览折叠：超过 8 条默认收起，避免卡片过高
+const REVISE_DIFF_PREVIEW_MAX = 8
+const visibleReviseDiff = computed(() => lastReviseDiff.value.slice(0, REVISE_DIFF_PREVIEW_MAX))
+const reviseDiffMore = computed(() => Math.max(0, lastReviseDiff.value.length - REVISE_DIFF_PREVIEW_MAX))
 
 // diff 动作 → 人类可读文案（后端已给 op/target_name/day_number/fields）
 const diffOpKeys = {
@@ -34,6 +41,22 @@ const diffOpKeys = {
   add: 'diffAdd',
   remove: 'diffRemove',
   reorder: 'diffReorder',
+}
+// 变更字段 key → 可读标签（diff 预览打磨：不再裸显示英文字段名）
+const fieldLabelKeys = {
+  name: 'fieldName',
+  description: 'fieldDesc',
+  stop_type: 'fieldType',
+  estimated_cost: 'fieldCost',
+  estimated_duration_minutes: 'fieldDuration',
+  note: 'fieldNote',
+  date: 'fieldDate',
+  lat: 'fieldLat',
+  lng: 'fieldLng',
+}
+function fieldLabel(k) {
+  const key = fieldLabelKeys[k]
+  return key ? t(`tripDetail.${key}`) : k
 }
 function diffText(a) {
   const day = a.day_number ? `Day${a.day_number} · ` : ''
@@ -43,7 +66,7 @@ function diffText(a) {
     return t('tripDetail.diffReorderText', { day, n: a.index ?? '?' })
   }
   const fieldKeys = Object.keys(a.fields || {})
-  const fieldText = fieldKeys.length ? `（${fieldKeys.join('、')}）` : ''
+  const fieldText = fieldKeys.length ? `（${fieldKeys.map(fieldLabel).join('、')}）` : ''
   const opLabel = diffOpKeys[a.op] ? t(`tripDetail.${diffOpKeys[a.op]}`) : a.op
   return t('tripDetail.diffActionText', { day, op: opLabel, target, fields: fieldText })
 }
@@ -54,20 +77,26 @@ async function revise() {
     ElMessage.warning(t('tripDetail.reviseWarning'))
     return
   }
+  if (revising.value) return
   revising.value = true
+  reviseError.value = ''
+  reviseDone.value = false
+  lastReviseSummary.value = ''
   lastReviseDiff.value = []
   try {
     const r = await api.reviseTrip(route.params.id, { message: msg, provider: 'auto' })
     lastReviseSummary.value = r.summary || ''
     lastReviseDiff.value = Array.isArray(r.diff) ? r.diff : []
+    reviseDone.value = true
     ElMessage.success(r.summary || t('tripDetail.revised'))
     reviseMsg.value = ''
     budget.value = null
     await load()
   } catch (e) {
-    // api 拦截器已 toast 具体错误；补充可操作的下一步提示
+    // 全局拦截器已 toast 具体错误；内联横幅展示后端 detail（若有）并提示保留输入（避免双 toast）
     lastReviseSummary.value = ''
-    ElMessage.error(t('tripDetail.reviseFailHint'))
+    lastReviseDiff.value = []
+    reviseError.value = e?.response?.data?.detail || e?.response?.data?.error?.message || t('tripDetail.reviseFailHint')
   } finally {
     revising.value = false
   }
@@ -732,12 +761,27 @@ onMounted(load)
               :placeholder="$t('tripDetail.revisePlaceholder')"
               size="large"
               clearable
+              :disabled="revising"
               @keyup.enter="revise"
             />
             <el-button type="primary" size="large" :loading="revising" @click="revise">
               <el-icon style="margin-right: 4px"><MagicStick /></el-icon>{{ $t('tripDetail.reviseBtn') }}
             </el-button>
           </div>
+          <!-- 加载态提示：修订进行中（AI 解析 + 原子应用） -->
+          <div v-if="revising" class="revise-loading">
+            <el-icon class="is-loading"><Loading /></el-icon>{{ $t('tripDetail.reviseLoading') }}
+          </div>
+          <!-- 错误态：内联横幅，保留用户输入便于修正后重试 -->
+          <transition name="el-fade-in">
+            <div v-if="reviseError" class="revise-error" role="alert">
+              <el-icon style="margin-right: 6px; flex-shrink: 0; margin-top: 2px"><WarningFilled /></el-icon>
+              <div class="revise-error-body">
+                <div>{{ reviseError }}</div>
+                <div class="revise-error-sub">{{ $t('tripDetail.reviseFailRetry') }}</div>
+              </div>
+            </div>
+          </transition>
           <transition name="el-fade-in">
             <div v-if="lastReviseSummary" class="revise-summary">
               <el-icon style="margin-right: 4px; color: var(--success)"><CircleCheck /></el-icon>
@@ -746,15 +790,21 @@ onMounted(load)
           </transition>
           <!-- 变更动作预览（diff 列表） -->
           <transition name="el-fade-in">
-            <div v-if="lastReviseDiff.length" class="revise-diff">
+            <div v-if="reviseDone" class="revise-diff">
               <div class="revise-diff-head">
                 <span class="revise-diff-title"><el-icon style="margin-right: 5px"><List /></el-icon>{{ $t('tripDetail.diffTitle') }}</span>
-                <span class="revise-diff-count">{{ $t('tripDetail.diffCount', { n: lastReviseDiff.length }) }}</span>
+                <span class="revise-diff-count" v-if="lastReviseDiff.length">{{ $t('tripDetail.diffCount', { n: lastReviseDiff.length }) }}</span>
               </div>
-              <div v-for="(a, i) in lastReviseDiff" :key="i" class="revise-diff-item" :class="'op-' + (a.op || '')">
-                <el-icon class="revise-diff-icon"><template v-if="a.op === 'add'"><Plus /></template><template v-else-if="a.op === 'remove'"><Minus /></template><template v-else><Edit /></template></el-icon>
-                <span class="revise-diff-text">{{ diffText(a) }}</span>
-              </div>
+              <template v-if="lastReviseDiff.length">
+                <div v-for="(a, i) in visibleReviseDiff" :key="i" class="revise-diff-item" :class="'op-' + (a.op || '')">
+                  <el-icon class="revise-diff-icon"><template v-if="a.op === 'add'"><Plus /></template><template v-else-if="a.op === 'remove'"><Minus /></template><template v-else><Edit /></template></el-icon>
+                  <span class="revise-diff-text">{{ diffText(a) }}</span>
+                </div>
+                <div v-if="reviseDiffMore" class="revise-diff-more">
+                  {{ $t('tripDetail.reviseDiffMore', { n: reviseDiffMore }) }}
+                </div>
+              </template>
+              <div v-else class="revise-diff-empty">{{ $t('tripDetail.diffEmpty') }}</div>
             </div>
           </transition>
         </div>
@@ -1068,9 +1118,23 @@ onMounted(load)
 }
 .revise-hint { font-size: 12px; color: var(--muted); }
 .revise-row { display: flex; gap: 10px; }
+.revise-loading {
+  margin-top: 10px; font-size: 13px; color: var(--muted);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.revise-error {
+  margin-top: 10px; font-size: 13px; color: #b45309;
+  background: rgba(245,158,11,.10); border: 1px solid rgba(245,158,11,.35);
+  border-radius: var(--radius-sm); padding: 8px 10px;
+  display: flex; align-items: flex-start;
+}
+.revise-error .el-icon { flex-shrink: 0; color: #d97706; margin-top: 2px; }
+.revise-error-body { display: flex; flex-direction: column; gap: 2px; }
+.revise-error-sub { font-size: 12px; color: var(--muted); }
 .revise-summary {
   margin-top: 10px; font-size: 13px; color: var(--success);
   background: rgba(16,185,129,.08); padding: 8px 12px;
+  border: 1px solid rgba(16,185,129,.30);
   border-radius: var(--radius-sm);
   display: inline-flex; align-items: center;
 }
@@ -1098,6 +1162,15 @@ onMounted(load)
 .revise-diff-item.op-remove .revise-diff-icon { color: #ef4444; }
 .revise-diff-item.op-replace .revise-diff-icon { color: #d97706; }
 .revise-diff-text { line-height: 1.45; }
+.revise-diff-empty {
+  font-size: 12.5px; color: var(--faint);
+  padding: 6px 8px; background: rgba(0,0,0,.02);
+  border-radius: var(--radius-sm);
+}
+.revise-diff-more {
+  margin-top: 6px; font-size: 12px; color: var(--faint);
+  padding: 4px 8px; border-top: 1px dashed var(--line);
+}
 .detail-quality { margin-top: 4px; }
 
 /* ── 每日行程 ── */
