@@ -30,7 +30,7 @@
 
 ## 2026-09-23 竞品分析追加（格局快照：预订闭环 vs 规划层）
 
-- [ ] task-trip-collab-vote: 行程协作投票最小版——分享行程页加评论 + 每日站点 👍/👎 投票（Mindtrip co-edit、Wanderlog 免费实时协作、MonkeyTravel 群组投票均验证多人出行刚需）（验收：分享页可投票/评论 + 测试覆盖；待 task-trip-share 合并稳定后评估）
+- [x] task-trip-collab-vote: 行程协作投票最小版——分享行程页加评论 + 每日站点 👍/👎 投票（Mindtrip co-edit、Wanderlog 免费实时协作、MonkeyTravel 群组投票均验证多人出行刚需）（验收：分享页可投票/评论 + 测试覆盖；待 task-trip-share 合并稳定后评估）（2026-09-29 worker-8 补登记：主体已实现入 main——后端 13b86f0（TripComment/StopVote 模型 + 迁移 e5302ddbcdd2 + 评论列表/发表 + 投票汇总/投票翻转接口，share_token 免登录、幂等可翻转、同行程归属校验）+ 436974f（受邀编辑权 edit_token 分离）经 ab8688f 合并；前端 dbf9072（ShareView 👍/👎 投票 + 评论区，build 通过）+ bacaced（受邀编辑交互）均已入 main；i18n share.* 键 zh/en 齐全、api/index.js 封装齐全；worker-8 核验后端 187 测试全绿 + 前端 build 通过，仅勾选登记）
 - [ ] content-planning-vs-booking: 写一篇发布就绪文章《AI 旅行规划正在变成预订漏斗——独立工具的机会在"规划层"》（Mindtrip agentic 机票 + Expedia 收购 Layla 的行业分层观察；免费/透明/可修订规划层定位）（验收：docs/articles/06-planning-vs-booking.md 存在且内容完整）
 - [ ] task-manual-edit: 行程手动细粒度编辑——站点卡片行内编辑（标题/时间/顺序拖拽），与 AI 修订并存（Wanderlog 手动自由改 + 地图联动是最强交互）（验收：行程详情页可改单日单点 + build 通过 + 测试覆盖；排在 task-roadtrip-mode 之后）
 
