@@ -7,18 +7,18 @@
 ## 首夜种子任务（源自 2026-09-19 OPC 复盘决策 + 项目现状）
 
 - [ ] competitive-analysis: 竞品分析（AI 旅行规划产品 3-5 个），输出差距→行动项（首夜必做，输出 docs/nightly/competitive-analysis/<date>.md）
-- [x] oss-license: 补 LICENSE（MIT）+ 开源说明段落加入 README（验收：LICENSE 文件存在，README 有 LICENSE 小节）（2026-09-29 worker-2 补登记：实际已由 commit 90dc87a 于 2026-09-21 并入 main，LICENSE + README「开源许可」小节均已在位，无代码改动）
+- [ ] oss-license: 补 LICENSE（MIT）+ 开源说明段落加入 README（验收：LICENSE 文件存在，README 有 LICENSE 小节）
 - [x] oss-gitignore: 审查 .gitignore（backend/.gitignore、frontend/.gitignore、根目录），确保 .env、.venv、dist、__pycache__ 不被提交（验收：git status 干净度 + .gitignore 覆盖）
 - [x] content-readme: README 增加「夜间开发流水线」说明 + 已知局限表格同步（验收：README 内容与仓库实际一致）
 - [x] content-article-publish-list: 为 docs/articles/ 3 篇文章各写一份「发布清单」（标题变体 3 个 / 平台适配要点 / 首图建议），不自动发布（验收：docs/nightly/publish-list.md 存在）
 - [x] task-hotel-budget: 补酒店价格真实度——评估并实现「基于 POI 类目 + 城市基准价的估算模型」，让预算 hotel 项不再是空壳（验收：compute_budget 输出 hotel 有非 0 估算 + 测试覆盖）
-- [x] task-revise-ux: 前端「让 AI 调整行程」对话交互打磨（加载态、错误态、diff 预览）（验收：build 通过 + 交互状态完整）（2026-09-29 worker-3 完成：branch nightly/2026-09-29/3-task-revise-ux，commit ed47d54——加载提示+输入禁用、内联错误横幅保留输入、diff 空态+字段名 i18n）
-- [x] task-deploy-pack: Docker 化部署包（backend Dockerfile + docker-compose.yml + 部署文档），不实际部署（验收：docker compose config 通过）（2026-09-29 worker-4 补登记：主体已在 eab675f 完成，本次补根 .env.example + compose env_file 可选化 + 文档同步，branch nightly/2026-09-29/4-task-deploy-pack, commit 48311a7）
+- [ ] task-revise-ux: 前端「让 AI 调整行程」对话交互打磨（加载态、错误态、diff 预览）（验收：build 通过 + 交互状态完整）
+- [ ] task-deploy-pack: Docker 化部署包（backend Dockerfile + docker-compose.yml + 部署文档），不实际部署（验收：docker compose config 通过）
 
 ## 竞品分析后追加（夜间自动填充）
 
 - [x] task-trip-share: 行程分享/群组协作最小版——生成分享链接 + 只读查看（Mindtrip 实时 co-edit + 投票、Layla 群组协调、MonkeyTravel 群组投票均为多人出行刚需）（验收：分享链接可打开只读行程页 + 测试覆盖）（2026-09-29 worker-5 补登记：主体已由 2026-09-21 commit 4051799(后端 share_token 生成 + 免登录只读 GET /trips/share/{token}) + 048b99c(前端详情页分享按钮 + ShareView 公开路由) 完成并经 92fec38 合并 main；test_api.py 分享链路 3 测试 + test_share_lifecycle/collab 覆盖，全套 187 绿）
-- [ ] task-roadtrip-mode: 自驾模式最小版——站点间驾车距离约束校验 + 超时/折返告警（TripPlanner AI 主打差异化：经停优化、避免折返）（验收：路由拒绝超距站点组合 + 测试覆盖）
+- [x] task-roadtrip-mode: 自驾模式最小版——站点间驾车距离约束校验 + 超时/折返告警（TripPlanner AI 主打差异化：经停优化、避免折返）（验收：路由拒绝超距站点组合 + 测试覆盖）（2026-09-29 worker-6 补登记：主体已由 2026-09-23 commit e443cd3（backend/app/services/driving_service.py DrivingGate：单段超距/超时/单日累计 critical + 折返/缺坐标 warning，check_day_stops/check_plan_driving/check_plan_driving_async，merge 进 run_planning_agents 评审循环 + revise_service 落库前约束）+ backend/tests/test_driving_service.py（含 DrivingGate 拒绝超距组合→修订→通过、强制定稿保留告警、revise 拒绝超距 add 等 14 测试）完成，并经 2026-09-28 ab8688f 合并 main；real-routes 层 amap_driving.py 属 task-driving-real-routes 范围不在此任务。全套 187 测试绿）
 - [ ] content-diff-positioning: 写一篇发布就绪文章《为什么 AI 行程工具应该把"修订"做成一等公民》（差异化定位：可执行/可修订/质检透明；Tripnotes.ai 停运留出市场窗口）（验收：docs/articles/04-diff-positioning.md 存在且内容完整）
 
 ## 竞品分析后追加（2026-09-22 国内平台，来自 docs/nightly/competitive-analysis/2026-09-22.md）
@@ -72,10 +72,3 @@
 
 - [x] task-servicing-layer: 行程服务层（方案 B 第二段 servicing 产物）——①大交通方案 plan.transport：TransportAgent 采集（search_transport = 驾车真实路径 + Tavily 班次/价搜索），无出发地跳过、无来源/低置信条目硬闸门过滤（不编造）；②酒店入住办理指引 plan.checkin：checkin_service 模板基座 + LLM 润色，LLM 失败纯模板兜底，不收集证件号等敏感信息；③站点折扣比价 plan.discounts：servicing_service.build_discounts_view 对费用最高前 5 站点 Tavily 比价，无来源即丢弃；④市内通勤 plan.transit（确定性相邻站点建议）；⑤确定性折扣规则 plan.discount_rules（本地规则库，零外部依赖）。三段 servicing 完全解耦，失败只写 warnings 不阻断主流程；产物随 TripPlan 落库（PlanSchema 已加 transport/transit/checkin/discounts/discount_rules 字段）（验收：后端契约字段已随 TripPlan 落库 + 测试覆盖（transport 硬闸门/降级/无出发地跳过、checkin 模板兜底/LLM 润色/无酒店降级、discounts 空结果不崩、servicing 三段隔离）+ 前端 TripServicing.vue 服务层展示已接入 TripDetailView 与 PlanWizard + 前端 build 通过）
 - 注（大交通深度边界，不另建任务）：plan.transport 是「方案参考」（驾车真实路径 + Tavily 班次/价搜索），**不是实时可预订的班次表**——国内无免费官方交通班次 API；达到「点进去能买票」级别需接 12306/携程等商业 API，是另一个量级的集成（预订层），规划层定位保持「参考方案 + 官方渠道为准」
-
-## 2026-09-29 竞品分析追加（终局信号：agentic 预订成交 + 巨头整合 + post-booking 范式复活，来自 docs/nightly/competitive-analysis/2026-09-29.md）
-
-- [ ] task-email-import: 预订后整理最小版——「粘贴预订确认邮件文本」→ 复用 note-import 结构化提取管线识别航班/酒店/活动条目（日期时间/名称/地址/确认码/金额）→ 候选勾选并入行程（iGo 邮件自动提取/TripNoted booking email 为 post-booking 范式；我们不接 Gmail OAuth 凭证级集成，做零凭证的粘贴文本版，与 note-import 敌意输入处理同构）（验收：粘贴典型航司/酒店确认邮件生成结构化条目 + 金额进预算视图 + 恶意注入文本按敌意输入处理 + 测试覆盖；排在 task-screenshot-import 之后）
-- [ ] content-agentic-booking-endgame: 写一篇发布就绪文章《终局剧本：当 agentic 预订已经成交、独立工具已被收购——规划层还剩什么》（Mindtrip Flights 2026-05 Sabre+PayPal 对话内机票成交 / Expedia×Layla 2026-07 官宣 / Tripnotes 2023-12 关停 / Troupe 2026-06 倒闭为四信号，论证规划层「小而锋利」生存策略=可修订 diff+质检 trace+协作+诚实预算+输入自由，07/08 文姊妹篇收官）（验收：docs/articles/10-*.md 存在且内容完整，发布清单补卡片）
-- [ ] task-trip-collab-vote（验收升级）: 追加「渐进式推进」验收项——投票/确认达到 ≥50% 受邀成员即可标记「小组一致」，未响应成员不阻塞后续（TRIPTI.ai vs Troupe 教训：群组规划多数 commit 即锁定日期，不要求全员同意；JetBlue 旗下 Troupe 2026-06 确认倒闭）（验收：原验收 + 多数即推进、不响应不阻塞语义 + 测试覆盖）
-- [ ] task-screenshot-import（验收升级）: 追加「社交分享链接提取」可选分支——粘贴公开可读分享链接 → 尝试提取结构化信息，失败静默降级为链接收藏（TripNoted 1.0.20 social link→Idea→start trips 启发；截图 OCR 为主路径）（验收：原验收 + 公开链接提取成功/降级两路径 + schema 校验防注入）
