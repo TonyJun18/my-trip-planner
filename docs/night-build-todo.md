@@ -79,3 +79,9 @@
 - [ ] content-agentic-booking-endgame: 写一篇发布就绪文章《终局剧本：当 agentic 预订已经成交、独立工具已被收购——规划层还剩什么》（Mindtrip Flights 2026-05 Sabre+PayPal 对话内机票成交 / Expedia×Layla 2026-07 官宣 / Tripnotes 2023-12 关停 / Troupe 2026-06 倒闭为四信号，论证规划层「小而锋利」生存策略=可修订 diff+质检 trace+协作+诚实预算+输入自由，07/08 文姊妹篇收官）（验收：docs/articles/10-*.md 存在且内容完整，发布清单补卡片）
 - [ ] task-trip-collab-vote（验收升级）: 追加「渐进式推进」验收项——投票/确认达到 ≥50% 受邀成员即可标记「小组一致」，未响应成员不阻塞后续（TRIPTI.ai vs Troupe 教训：群组规划多数 commit 即锁定日期，不要求全员同意；JetBlue 旗下 Troupe 2026-06 确认倒闭）（验收：原验收 + 多数即推进、不响应不阻塞语义 + 测试覆盖）
 - [ ] task-screenshot-import（验收升级）: 追加「社交分享链接提取」可选分支——粘贴公开可读分享链接 → 尝试提取结构化信息，失败静默降级为链接收藏（TripNoted 1.0.20 social link→Idea→start trips 启发；截图 OCR 为主路径）（验收：原验收 + 公开链接提取成功/降级两路径 + schema 校验防注入）
+
+## 2026-10-02 竞品分析追加（网络降级版·存量差距空洞审计，来自 docs/nightly/competitive-analysis/2026-10-02.md）
+
+- [ ] task-map-drag-edit: 地图拖拽修订（**真空洞立项**）——TripMap.vue 目前只读；按 05 文既有落地建议：拖动 marker 改 lat/lng + 按拖后顺序生成 reorder → 序列化成 ReviseDiff 复用 revise 原子应用（_apply_diff）+ DrivingGate 约束前置即时提示 + 移动端隐藏拖拽；只做「拖 marker + 生成 diff」，不做日区间拖拽（Wandercrafted 地图+直达导航 / AiGo 3D 交互 / TripPlanner AI 地图路线均为前台亮点；统一 diff 内核是我们独有工程基础）（验收：拖动 marker 生成 mapping 变更并走现有 revise 端点原子应用 + 自驾约束前置提示 + build 通过 + 测试覆盖；排在 task-manual-edit 之后）
+- [x] task-manual-edit（登记校正）: 手动细粒度编辑主体已落地入 main（PATCH /days/{day_id}/stops/{stop_id} 行内编辑 + PUT /days/{day_id}/stops/order 顺序重排，README 功能 15；10-02 竞品分析核实 todo 中仍为 [ ]，补勾登记，无需新开发）
+- 博客选题候选（不建任务）「11-map-drag-edit-implementation」：待 task-map-drag-edit 落地后写《地图拖拽修订落地记》（05 文是范式对比，本篇做工程落地，度量 diff 内核复用率）
