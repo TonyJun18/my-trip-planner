@@ -12,7 +12,7 @@
 - [x] content-readme: README 增加「夜间开发流水线」说明 + 已知局限表格同步（验收：README 内容与仓库实际一致）
 - [x] content-article-publish-list: 为 docs/articles/ 3 篇文章各写一份「发布清单」（标题变体 3 个 / 平台适配要点 / 首图建议），不自动发布（验收：docs/nightly/publish-list.md 存在）
 - [x] task-hotel-budget: 补酒店价格真实度——评估并实现「基于 POI 类目 + 城市基准价的估算模型」，让预算 hotel 项不再是空壳（验收：compute_budget 输出 hotel 有非 0 估算 + 测试覆盖）
-- [ ] task-revise-ux: 前端「让 AI 调整行程」对话交互打磨（加载态、错误态、diff 预览）（验收：build 通过 + 交互状态完整）
+- [x] task-revise-ux: 前端「让 AI 调整行程」对话交互打磨（加载态、错误态、diff 预览）（验收：build 通过 + 交互状态完整）（2026-10-02 worker-3 补登记：主体已由 commit ee2cab9（2026-09-21 基础版：加载态 revise-loading + 错误态 retain 输入提示 + diff 预览列表，经 b1865b3 合并 main）+ d7929c6（2026-09-29 增强：diff 超 8 条折叠 + 错误展示后端 detail，经 4864485 合并 main）完成；TripDetailView 第 25-103 行 revise 逻辑 + 752-810 行模板齐全，zh/en 文案在案；todo 漏勾导致本夜重跑；worker-3 核验后端 187 测试全绿 + 前端 build 通过，仅补登记，无新代码改动）
 - [ ] task-deploy-pack: Docker 化部署包（backend Dockerfile + docker-compose.yml + 部署文档），不实际部署（验收：docker compose config 通过）
 
 ## 竞品分析后追加（夜间自动填充）
