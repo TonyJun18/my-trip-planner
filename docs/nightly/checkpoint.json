@@ -27,19 +27,22 @@
     "task-manual-edit",
     "oss-license",
     "task-revise-ux",
-    "task-deploy-pack"
+    "task-deploy-pack",
+    "content-planning-vs-booking"
   ],
-  "current_index": 4,
+  "current_index": 5,
   "issues": [
     "cron 沙箱外网全部不可用：web_search 4 后端（Exa/Tavily/Firecrawl/Parallel）SSL EOF；curl 000；~/.local/bin/jina-reader TLS EOF；web_extract 报 private-network 拦截；DNS 被 fake-ip 污染为 198.18.1.203 且本机无代理监听（7890/7897 无 LISTEN）。→ 竞品分析降级为「存量差距空洞审计」（基于仓库内 09-21~09-29 七份历史竞品分析 + 代码现状），未抓取任何新竞品页面，未编造新事实。降级结论：新增 task-map-drag-edit（地图拖拽修订，真空洞立项）、补登记 task-manual-edit 完成态。",
     "oss-license 为「已实现未登记」完成态：LICENSE 与 README 开源小节已在 09-29 入 main（commit 90dc87a，合并 6a4f854），todo 漏勾、checkpoint 未登记。本 worker 仅补登记（勾选 todo + 登记 completed + 追加分支 nightly/2026-10-02/1-oss-license），无新代码改动，验收标准（LICENSE 存在 + README 含开源许可小节）核验通过。",
     "task-revise-ux 为「已实现未登记」完成态：加载态/错误态/diff 预览主体已入 main（commit ee2cab9 2026-09-21 基础版经 b1865b3 合并 + d7929c6 2026-09-29 增强 diff 折叠/错误 detail 经 4864485 合并），todo 漏勾、checkpoint 未登记。本 worker 仅补登记（勾选 todo + 登记 completed + 追加分支 nightly/2026-10-02/2-task-revise-ux），无新代码改动，验收核验通过：后端 187 测试全绿 + 前端 build 通过。",
-    "task-deploy-pack 为「已实现未登记」完成态：Docker 化部署包主体已由 commit eab675f（backend/frontend Dockerfile + nginx 反代配置 + docker-compose Postgres17+后端+前端 + deploy/README.md，compose 构建/启动/注册登录建行程全链路验证通过）+ 48311a7（根 .env.example 部署模板 + compose env_file 可选化 + 部署文档同步）完成，并经 a8ba2f6 合并 main；todo 漏勾、checkpoint 未登记导致本夜重跑。本 worker 仅补登记（勾选 todo + 登记 completed + 追加分支 nightly/2026-10-02/3-task-deploy-pack），无新代码改动，验收核验通过：docker compose config -q 通过（Docker 27.5.1 + Compose v2.32.4）+ 后端 187 测试全绿 + 前端 npm run build 通过。"
+    "task-deploy-pack 为「已实现未登记」完成态：Docker 化部署包主体已由 commit eab675f（backend/frontend Dockerfile + nginx 反代配置 + docker-compose Postgres17+后端+前端 + deploy/README.md，compose 构建/启动/注册登录建行程全链路验证通过）+ 48311a7（根 .env.example 部署模板 + compose env_file 可选化 + 部署文档同步）完成，并经 a8ba2f6 合并 main；todo 漏勾、checkpoint 未登记导致本夜重跑。本 worker 仅补登记（勾选 todo + 登记 completed + 追加分支 nightly/2026-10-02/3-task-deploy-pack），无新代码改动，验收核验通过：docker compose config -q 通过（Docker 27.5.1 + Compose v2.32.4）+ 后端 187 测试全绿 + 前端 npm run build 通过。",
+    "content-planning-vs-booking 为「已实现未登记」完成态：文章⑥《AI 旅行规划正在变成预订漏斗——独立工具的机会在「规划层」》已由 2026-09-23 commit c0dc031（docs/articles/06-planning-vs-booking.md 全文 115 行 + 发布清单补卡片，代码引用与仓库实际一致——revise_service/budget_service/collab_service 逐项核验）经后续 merge 入 main，d3bce54 修正互链占位；todo 漏勾、checkpoint 未登记导致本夜重跑。worker-5 仅补登记（勾选 todo + 登记 completed + 追加分支 nightly/2026-10-02/4-content-planning-vs-booking），并按 d3bce54 注明补齐 04 姊妹篇互链（04 已在 main）；验收核验通过：后端 187 测试全绿。"
   ],
   "branches": [
     "nightly/2026-10-02/0-competitive-analysis",
     "nightly/2026-10-02/1-oss-license",
     "nightly/2026-10-02/2-task-revise-ux",
-    "nightly/2026-10-02/3-task-deploy-pack"
+    "nightly/2026-10-02/3-task-deploy-pack",
+    "nightly/2026-10-02/4-content-planning-vs-booking"
   ]
 }
