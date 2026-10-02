@@ -22,3 +22,12 @@ app.use(i18n)
 // El 组件 locale 由 App.vue 的 el-config-provider 响应式提供（随语言切换联动）
 app.use(ElementPlus, { locale: zhCn })
 app.mount('#app')
+
+// PWA：Service Worker 注册（离线缓存行程详情；生产构建生效，开发环境跳过避免干扰热更新）
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('[pwa] Service Worker 注册失败:', err)
+    })
+  })
+}

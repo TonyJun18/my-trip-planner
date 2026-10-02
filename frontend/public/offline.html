@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#ff385c" />
+    <title>随行 · 当前离线</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #fafafa;
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
+        color: #1f2329;
+      }
+      .wrap { text-align: center; padding: 32px; }
+      .logo {
+        width: 64px; height: 64px; margin: 0 auto 20px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #ff385c, #ff8a5c);
+        color: #fff; font-size: 34px; font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+      }
+      h1 { font-size: 20px; margin: 0 0 10px; }
+      p { font-size: 14px; color: #6b7280; margin: 0 0 24px; line-height: 1.6; }
+      button {
+        border: none; cursor: pointer;
+        background: #ff385c; color: #fff;
+        font-size: 15px; font-weight: 600;
+        padding: 12px 32px; border-radius: 999px;
+        box-shadow: 0 2px 10px rgba(255, 56, 92, 0.28);
+      }
+      button:hover { background: #e02c4e; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="logo">旅</div>
+      <h1>当前离线</h1>
+      <p>没有网络连接，且本地还没有缓存可用的页面。<br />请恢复网络后重试。</p>
+      <button onclick="location.reload()">重试</button>
+    </div>
+  </body>
+</html>
