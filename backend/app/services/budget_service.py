@@ -87,6 +87,36 @@ def hotel_estimate_basis(estimated_count: int) -> dict:
     }
 
 
+# 多币种未落库：行程预算以 CNY 单一币种记账（task-budget-split 范围说明）
+# — 多币种（行程级 currency 字段 + 汇率换算）需 DB 变更 + 汇率数据源，
+#   超出单 worker 窗口，记入检查点 issues 待后续评估（对照 AiGo/Wanderlog 海外场景）。
+
+
+def _per_person_views(result: dict) -> dict:
+    """在预算汇总上派生「人均分摊」视图（09-26 竞品分析：AiGo/Wanderlog 海外多人出行刚需）。
+
+    - 人均 = 汇总项 ÷ travelers（行程成员数，Trips.travelers 已存在，无需 DB 变更）
+    - travelers 缺省/异常（<1）视为 1（单人），不产出除 0 的伪人均
+    - 保留原始汇总字段不动（total_estimated 等），前端可自由切换「总额 / 人均」展示
+    """
+    travelers = result.get("_travelers") or 1
+    if travelers < 1:
+        travelers = 1
+    per_person = {
+        "per_person_total": round(result["total_estimated"] / travelers, 2),
+        "per_person_by_type": {
+            k: round(v / travelers, 2) for k, v in result["by_type"].items()
+        },
+        # 键恒定（值为 None），避免 total=0 时缺键导致前端 undefined
+        "per_person_daily": (
+            round(result["daily_average"] / travelers, 2)
+            if result.get("daily_average") is not None
+            else None
+        ),
+    }
+    return per_person
+
+
 def compute_budget(trip: Trip) -> dict:
     """根据行程中的站点费用汇总预算明细。
 
@@ -95,8 +125,11 @@ def compute_budget(trip: Trip) -> dict:
       "total_estimated": float,
       "by_type": {"attraction": float, "food": float, "hotel": float},
       "daily_average": float | None,
+      "per_person_total": float | None,        # 人均分摊（task-budget-split）
+      "per_person_by_type": dict,              # 人均 × 类别
+      "per_person_daily": float | None,        # 人均日均
       "currency": "CNY",
-      "estimate_basis": {"hotel": {...}}   # 09-26 补充：估算口径标注
+      "estimate_basis": {"hotel": {...}}       # 09-26 补充：估算口径标注
     }
     """
     by_type: dict[str, float] = {"attraction": 0.0, "food": 0.0, "hotel": 0.0}
@@ -117,6 +150,8 @@ def compute_budget(trip: Trip) -> dict:
         "daily_average": round(total / n_days, 2) if n_days > 0 and total else None,
         "currency": "CNY",
     }
+    # 人均分摊视图（travelers 人数来自 Trip）
+    result.update(_per_person_views({**result, "_travelers": trip.travelers}))
     # 估算口径标注：hotel 项全部来自代码估算（静态基准价），标注来源/置信度
     # （09-26 竞品分析补充验收：iPlan.ai 预算偏差 20-30% → 诚实估算差异化）
     if hotel_count > 0:
