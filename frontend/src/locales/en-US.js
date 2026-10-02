@@ -44,6 +44,10 @@ export default {
     dailyAvg: 'Daily average ¥{amount}',
     noBudget: 'No budget data',
     dayEmpty: 'No stops on this day yet',
+    // ── Per-person budget split (task-budget-split) ──
+    perPersonTotal: '~¥{amount} per person',
+    perPersonDaily: '~¥{amount} per person per day',
+    perPersonLabel: 'Per person',
   },
   auth: {
     welcomeBack: 'Welcome back',
