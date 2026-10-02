@@ -58,7 +58,7 @@
 
 - [ ] task-driving-real-routes: 自驾路径真实化——DrivingGate 从「球面距离估算」升级为「高德驾车路径 API 真实距离/时长」（局限表原文：自驾基于球面距离估算，与实际道路有偏差）；校验超限单段（>120km/150min，或单日 >300km）自动附「中途经停建议」（竞品 TripPlanner AI「经停优化」差异项）；高德未配置/限流/超时 → 指数退避重试后自动降级回球面估算（现状兜底，不阻断规划）（验收：DrivingGate 输出带 source=amap|haversine 标注 + 超长单段给出经停建议 + mock 测试覆盖成功/熔断/降级路径 + 全套件回归通过）
 - [ ] task-share-token-lifecycle: 分享令牌生命周期——share_token 支持过期（TTL：1天/7天/30天/永久）、owner 吊销、免登录访问审计（时间/IP/UA，按行程聚合，owner 可查）；expired/revoked 即时返回 410/403，旧 token（无过期字段）按永久兼容；附带「收藏灵感夹」——登录用户可收藏他人分享的行程，行程列表页展示（验收：过期/吊销/审计 API + 旧数据兼容 + 收藏 CRUD + 前端分享设置弹窗与收藏按钮 + i18n + 测试覆盖，全套件回归通过）
-- [ ] task-food-agent: （候选方案 3，工程量较大，单独评估）餐饮搜索 Agent 化——新增 FoodAgent（菜品/口味偏好 → 高德美食 POI → 结构化推荐），Agent 主路径 + 现有代码补位作兜底；Critic 从「打分手」升级为「协作者」——不过审时产出修正 diff（复用 revise diff 执行器）精确修改而非整段重生成（验收：FoodAgent 独立 schema + 代码兜底降级链 + Critic diff 精确修订 + 测试覆盖；暂缓，待方案 1+2 合并稳定后评估）
+- [x] task-food-agent: （候选方案 3，工程量较大，单独评估）餐饮搜索 Agent 化——新增 FoodAgent（菜品/口味偏好 → 高德美食 POI → 结构化推荐），Agent 主路径 + 现有代码补位作兜底；Critic 从「打分手」升级为「协作者」——不过审时产出修正 diff（复用 revise diff 执行器）精确修改而非整段重生成（验收：FoodAgent 独立 schema + 代码兜底降级链 + Critic diff 精确修订 + 测试覆盖；暂缓，待方案 1+2 合并稳定后评估）（2026-10-03 worker-4 完成：branch nightly/2026-10-03/1-task-food-agent commit 3bc2e7b——FoodAgent（口味偏好→search_foods→餐厅 POI，失败空列表不编造）+ 六个 Agent 并行 + 主路径失败编排层确定性补位降级链 + _apply_critic_fix 原子应用（成功跳过整段重生成、失败回退）+ CriticFixSchema 契约；19 例专项测试（单元+集成+降级+回退）+ 全套 206 测试绿。接手自上个 worker 被掐断的未提交实现，修复了测试夹具 prompt 匹配顺序 bug）
 
 ## 2026-09-26 竞品分析追加（价格真实度 + 实时协作 + 输入范式，来自 docs/nightly/competitive-analysis/2026-09-26.md）
 
