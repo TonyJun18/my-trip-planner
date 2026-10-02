@@ -32,12 +32,12 @@
 
 - [x] task-trip-collab-vote: 行程协作投票最小版——分享行程页加评论 + 每日站点 👍/👎 投票（Mindtrip co-edit、Wanderlog 免费实时协作、MonkeyTravel 群组投票均验证多人出行刚需）（验收：分享页可投票/评论 + 测试覆盖；待 task-trip-share 合并稳定后评估）（2026-09-29 worker-8 补登记：主体已实现入 main——后端 13b86f0（TripComment/StopVote 模型 + 迁移 e5302ddbcdd2 + 评论列表/发表 + 投票汇总/投票翻转接口，share_token 免登录、幂等可翻转、同行程归属校验）+ 436974f（受邀编辑权 edit_token 分离）经 ab8688f 合并；前端 dbf9072（ShareView 👍/👎 投票 + 评论区，build 通过）+ bacaced（受邀编辑交互）均已入 main；i18n share.* 键 zh/en 齐全、api/index.js 封装齐全；worker-8 核验后端 187 测试全绿 + 前端 build 通过，仅勾选登记）
 - [ ] content-planning-vs-booking: 写一篇发布就绪文章《AI 旅行规划正在变成预订漏斗——独立工具的机会在"规划层"》（Mindtrip agentic 机票 + Expedia 收购 Layla 的行业分层观察；免费/透明/可修订规划层定位）（验收：docs/articles/06-planning-vs-booking.md 存在且内容完整）
-- [ ] task-manual-edit: 行程手动细粒度编辑——站点卡片行内编辑（标题/时间/顺序拖拽），与 AI 修订并存（Wanderlog 手动自由改 + 地图联动是最强交互）（验收：行程详情页可改单日单点 + build 通过 + 测试覆盖；排在 task-roadtrip-mode 之后）
+- [x] task-manual-edit: 行程手动细粒度编辑——站点卡片行内编辑（标题/时间/顺序拖拽），与 AI 修订并存（Wanderlog 手动自由改 + 地图联动是最强交互）（验收：行程详情页可改单日单点 + build 通过 + 测试覆盖；排在 task-roadtrip-mode 之后）（2026-10-03 worker-1 补登记：PATCH /days/{day_id}/stops/{stop_id} + PUT /days/{day_id}/stops/order 已在 backend/app/api/v1/trips.py L468-480 入 main，核验通过，见 competitive-analysis/2026-10-03.md）
 
 ## 2026-09-24 竞品分析追加（格局信号：预订层被资本垄断，规划层机会放大）
 
-- [ ] task-share-edit: 分享链接升级「受邀编辑权」——share_token 支持受限编辑（站点顺序/备注/勾选，不经 AI 修订），分享页开放编辑入口（MonkeyTravel/Wanderlog 验证的「一个链接进群、全员可编辑、实时同步」刚需）（验收：受邀方可编辑站点/顺序 + owner 可收回权限 + 测试覆盖；待 task-trip-collab-vote 稳定后评估）
-- [ ] content-open-planning-layer: 写一篇发布就绪文章《当 AI 旅行工具都在抢着替你花钱：独立规划层的生存策略》——Mindtrip agentic 机票/酒店预订 + Expedia×Layla 收购为引，讲透「规划与预订分离」哲学，diff 修订 + 质检 trace + 城市基准价透明估算构成反例（验收：docs/articles/07-open-planning-layer.md 存在且内容完整，发布清单补卡片）
+- [x] task-share-edit: 分享链接升级「受邀编辑权」——share_token 支持受限编辑（站点顺序/备注/勾选，不经 AI 修订），分享页开放编辑入口（MonkeyTravel/Wanderlog 验证的「一个链接进群、全员可编辑、实时同步」刚需）（验收：受邀方可编辑站点/顺序 + owner 可收回权限 + 测试覆盖；待 task-trip-collab-vote 稳定后评估）（2026-10-03 worker-1 补登记：ShareView ?edit=1 受邀编辑模式（L15/L150/L307/L342）+ edit_token 授权已入 main（436974f + 87d2f69），核验通过，见 competitive-analysis/2026-10-03.md）
+- [x] content-open-planning-layer: 写一篇发布就绪文章《当 AI 旅行工具都在抢着替你花钱：独立规划层的生存策略》——Mindtrip agentic 机票/酒店预订 + Expedia×Layla 收购为引，讲透「规划与预订分离」哲学，diff 修订 + 质检 trace + 城市基准价透明估算构成反例（验收：docs/articles/07-open-planning-layer.md 存在且内容完整，发布清单补卡片）（2026-10-03 worker-1 补登记：07 文已由 commit 4acef41 入 main + publish-list.md 文章⑦卡片（L120-134）在案，核验通过，见 competitive-analysis/2026-10-03.md）
 
 ## 用户白天下达任务（2026-09-21 追加）
 
@@ -56,8 +56,8 @@
 
 > 本轮为「完善方案」评审确认后的执行项，聚焦需求文档「已知局限」表与竞品 backlog 中记录的真实差距。
 
-- [ ] task-driving-real-routes: 自驾路径真实化——DrivingGate 从「球面距离估算」升级为「高德驾车路径 API 真实距离/时长」（局限表原文：自驾基于球面距离估算，与实际道路有偏差）；校验超限单段（>120km/150min，或单日 >300km）自动附「中途经停建议」（竞品 TripPlanner AI「经停优化」差异项）；高德未配置/限流/超时 → 指数退避重试后自动降级回球面估算（现状兜底，不阻断规划）（验收：DrivingGate 输出带 source=amap|haversine 标注 + 超长单段给出经停建议 + mock 测试覆盖成功/熔断/降级路径 + 全套件回归通过）
-- [ ] task-share-token-lifecycle: 分享令牌生命周期——share_token 支持过期（TTL：1天/7天/30天/永久）、owner 吊销、免登录访问审计（时间/IP/UA，按行程聚合，owner 可查）；expired/revoked 即时返回 410/403，旧 token（无过期字段）按永久兼容；附带「收藏灵感夹」——登录用户可收藏他人分享的行程，行程列表页展示（验收：过期/吊销/审计 API + 旧数据兼容 + 收藏 CRUD + 前端分享设置弹窗与收藏按钮 + i18n + 测试覆盖，全套件回归通过）
+- [x] task-driving-real-routes: 自驾路径真实化——DrivingGate 从「球面距离估算」升级为「高德驾车路径 API 真实距离/时长」（局限表原文：自驾基于球面距离估算，与实际道路有偏差）；校验超限单段（>120km/150min，或单日 >300km）自动附「中途经停建议」（竞品 TripPlanner AI「经停优化」差异项）；高德未配置/限流/超时 → 指数退避重试后自动降级回球面估算（现状兜底，不阻断规划）（验收：DrivingGate 输出带 source=amap|haversine 标注 + 超长单段给出经停建议 + mock 测试覆盖成功/熔断/降级路径 + 全套件回归通过）（2026-10-03 worker-1 补登记：amap_driving.py（203行，含熔断/降级/经停建议）+ driving_service source 消费 + test_amap_driving.py（173行）已入 main 87d2f69，核验通过，见 competitive-analysis/2026-10-03.md）
+- [x] task-share-token-lifecycle: 分享令牌生命周期——share_token 支持过期（TTL：1天/7天/30天/永久）、owner 吊销、免登录访问审计（时间/IP/UA，按行程聚合，owner 可查）；expired/revoked 即时返回 410/403，旧 token（无过期字段）按永久兼容；附带「收藏灵感夹」——登录用户可收藏他人分享的行程，行程列表页展示（验收：过期/吊销/审计 API + 旧数据兼容 + 收藏 CRUD + 前端分享设置弹窗与收藏按钮 + i18n + 测试覆盖，全套件回归通过）（2026-10-03 worker-1 补登记：share_lifecycle.py（278行）+ lifecycle/revoke/ttl/favorites API（trips.py L192-273）+ TripFavorite 模型 + 迁移 d9e8 + test_share_lifecycle.py（261行）已入 main 87d2f69，核验通过，见 competitive-analysis/2026-10-03.md）
 - [ ] task-food-agent: （候选方案 3，工程量较大，单独评估）餐饮搜索 Agent 化——新增 FoodAgent（菜品/口味偏好 → 高德美食 POI → 结构化推荐），Agent 主路径 + 现有代码补位作兜底；Critic 从「打分手」升级为「协作者」——不过审时产出修正 diff（复用 revise diff 执行器）精确修改而非整段重生成（验收：FoodAgent 独立 schema + 代码兜底降级链 + Critic diff 精确修订 + 测试覆盖；暂缓，待方案 1+2 合并稳定后评估）
 
 ## 2026-09-26 竞品分析追加（价格真实度 + 实时协作 + 输入范式，来自 docs/nightly/competitive-analysis/2026-09-26.md）
@@ -79,3 +79,7 @@
 - [ ] content-agentic-booking-endgame: 写一篇发布就绪文章《终局剧本：当 agentic 预订已经成交、独立工具已被收购——规划层还剩什么》（Mindtrip Flights 2026-05 Sabre+PayPal 对话内机票成交 / Expedia×Layla 2026-07 官宣 / Tripnotes 2023-12 关停 / Troupe 2026-06 倒闭为四信号，论证规划层「小而锋利」生存策略=可修订 diff+质检 trace+协作+诚实预算+输入自由，07/08 文姊妹篇收官）（验收：docs/articles/10-*.md 存在且内容完整，发布清单补卡片）
 - [ ] task-trip-collab-vote（验收升级）: 追加「渐进式推进」验收项——投票/确认达到 ≥50% 受邀成员即可标记「小组一致」，未响应成员不阻塞后续（TRIPTI.ai vs Troupe 教训：群组规划多数 commit 即锁定日期，不要求全员同意；JetBlue 旗下 Troupe 2026-06 确认倒闭）（验收：原验收 + 多数即推进、不响应不阻塞语义 + 测试覆盖）
 - [ ] task-screenshot-import（验收升级）: 追加「社交分享链接提取」可选分支——粘贴公开可读分享链接 → 尝试提取结构化信息，失败静默降级为链接收藏（TripNoted 1.0.20 social link→Idea→start trips 启发；截图 OCR 为主路径）（验收：原验收 + 公开链接提取成功/降级两路径 + schema 校验防注入）
+
+## 2026-10-02 竞品分析追加（存量空洞审计①，来自 docs/nightly/competitive-analysis/2026-10-02.md）
+
+- [ ] task-map-drag-edit: 地图拖拽修订——拖动 marker 改 lat/lng → 生成 ReorderDiff → 复用 revise 原子应用（docs/articles/05-map-edit-paradigms.md §4/§5 已论证「统一 diff 内核」工程基础；Wandercrafted/AiGo 地图交互为竞品亮点而 TripMap.vue 目前只读）（验收：拖动 marker 改坐标 → diff 原子应用 + DrivingGate 约束前置提示 + 移动端隐藏拖拽 + 测试覆盖；2026-10-03 worker-1 复核仍为真空洞，保持排队）
