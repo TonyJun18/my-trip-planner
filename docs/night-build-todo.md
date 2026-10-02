@@ -64,7 +64,7 @@
 
 - [ ] task-budget-split: 预算分摊/多币种——行程级预算视图支持「人均分摊」（按成员/按天/按类别），行程元数据携带币种，预算项按成员标记（AiGo 多币种+分摊、Wanderlog 预算协作为海外多人出行刚需；接 share 协作链路）（验收：分享页可看人均预算 + 测试覆盖；排在 task-share-token-lifecycle 之后）
 - [ ] task-screenshot-import: 截图导入行程——上传攻略截图 → OCR 提取站点候选（复用 task-note-import 的结构化提取与恶意注入处理管线）→ 勾选并入行程（AiGo screenshot-to-itinerary 为笔记导入姊妹范式；去哪儿已验证小红书图片/笔记导入国内价值）（验收：截图可生成站点候选 + 敌意输入仍按数据对待 + 测试覆盖）
-- [ ] content-budget-transparency: 文章《预算是 AI 行程工具最不诚实的部分》——iPlan.ai 预算偏差 20-30%/Wonderplan 一般目的地数据/Wandercrafted 预算放付费墙为引，讲「估算透明 + 修订联动」哲学（标注口径的诚实估算 + 可修正），与 07/08 文构成价格维度姊妹篇（验收：docs/articles/09-*.md 存在且内容完整，代码引用与仓库实际一致，发布清单补卡片）
+- [x] content-budget-transparency: 文章《预算是 AI 行程工具最不诚实的部分》——iPlan.ai 预算偏差 20-30%/Wonderplan 一般目的地数据/Wandercrafted 预算放付费墙为引，讲「估算透明 + 修订联动」哲学（标注口径的诚实估算 + 可修正），与 07/08 文构成价格维度姊妹篇（验收：docs/articles/09-*.md 存在且内容完整，代码引用与仓库实际一致，发布清单补卡片）（2026-10-03 worker-7 完成：branch nightly/2026-10-03/4-content-budget-transparency——文章 09 + 发布清单⑨卡片；代码引用逐条核验：estimate_hotel_cost/hotel_estimate_basis/compute_budget（budget_service.py）、_recompute_budget（revise_service.py）、前端预算卡 ring-label=common.estimated 标注「估算」；并诚实记录 estimate_basis 完整口径透出 UI 为待办（后端已返回、前端未逐字段渲染），未写成已实现）
 - [ ] task-pwa-offline: PWA 离线——前端 Service Worker，缓存行程详情/api 响应，弱网时展示缓存行程 + 「离线模式」标识（AiGo PWA 离线为卖点，TripIt/Wanderlog 也有；行程是结构化 JSON 天然可离线缓存）（验收：build 通过 + SW 注册 + 行程详情可离线打开；低优先级）
 - 注（task-hotel-budget 补充验收口径）：落地时增加「估算口径标注」（source + 基准说明 + 置信度），预算视图展示「估算 vs 实际可验证」——对手 iPlan.ai 偏差 20-30% 翻车现场是「诚实估算」差异化背书
 
