@@ -1,0 +1,2 @@
+# OCR 编译产物（本机已编译可用；新环境按 scripts/ocr_vision.swift 重新编译）
+bin/ocr_vision
