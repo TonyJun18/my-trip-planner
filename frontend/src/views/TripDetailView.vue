@@ -10,6 +10,7 @@ import TripServicing from '@/components/TripServicing.vue'
 import QualityCard from '@/components/QualityCard.vue'
 import XhsNoteDialog from '@/components/XhsNoteDialog.vue'
 import { exportImage, exportPdf } from '@/utils/export'
+import { readCachedJson } from '@/utils/pwa'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,6 +22,8 @@ const budget = ref(null)
 const plan = ref(null)
 const exporting = ref(false)
 const exportEl = ref(null)
+// PWA 离线降级：网络失败时从缓存读取行程（仅骨架，只读展示）
+const offlineFallback = ref(false)
 
 // ── AI 调整行程（方案 B：对话式修订） ─────────────────────
 const reviseMsg = ref('')
@@ -215,7 +218,27 @@ const budgetPercent = computed(() => {
 async function load() {
   loading.value = true
   try {
-    trip.value = await api.getTrip(route.params.id)
+    try {
+      trip.value = await api.getTrip(route.params.id)
+      offlineFallback.value = false // 在线成功：清除离线标识
+    } catch (e) {
+      // 离线/网络失败：尝试从 Cache API 读缓存行程详情（SW 的 api 缓存），读不到再上抛
+      const cached = await readCachedJson(`/api/v1/trips/${route.params.id}`)
+      if (cached) {
+        trip.value = cached
+        offlineFallback.value = true
+      } else {
+        throw e
+      }
+    }
+    // 离线降级：只展示缓存的行程骨架，预算/规划等可选数据不再请求
+    if (offlineFallback.value) {
+      budget.value = null
+      plan.value = null
+      planB.value = null
+      isFavorite.value = false
+      return
+    }
     budget.value = await api.getBudget(route.params.id)
     // 尽力加载 AI 规划方案（含酒店推荐候选）；404/报错不阻断详情页
     try {
@@ -648,6 +671,19 @@ onMounted(load)
     </div>
 
     <template v-if="trip">
+      <!-- 离线模式标识（PWA：网络失败时读缓存展示） -->
+      <el-alert
+        v-if="offlineFallback"
+        class="offline-banner"
+        type="warning"
+        :closable="false"
+        show-icon
+      >
+        <template #title>
+          {{ $t('tripDetail.offlineMode') }} · {{ $t('tripDetail.offlineModeHint') }}
+        </template>
+      </el-alert>
+
       <!-- 导出区（截图/PDF 抓取范围） -->
       <div ref="exportEl" class="export-area">
         <!-- 头图 + 概览 -->
@@ -1016,6 +1052,9 @@ onMounted(load)
 
 <style scoped>
 .detail-page { max-width: 1080px; margin: 0 auto; }
+
+/* PWA 离线模式标识 */
+.offline-banner { margin-bottom: 16px; }
 
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
