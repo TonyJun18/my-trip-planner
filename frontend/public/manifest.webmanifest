@@ -1,0 +1,19 @@
+{
+  "name": "随行 · AI 旅行规划",
+  "short_name": "随行",
+  "description": "AI 旅行规划：可执行、可修订、可分享，弱网也能查看离线行程",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ff385c",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

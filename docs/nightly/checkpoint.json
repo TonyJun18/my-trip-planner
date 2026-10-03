@@ -1,6 +1,6 @@
 {
   "night": "2026-10-03",
-  "status": "in_progress",
+  "status": "completed_with_issues",
   "todo": [
     "task-food-agent",
     "task-budget-split",
@@ -23,9 +23,10 @@
     "task-food-agent",
     "task-budget-split",
     "task-screenshot-import",
-    "content-budget-transparency"
+    "content-budget-transparency",
+    "task-pwa-offline"
   ],
-  "current_index": 4,
+  "current_index": 5,
   "issues": [
     "night-start 重建：checkpoint night=2026-10-02 ≠ 今天 2026-10-03，按手册第 3 节重建。todo 以 docs/night-build-todo.md 未完成项为准（10-02 分支未合并 main，main todo 仍为旧态）；oss-license/task-revise-ux/task-deploy-pack/content-planning-vs-booking 已在 10-02 检查点登记 completed（10-02 分支，未合并 main），本夜重建不再重复排队。",
     "本夜网络全断：web_search SSL EOF、curl 000（与 10-02 环境一致）→ competitive-analysis 降级为存量空洞审计（沿用 10-02 做法，不抓新页面、不编造），输出 docs/nightly/competitive-analysis/2026-10-03.md。",
@@ -36,13 +37,15 @@
     "task-budget-split（10-03 worker-5）多币种部分未做：行程级 currency 字段 + 汇率换算需 DB 变更（新列/新表）+ 外部汇率数据源（免费 API 不稳定、付费需凭证），超出单 worker 窗口。本 worker 仅实现人均分摊（travelers 已存在，无 DB 变更）。多币种建议作为独立 task 后续评估（对照 AiGo/Wanderlog 海外场景）。",
     "task-screenshot-import（10-03 worker-6）网络全断无法下载 tesseract chi_sim 中文包 → 改用 macOS 系统 Vision framework 离线 OCR（swift 二进制 scripts/ocr_vision.swift，zh-Hans+en-US；swiftc 用 Xcode toolchain 编译成功，CLT swiftc 因 SDK modulemap 冲突失败）。OCR 端到端已验证：真实中文截图（含敌意注入行）识别正确并走 parse_note 敌意剥离。OCR 工具编译产物 bin/ocr_vision 已 gitignore，新环境需重新编译（README 备注）。验收升级（社交分享链接提取）未做——该需求是「粘贴公开分享链接」，与截图 OCR 主路径正交，留给独立验收升级任务。",
     "content-budget-transparency（10-03 worker-7）文章 09 + 发布清单⑨卡片完成，代码引用逐条核验与仓库一致。写作中确认一个重要事实：后端 compute_budget 已返回 estimate_basis（source/base_note/confidence），但前端 TripDetailView 预算卡未逐字段渲染该口径（仅环形图 ring-label 标「估算」）——文章据实写为「estimate_basis UI 透出为待办」，未写成已实现。待办提示：后续可补前端口径展示（预算卡展示来源/基准/置信度 + 估算 vs 实际数量）。",
-    "10-03 分支间状态粘连提示：backend/bin/ocr_vision（OCR 编译产物）在工作区残留且 backend/bin/.gitignore 只在未合并的 nightly/2026-10-03/3-task-screenshot-import 分支上——main 派生的分支上该目录未忽略。本 worker 已确认不提交该二进制（纯文档任务，只 add 文档文件）。提示用户 review 10-03 分支时注意：合并 screenshot-import 分支（含 bin/.gitignore + scripts/ocr_vision.swift）后该目录即被忽略；若先合并其他分支，git status 会持续显示 ?? backend/bin/，属预期。"
+    "10-03 分支间状态粘连提示：backend/bin/ocr_vision（OCR 编译产物）在工作区残留且 backend/bin/.gitignore 只在未合并的 nightly/2026-10-03/3-task-screenshot-import 分支上——main 派生的分支上该目录未忽略。本 worker 已确认不提交该二进制（纯文档任务，只 add 文档文件）。提示用户 review 10-03 分支时注意：合并 screenshot-import 分支（含 bin/.gitignore + scripts/ocr_vision.swift）后该目录即被忽略；若先合并其他分支，git status 会持续显示 ?? backend/bin/，属预期。",
+    "task-pwa-offline（10-03 worker-8）完成：branch nightly/2026-10-03/5-task-pwa-offline（commit 66249ea PWA 基础设施 + 6d1d073 行程详情离线降级 + 台账登记）。实现：public/sw.js（network-first 回退 stale 缓存，写操作不拦截，行程 API 白名单：详情/budget/plan/plan-b/share/edit 读、favorites 列表排除）、manifest.webmanifest / offline.html / icon.svg、index.html manifest 链接、main.js 生产环境注册 SW、TripDetailView 网络失败读 Cache API 降级展示缓存骨架 + 离线模式 el-alert 标识（zh/en 文案）。验收：前端 npm run build 通过 + 后端 187 回归全绿。重要提示：本分支从 main 拉出（main 的 checkpoint 仍为 09-29 旧态，因 10-02/10-03 各分支未合并）；本 worker 已重建 10-03 checkpoint（completed 11 项 + current_index=5 + branches 6 条）并登记 todo [x]。后续 worker 请基于本分支（或 4 分支）继续，勿从 main 拉分支，否则台账会回退。"
   ],
   "branches": [
     "nightly/2026-10-03/0-competitive-analysis",
     "nightly/2026-10-03/1-task-food-agent",
     "nightly/2026-10-03/2-task-budget-split",
     "nightly/2026-10-03/3-task-screenshot-import",
-    "nightly/2026-10-03/4-content-budget-transparency"
+    "nightly/2026-10-03/4-content-budget-transparency",
+    "nightly/2026-10-03/5-task-pwa-offline"
   ]
 }

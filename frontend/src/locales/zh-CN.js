@@ -406,6 +406,9 @@ export default {
     planBTitle: '行程备选方案',
     planBBudgetLabel: '备选预算约',
     planBHint: '备选由确定性规则生成（无 AI 成本），仅供参考对比；「切换」不修改主案，需要落地时请使用上方 AI 调整或手动编辑。',
+    // ── PWA 离线模式 ──
+    offlineMode: '离线模式',
+    offlineModeHint: '当前展示的是本地缓存的行程快照，最新修改请联网后刷新查看',
   },
   servicing: {
     transportTitle: '大交通方案',
