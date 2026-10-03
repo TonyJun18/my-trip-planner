@@ -717,6 +717,14 @@ onMounted(load)
               <div class="budget-daily" v-if="budget.daily_average">
                 <el-icon><TrendCharts /></el-icon> {{ $t('common.dailyAvg', { amount: budget.daily_average }) }}
               </div>
+              <!-- 人均分摊（task-budget-split：多人出行按 travelers 分摊） -->
+              <div v-if="budget.per_person_total != null && trip.travelers > 1" class="budget-per-person">
+                <el-icon><User /></el-icon>
+                {{ $t('common.perPersonLabel') }} {{ $t('common.perPersonTotal', { amount: budget.per_person_total }) }}
+                <span v-if="budget.per_person_daily != null" class="budget-pp-sub">
+                  · {{ $t('common.perPersonDaily', { amount: budget.per_person_daily }) }}
+                </span>
+              </div>
             </template>
             <el-empty v-else :description="$t('common.noBudget')" :image-size="60" />
           </div>
@@ -1102,6 +1110,8 @@ onMounted(load)
 .budget-line.total { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 12px; font-weight: 600; }
 .total-val { margin-left: auto; font-size: 17px; font-weight: 700; color: var(--brand); }
 .budget-daily { margin-top: 10px; font-size: 12.5px; color: var(--success); display: inline-flex; align-items: center; gap: 4px; }
+.budget-per-person { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 12.5px; color: var(--ink-2); display: flex; align-items: center; gap: 4px; }
+.budget-pp-sub { color: var(--muted); }
 
 /* ── AI 调整行程（方案 B） ── */
 .revise-card {

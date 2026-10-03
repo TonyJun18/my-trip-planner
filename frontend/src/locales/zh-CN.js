@@ -44,6 +44,10 @@ export default {
     dailyAvg: '日均约 ¥{amount}',
     noBudget: '暂无预算数据',
     dayEmpty: '这一天还没有站点',
+    // ── 预算人均分摊（task-budget-split） ──
+    perPersonTotal: '人均约 ¥{amount}',
+    perPersonDaily: '人均日均约 ¥{amount}',
+    perPersonLabel: '人均',
   },
   auth: {
     welcomeBack: '欢迎回来',

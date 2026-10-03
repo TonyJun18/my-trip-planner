@@ -20,19 +20,22 @@
     "task-driving-real-routes",
     "task-share-token-lifecycle",
     "task-manual-edit",
-    "task-food-agent"
+    "task-food-agent",
+    "task-budget-split"
   ],
-  "current_index": 1,
+  "current_index": 2,
   "issues": [
     "night-start 重建：checkpoint night=2026-10-02 ≠ 今天 2026-10-03，按手册第 3 节重建。todo 以 docs/night-build-todo.md 未完成项为准（10-02 分支未合并 main，main todo 仍为旧态）；oss-license/task-revise-ux/task-deploy-pack/content-planning-vs-booking 已在 10-02 检查点登记 completed（10-02 分支，未合并 main），本夜重建不再重复排队。",
     "本夜网络全断：web_search SSL EOF、curl 000（与 10-02 环境一致）→ competitive-analysis 降级为存量空洞审计（沿用 10-02 做法，不抓新页面、不编造），输出 docs/nightly/competitive-analysis/2026-10-03.md。",
     "competitive-analysis（10-03 存量审计）核验出 4 项「已实现未登记」，均已在 main（87d2f69 / 436974f / 4acef41）且核验通过（后端 187 测试绿——test_planner_async_task_flow 首次跑 flaky 失败 1 次、重跑 1 passed 确认 flaky；前端 npm run build 通过）：task-driving-real-routes（amap_driving.py + source=amap + 经停建议 + test_amap_driving.py）、task-share-token-lifecycle（share_lifecycle.py + lifecycle/revoke/ttl/favorites API + TripFavorite + 迁移 d9e8 + test_share_lifecycle.py + 前端分享设置弹窗/收藏按钮）、task-share-edit（ShareView ?edit=1 受邀编辑 + edit_token 授权 + 前端吊销入口）、content-open-planning-layer（07 文 + publish-list ⑦卡片）。本 worker 一并补登记（todo 文件 [x] + checkpoint completed），无新代码改动。",
     "task-manual-edit 亦为已实现未登记（10-02 审计已指出）：PATCH /days/{id}/stops/{stop_id} + PUT /days/{id}/stops/order 已在 main（trips.py L468-480），本夜补登记。",
     "真空洞收敛为 10 项（本夜复核无实现痕迹）：task-food-agent、task-budget-split、task-screenshot-import、content-budget-transparency、task-pwa-offline、task-email-import、content-agentic-booking-endgame、task-trip-collab-vote（验收升级：majority 渐进式未做）、task-screenshot-import（验收升级：社交链接提取未做）、task-map-drag-edit（TripMap 只读）。后续 worker 按 checkpoint 顺序执行。",
-    "task-food-agent 接管说明：当前分支上发现上个 worker 被 cron 超时掐断留下的未提交实现（agents.py +306 / schemas/plan.py +29 / test_food_agent.py 512 行）。接手后 4 个编排层集成测试失败，定位为测试夹具 bug（_make_llm prompt 匹配顺序：PLANNER prompt 的『你将收到』含景点/酒店专家字样被提前拦截，Planner 分支永远走不到）→ 改用【】唯一标记并最先判 Planner，修复后 19 例专项 + 全套 206 绿。git 提交时安全扫描拦了含 →/「」的 commit message（confusable_text），换 ASCII 标点后通过。"
+    "task-food-agent 接管说明：当前分支上发现上个 worker 被 cron 超时掐断留下的未提交实现（agents.py +306 / schemas/plan.py +29 / test_food_agent.py 512 行）。接手后 4 个编排层集成测试失败，定位为测试夹具 bug（_make_llm prompt 匹配顺序：PLANNER prompt 的『你将收到』含景点/酒店专家字样被提前拦截，Planner 分支永远走不到）→ 改用【】唯一标记并最先判 Planner，修复后 19 例专项 + 全套 206 绿。git 提交时安全扫描拦了含 →/「」的 commit message（confusable_text），换 ASCII 标点后通过。",
+    "task-budget-split（10-03 worker-5）多币种部分未做：行程级 currency 字段 + 汇率换算需 DB 变更（新列/新表）+ 外部汇率数据源（免费 API 不稳定、付费需凭证），超出单 worker 窗口。本 worker 仅实现人均分摊（travelers 已存在，无 DB 变更）。多币种建议作为独立 task 后续评估（对照 AiGo/Wanderlog 海外场景）。"
   ],
   "branches": [
     "nightly/2026-10-03/0-competitive-analysis",
-    "nightly/2026-10-03/1-task-food-agent"
+    "nightly/2026-10-03/1-task-food-agent",
+    "nightly/2026-10-03/2-task-budget-split"
   ]
 }

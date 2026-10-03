@@ -156,12 +156,21 @@ class TripListOut(BaseModel):
 
 # ── 分享只读响应：TripOut + 预算汇总（分享页免 token 调 budget API） ──────
 class TripBudgetOut(BaseModel):
-    """与 budget_service.compute_budget 返回值同构的预算汇总。"""
+    """与 budget_service.compute_budget 返回值同构的预算汇总。
+
+    人均分摊字段（task-budget-split）均为可选 + 默认值，保持前向兼容：
+    旧客户端不感知新字段，新客户端遇到旧数据（无人均字段）也能优雅降级。
+    """
 
     total_estimated: float
     by_type: dict[str, float] = Field(default_factory=dict)
     daily_average: float | None = None
     currency: str = "CNY"
+    # 人均分摊（= 总额 / travelers；travelers 异常时不产出）
+    per_person_total: float | None = None
+    per_person_by_type: dict[str, float] = Field(default_factory=dict)
+    per_person_daily: float | None = None
+    estimate_basis: dict | None = None
 
 
 class SharedTripOut(TripOut):

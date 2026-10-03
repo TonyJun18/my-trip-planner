@@ -624,6 +624,42 @@ async def test_share_link_flow(client, auth_user):
     assert resp.json()["share_token"] == token
 
 
+async def test_share_budget_summary_per_person(client, auth_user):
+    """分享页预算汇总携带人均分摊（task-budget-split：按 travelers 分摊）。"""
+    _, headers = auth_user
+    today = date.today()
+    resp = await client.post("/api/v1/trips", json={
+        "title": "三人杭州", "destination": "杭州",
+        "start_date": today.isoformat(), "end_date": today.isoformat(),
+        "travelers": 3, "budget": 3000,
+    }, headers=headers)
+    assert resp.status_code == 201, resp.text
+    trip_id = resp.json()["id"]
+
+    resp = await client.post(f"/api/v1/trips/{trip_id}/days", json={"day_number": 1}, headers=headers)
+    day_id = resp.json()["id"]
+    # 西湖 0 + 楼外楼 300 → 总额 300，人均 100
+    await client.post(f"/api/v1/trips/days/{day_id}/stops", json={
+        "name": "西湖", "stop_type": "attraction", "estimated_cost": 0,
+    }, headers=headers)
+    await client.post(f"/api/v1/trips/days/{day_id}/stops", json={
+        "name": "楼外楼", "stop_type": "food", "estimated_cost": 300,
+    }, headers=headers)
+
+    resp = await client.post(f"/api/v1/trips/{trip_id}/share", headers=headers)
+    token = resp.json()["share_token"]
+    shared = (await client.get(f"/api/v1/trips/share/{token}")).json()
+
+    summary = shared["budget_summary"]
+    assert summary["total_estimated"] == 300
+    assert summary["per_person_total"] == 100
+    assert summary["per_person_by_type"]["food"] == 100
+    assert summary["per_person_by_type"]["attraction"] == 0
+    # travelers=3，1 天 → 日均 300，人均日均 100
+    assert summary["daily_average"] == 300
+    assert summary["per_person_daily"] == 100
+
+
 async def test_share_requires_auth_and_valid_token(client):
     """分享生成需登录；无效/不存在 token → 404。"""
     resp = await client.post("/api/v1/trips/any/share")

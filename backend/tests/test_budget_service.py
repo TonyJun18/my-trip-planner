@@ -107,3 +107,79 @@ def test_hotel_estimate_basis_counts():
     basis = hotel_estimate_basis(3)
     assert basis["estimated_count"] == 3
     assert basis["actual_count"] == 0
+
+
+# ── 预算人均分摊（task-budget-split：AiGo/Wanderlog 多人出行刚需） ──────
+def test_compute_budget_per_person_split():
+    """travelers=2：总额、按类、日均均按人数分摊。"""
+    from app.services.budget_service import compute_budget
+
+    trip = _fake_trip(
+        stops=[
+            {"name": "西湖", "stop_type": "attraction", "estimated_cost": 100.0},
+            {"name": "楼外楼", "stop_type": "food", "estimated_cost": 200.0},
+            {"name": "杭州经济型酒店", "stop_type": "hotel", "estimated_cost": 300.0},
+        ]
+    )
+    trip.travelers = 2
+    budget = compute_budget(trip)
+
+    assert budget["total_estimated"] == 600.0
+    assert budget["per_person_total"] == 300.0
+    assert budget["per_person_by_type"]["attraction"] == 50.0
+    assert budget["per_person_by_type"]["food"] == 100.0
+    assert budget["per_person_by_type"]["hotel"] == 150.0
+    # 3 天 → 日均 200，人均日均 100
+    assert budget["daily_average"] == 200.0
+    assert budget["per_person_daily"] == 100.0
+
+
+def test_compute_budget_per_person_single_traveler():
+    """默认 travelers=1：人均 == 总额（不产生额外分摊）。"""
+    from app.services.budget_service import compute_budget
+
+    trip = _fake_trip(
+        stops=[
+            {"name": "西湖", "stop_type": "attraction", "estimated_cost": 100.0},
+            {"name": "楼外楼", "stop_type": "food", "estimated_cost": 200.0},
+        ]
+    )
+    budget = compute_budget(trip)
+
+    assert budget["total_estimated"] == 300.0
+    assert budget["per_person_total"] == 300.0
+    assert budget["per_person_by_type"]["attraction"] == 100.0
+
+
+def test_compute_budget_zero_total_no_zero_division():
+    """总额为 0 时人均为 0（不崩、不除 0）。"""
+    from app.services.budget_service import compute_budget
+
+    trip = _fake_trip(stops=[{"name": "空", "stop_type": "attraction", "estimated_cost": 0.0}])
+    trip.travelers = 4
+    budget = compute_budget(trip)
+
+    assert budget["total_estimated"] == 0.0
+    assert budget["per_person_total"] == 0.0
+    assert budget["per_person_daily"] is None
+
+
+def test_compute_budget_travelers_zero_is_single():
+    """travelers 异常（0/缺省）→ 按单人处理，不产除 0 错误。"""
+    from app.services.budget_service import compute_budget
+
+    trip = _fake_trip(
+        stops=[
+            {"name": "西湖", "stop_type": "attraction", "estimated_cost": 100.0},
+            {"name": "楼外楼", "stop_type": "food", "estimated_cost": 200.0},
+        ]
+    )
+    trip.travelers = None  # 异常数据
+    budget = compute_budget(trip)
+    assert budget["per_person_total"] == 300.0
+    trip2 = _fake_trip(
+        stops=[{"name": "西湖", "stop_type": "attraction", "estimated_cost": 100.0}]
+    )
+    trip2.travelers = 0
+    b2 = compute_budget(trip2)
+    assert b2["per_person_total"] == 100.0

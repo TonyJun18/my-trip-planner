@@ -62,7 +62,7 @@
 
 ## 2026-09-26 竞品分析追加（价格真实度 + 实时协作 + 输入范式，来自 docs/nightly/competitive-analysis/2026-09-26.md）
 
-- [ ] task-budget-split: 预算分摊/多币种——行程级预算视图支持「人均分摊」（按成员/按天/按类别），行程元数据携带币种，预算项按成员标记（AiGo 多币种+分摊、Wanderlog 预算协作为海外多人出行刚需；接 share 协作链路）（验收：分享页可看人均预算 + 测试覆盖；排在 task-share-token-lifecycle 之后）
+- [x] task-budget-split: 预算分摊/多币种——行程级预算视图支持「人均分摊」（按成员/按天/按类别），行程元数据携带币种，预算项按成员标记（AiGo 多币种+分摊、Wanderlog 预算协作为海外多人出行刚需；接 share 协作链路）（验收：分享页可看人均预算 + 测试覆盖；排在 task-share-token-lifecycle 之后）（2026-10-03 worker-5 完成：branch nightly/2026-10-03/2-task-budget-split —— compute_budget 增加 per_person_total/per_person_by_type/per_person_daily 人均分摊视图（travelers 已存在于 trips 表，无需 DB 变更），TripBudgetOut schema 扩展（前向兼容），分享页 ShareView + 详情页 TripDetailView 预算卡片展示人均（travelers>1 时显示），i18n zh/en 补键；后端测试 +5（单元人均分摊/单人/零总额/异常人数 + API 人均透传），全套 192 测试绿，前端 build 通过。多币种未做：需 DB 变更（currency 字段）+ 汇率数据源，超出单 worker 窗口，记入检查点 issues）
 - [ ] task-screenshot-import: 截图导入行程——上传攻略截图 → OCR 提取站点候选（复用 task-note-import 的结构化提取与恶意注入处理管线）→ 勾选并入行程（AiGo screenshot-to-itinerary 为笔记导入姊妹范式；去哪儿已验证小红书图片/笔记导入国内价值）（验收：截图可生成站点候选 + 敌意输入仍按数据对待 + 测试覆盖）
 - [ ] content-budget-transparency: 文章《预算是 AI 行程工具最不诚实的部分》——iPlan.ai 预算偏差 20-30%/Wonderplan 一般目的地数据/Wandercrafted 预算放付费墙为引，讲「估算透明 + 修订联动」哲学（标注口径的诚实估算 + 可修正），与 07/08 文构成价格维度姊妹篇（验收：docs/articles/09-*.md 存在且内容完整，代码引用与仓库实际一致，发布清单补卡片）
 - [ ] task-pwa-offline: PWA 离线——前端 Service Worker，缓存行程详情/api 响应，弱网时展示缓存行程 + 「离线模式」标识（AiGo PWA 离线为卖点，TripIt/Wanderlog 也有；行程是结构化 JSON 天然可离线缓存）（验收：build 通过 + SW 注册 + 行程详情可离线打开；低优先级）
