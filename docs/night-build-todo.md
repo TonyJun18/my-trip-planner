@@ -12,8 +12,8 @@
 - [x] content-readme: README 增加「夜间开发流水线」说明 + 已知局限表格同步（验收：README 内容与仓库实际一致）
 - [x] content-article-publish-list: 为 docs/articles/ 3 篇文章各写一份「发布清单」（标题变体 3 个 / 平台适配要点 / 首图建议），不自动发布（验收：docs/nightly/publish-list.md 存在）
 - [x] task-hotel-budget: 补酒店价格真实度——评估并实现「基于 POI 类目 + 城市基准价的估算模型」，让预算 hotel 项不再是空壳（验收：compute_budget 输出 hotel 有非 0 估算 + 测试覆盖）
-- [ ] task-revise-ux: 前端「让 AI 调整行程」对话交互打磨（加载态、错误态、diff 预览）（验收：build 通过 + 交互状态完整）
-- [ ] task-deploy-pack: Docker 化部署包（backend Dockerfile + docker-compose.yml + 部署文档），不实际部署（验收：docker compose config 通过）
+- [x] task-revise-ux: 前端「让 AI 调整行程」对话交互打磨（加载态、错误态、diff 预览）（验收：build 通过 + 交互状态完整）（2026-10-02 worker-3 补登记：主体已由 commit ee2cab9（2026-09-21 基础版：加载态 revise-loading + 错误态 retain 输入提示 + diff 预览列表，经 b1865b3 合并 main）+ d7929c6（2026-09-29 增强：diff 超 8 条折叠 + 错误展示后端 detail，经 4864485 合并 main）完成；TripDetailView 第 25-103 行 revise 逻辑 + 752-810 行模板齐全，zh/en 文案在案；todo 漏勾导致本夜重跑；worker-3 核验后端 187 测试全绿 + 前端 build 通过，仅补登记，无新代码改动）
+- [x] task-deploy-pack: Docker 化部署包（backend Dockerfile + docker-compose.yml + 部署文档），不实际部署（验收：docker compose config 通过）（2026-10-02 worker-4 补登记：主体已由 commit eab675f（backend/frontend Dockerfile + nginx 反代配置 + docker-compose Postgres17+后端+前端 + deploy/README.md，compose 构建/启动/注册登录建行程全链路验证通过）+ 48311a7（根 .env.example 部署模板 + compose env_file 可选化 + 部署文档同步）完成，并经 a8ba2f6 合并 main；todo 漏勾导致本夜重跑；worker-4 核验 docker compose config -q 通过 + 后端 187 测试全绿 + 前端 build 通过，仅补登记，无新代码改动）
 
 ## 竞品分析后追加（夜间自动填充）
 
@@ -31,7 +31,7 @@
 ## 2026-09-23 竞品分析追加（格局快照：预订闭环 vs 规划层）
 
 - [x] task-trip-collab-vote: 行程协作投票最小版——分享行程页加评论 + 每日站点 👍/👎 投票（Mindtrip co-edit、Wanderlog 免费实时协作、MonkeyTravel 群组投票均验证多人出行刚需）（验收：分享页可投票/评论 + 测试覆盖；待 task-trip-share 合并稳定后评估）（2026-09-29 worker-8 补登记：主体已实现入 main——后端 13b86f0（TripComment/StopVote 模型 + 迁移 e5302ddbcdd2 + 评论列表/发表 + 投票汇总/投票翻转接口，share_token 免登录、幂等可翻转、同行程归属校验）+ 436974f（受邀编辑权 edit_token 分离）经 ab8688f 合并；前端 dbf9072（ShareView 👍/👎 投票 + 评论区，build 通过）+ bacaced（受邀编辑交互）均已入 main；i18n share.* 键 zh/en 齐全、api/index.js 封装齐全；worker-8 核验后端 187 测试全绿 + 前端 build 通过，仅勾选登记）
-- [ ] content-planning-vs-booking: 写一篇发布就绪文章《AI 旅行规划正在变成预订漏斗——独立工具的机会在"规划层"》（Mindtrip agentic 机票 + Expedia 收购 Layla 的行业分层观察；免费/透明/可修订规划层定位）（验收：docs/articles/06-planning-vs-booking.md 存在且内容完整）
+- [x] content-planning-vs-booking: 写一篇发布就绪文章《AI 旅行规划正在变成预订漏斗——独立工具的机会在"规划层"》（Mindtrip agentic 机票 + Expedia 收购 Layla 的行业分层观察；免费/透明/可修订规划层定位）（验收：docs/articles/06-planning-vs-booking.md 存在且内容完整）（2026-10-02 worker-5 补登记：文章⑥已由 2026-09-23 commit c0dc031（新增 06-planning-vs-booking.md 全文 + 发布清单补卡片，代码引用与仓库实际一致）经后续 merge 入 main，d3bce54 修正互链占位；todo 漏勾导致本夜重跑。worker-5 核验内容完整（三支柱：diff+原子应用/价格估算+质检闭环/share_token 协作，115 行）+ 后端 187 测试全绿，并按 d3bce54 注明补齐 04 姊妹篇互链，仅勾选登记）
 - [x] task-manual-edit: 行程手动细粒度编辑——站点卡片行内编辑（标题/时间/顺序拖拽），与 AI 修订并存（Wanderlog 手动自由改 + 地图联动是最强交互）（验收：行程详情页可改单日单点 + build 通过 + 测试覆盖；排在 task-roadtrip-mode 之后）（2026-10-03 worker-1 补登记：PATCH /days/{day_id}/stops/{stop_id} + PUT /days/{day_id}/stops/order 已在 backend/app/api/v1/trips.py L468-480 入 main，核验通过，见 competitive-analysis/2026-10-03.md）
 
 ## 2026-09-24 竞品分析追加（格局信号：预订层被资本垄断，规划层机会放大）
