@@ -12,7 +12,6 @@
     "task-trip-collab-vote（验收升级）",
     "task-screenshot-import（验收升级）",
     "task-map-drag-edit",
-    "task-travel-memory-feedback",
     "task-night-pipeline-parallel"
   ],
   "completed": [
@@ -31,7 +30,8 @@
     "task-revise-ux",
     "task-deploy-pack",
     "content-planning-vs-booking",
-    "task-revise-qa-loop"
+    "task-revise-qa-loop",
+    "task-travel-memory-feedback"
   ],
   "current_index": 5,
   "issues": [
@@ -51,7 +51,8 @@
     "task-revise-ux 为「已实现未登记」完成态：加载态/错误态/diff 预览主体已入 main（commit ee2cab9 2026-09-21 基础版经 b1865b3 合并 + d7929c6 2026-09-29 增强 diff 折叠/错误 detail 经 4864485 合并），todo 漏勾、checkpoint 未登记。本 worker 仅补登记（勾选 todo + 登记 completed + 追加分支 nightly/2026-10-02/2-task-revise-ux），无新代码改动，验收核验通过：后端 187 测试全绿 + 前端 build 通过。",
     "task-deploy-pack 为「已实现未登记」完成态：Docker 化部署包主体已由 commit eab675f（backend/frontend Dockerfile + nginx 反代配置 + docker-compose Postgres17+后端+前端 + deploy/README.md，compose 构建/启动/注册登录建行程全链路验证通过）+ 48311a7（根 .env.example 部署模板 + compose env_file 可选化 + 部署文档同步）完成，并经 a8ba2f6 合并 main；todo 漏勾、checkpoint 未登记导致本夜重跑。本 worker 仅补登记（勾选 todo + 登记 completed + 追加分支 nightly/2026-10-02/3-task-deploy-pack），无新代码改动，验收核验通过：docker compose config -q 通过（Docker 27.5.1 + Compose v2.32.4）+ 后端 187 测试全绿 + 前端 npm run build 通过。",
     "content-planning-vs-booking 为「已实现未登记」完成态：文章⑥《AI 旅行规划正在变成预订漏斗——独立工具的机会在「规划层」》已由 2026-09-23 commit c0dc031（docs/articles/06-planning-vs-booking.md 全文 115 行 + 发布清单补卡片，代码引用与仓库实际一致——revise_service/budget_service/collab_service 逐项核验）经后续 merge 入 main，d3bce54 修正互链占位；todo 漏勾、checkpoint 未登记导致本夜重跑。worker-5 仅补登记（勾选 todo + 登记 completed + 追加分支 nightly/2026-10-02/4-content-planning-vs-booking），并按 d3bce54 注明补齐 04 姊妹篇互链（04 已在 main）；验收核验通过：后端 187 测试全绿。",
-    "task-revise-qa-loop（2026-10-03 白天用户下达执行）：found 未提交实现落工作区（git log -S revise_qa_loop 全分支查无，git status 显示 agents.py +103 / schemas/__init__.py +54 / revise_service.py +193 / TripDetailView.vue +26 / 全新 test_revise_qa_loop.py 9 测试）——与 task-food-agent 同款「被掐断 worker 留下未提交实现」。核验：revise_critic_agent / _revise_qa_loop / critic_fix_to_revise_diff 实现完整（Evaluator-Optimizer 有界 2 轮 + fix 原子应用 + 停滞检测 + 自驾约束门 + 熔断降级放行）；补缺失前端 i18n 键 3 个（zh/en：reviseQualityTitle/FixApplied/Degraded）；后端全套 234 测试绿（test_revise_qa_loop 9 + test_api 27 含 quality 透出）+ 前端 build 通过。登记 completed 并提交分支 nightly/2026-10-03/6-task-revise-qa-loop（本地 commit，未 push 未合并）。注意：docs/night-build-todo.md 先前已有未提交的移动端 A→B 区块（本轮一并登记提交），docs/prd/（移动端 PRD）未纳入本任务 commit。"
+    "task-revise-qa-loop（2026-10-03 白天用户下达执行）：found 未提交实现落工作区（git log -S revise_qa_loop 全分支查无，git status 显示 agents.py +103 / schemas/__init__.py +54 / revise_service.py +193 / TripDetailView.vue +26 / 全新 test_revise_qa_loop.py 9 测试）——与 task-food-agent 同款「被掐断 worker 留下未提交实现」。核验：revise_critic_agent / _revise_qa_loop / critic_fix_to_revise_diff 实现完整（Evaluator-Optimizer 有界 2 轮 + fix 原子应用 + 停滞检测 + 自驾约束门 + 熔断降级放行）；补缺失前端 i18n 键 3 个（zh/en：reviseQualityTitle/FixApplied/Degraded）；后端全套 234 测试绿（test_revise_qa_loop 9 + test_api 27 含 quality 透出）+ 前端 build 通过。登记 completed 并提交分支 nightly/2026-10-03/6-task-revise-qa-loop（本地 commit，未 push 未合并）。注意：docs/night-build-todo.md 先前已有未提交的移动端 A→B 区块（本轮一并登记提交），docs/prd/（移动端 PRD）未纳入本任务 commit。",
+    "task-travel-memory-feedback（方案 B，2026-10-03 白天用户下达执行）：骨架（profile_service _record_behavior/_summarize_behaviors/profile_to_context + 模型 behavior_memory_json）已在工作区但触点未接通（_record_behavior 零生产调用方）+ 无 migration + 测试为半成品（FK 夹具 bug / 无成功路径断言 / reorder 测试 400）。本 worker 完成：①接通触点 revise_service.revise_trip 落库后写 revise 信号（独立小事务，失败忽略不阻断）+ trip_service add/update/delete_stop 写 manual_add/edit/remove 信号（显式 db.get(Trip) 避免 async MissingGreenlet，fire-and-forget）；②补齐 alembic migration c7a9d1e2b3f4（behavior_memory_json 列，幂等跳过已存在）；③重写触点测试为真实成功路径断言 + 修复半成品夹具（_make_user_profile 先 flush User 再建 Profile，避免 UOW 插入顺序违反外键；_make_dummy_provider 走 _DummyReviseLLM）；全套 242 测试绿。登记 completed。注意：本轮在 6-task-revise-qa-loop 分支上继续（main 未含 A 实现），B 改动随 A 分支或独立 7 分支提交，见 branch 记录。"
   ],
   "branches": [
     "nightly/2026-10-03/0-competitive-analysis",

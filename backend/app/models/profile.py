@@ -43,6 +43,10 @@ class UserProfile(Base):
     favorite_cities: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # 自由格式偏好（饮食禁忌、兴趣标签、交通偏好等），整体读写
     preferences_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 系统观察行为记忆（task-travel-memory-feedback）：由修订/手动编辑等行为
+    # 触点异步回写，非用户声明；不进 ProfileIn/Out，用户手动 PUT 不覆盖。
+    # 结构：{"signals": [{"kind","destination","summary","at"}...], "updated_at": iso}
+    behavior_memory_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

@@ -22,10 +22,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.agents import CRITIC_PASS_SCORE, plan_revise_agent
 from app.core.exceptions import AppError
+from app.core.logging import get_logger
 from app.models import Stop, Trip, TripDay, TripPlan
 from app.schemas import critic_fix_to_revise_diff
 from app.services._common import TRIP_LOADS as _TRIP_LOADS
 from app.services._common import normalize_trace as _normalize_trace
+
+logger = get_logger(__name__)
 
 
 async def revise_trip(
@@ -100,6 +103,25 @@ async def revise_trip(
         provider=provider,
         max_rounds=max_review_rounds,
     )
+
+    # 4.5) 行为记忆回写（task-travel-memory-feedback 触点）：修订成功落库后
+    #      fire-and-forget 写一条 revise 信号。已有画像才写；失败绝不阻断修订响应。
+    if owner:
+        try:
+            from app.services import profile_service
+
+            await profile_service._record_behavior(
+                db,
+                user_id=owner,
+                signal_kind="revise",
+                destination=trip.destination or "",
+                actions=diff.get("actions") or [],
+                summary=diff.get("summary") or "",
+            )
+            await db.commit()  # 独立小事务：只提交行为记忆，与主修订隔离
+        except Exception:  # noqa: BLE001 — 行为记忆是可丢弃的，绝不阻断修订
+            logger.debug("行为记忆回写失败（已忽略）", exc_info=True)
+            await db.rollback()
 
     # 5) 组装响应（终态快照：重新加载，保证 ORM 属性新鲜）
     final_trip = await _load_trip(db, trip_id, owner=owner)

@@ -9,9 +9,47 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundError
+from app.core.logging import get_logger
 from app.models import Stop, Trip, TripDay, TripPlan
 from app.schemas import DayIn, StopIn, StopUpdate, TripCreate, TripUpdate
 from app.services._common import TRIP_LOADS as _TRIP_LOADS
+
+logger = get_logger(__name__)
+
+
+async def _record_behavior_safely(
+    db: AsyncSession,
+    *,
+    user_id: str | None,
+    signal_kind: str,
+    destination: str,
+    actions: list[dict],
+    summary: str,
+) -> None:
+    """行为记忆回写（task-travel-memory-feedback 触点，fire-and-forget）。
+
+    主操作已在调用方 flush；这里先 commit 提交主操作（API 层后续 commit
+    为 no-op），再用独立小事务写行为记忆——记忆写失败仅回滚记忆本身，
+    绝不阻断（或回滚）主流程。
+    """
+    if not user_id:
+        return
+    try:
+        await db.commit()  # 提交主操作（已 flush）
+        from app.services import profile_service
+
+        await profile_service._record_behavior(
+            db,
+            user_id=user_id,
+            signal_kind=signal_kind,
+            destination=destination,
+            actions=actions,
+            summary=summary,
+        )
+        await db.commit()  # 独立小事务：只提交行为记忆
+    except Exception:  # noqa: BLE001 — 行为记忆是可丢弃的，绝不阻断主流程
+        logger.debug("行为记忆回写失败（已忽略）", exc_info=True)
+        await db.rollback()
 
 
 def _owner_expr(owner: str | None):
@@ -160,9 +198,20 @@ async def delete_stop(db: AsyncSession, stop_id: str, *, owner: str | None = Non
     stop = await db.get(Stop, stop_id)
     if stop is None:
         raise NotFoundError("站点不存在", code="stop_not_found")
-    await _load_day_for_owner(db, stop.day_id, owner=owner)
+    day = await _load_day_for_owner(db, stop.day_id, owner=owner)
+    name = stop.name
     await db.delete(stop)
     await db.flush()
+    # 行为记忆触点：手动删除站点（显式加载 Trip，避免 lazy load MissingGreenlet）
+    trip = await db.get(Trip, day.trip_id)
+    await _record_behavior_safely(
+        db,
+        user_id=owner,
+        signal_kind="manual_remove",
+        destination=trip.destination if trip else "",
+        actions=[{"op": "remove", "target": {"name": name}}],
+        summary=f"删除站点：{name}",
+    )
 
 
 async def add_day(db: AsyncSession, trip_id: str, data: DayIn, *, owner: str | None = None) -> TripDay:
@@ -191,6 +240,16 @@ async def add_stop(db: AsyncSession, day_id: str, data: StopIn, *, owner: str | 
     db.add(stop)
     await db.flush()
     await db.refresh(stop)
+    # 行为记忆触点：手动新增站点（显式加载 Trip，避免 lazy load 在 async 下 MissingGreenlet）
+    trip = await db.get(Trip, day.trip_id)
+    await _record_behavior_safely(
+        db,
+        user_id=owner,
+        signal_kind="manual_add",
+        destination=trip.destination if trip else "",
+        actions=[{"op": "add", "fields": {"name": stop.name, "type": stop.stop_type}}],
+        summary=f"新增站点：{stop.name}",
+    )
     return stop
 
 
@@ -216,6 +275,17 @@ async def update_stop(
         setattr(stop, field, value)
     await db.flush()
     await db.refresh(stop)
+    # 行为记忆触点：手动编辑站点（显式加载 Trip，避免 lazy load MissingGreenlet）
+    trip = await db.get(Trip, day.trip_id)
+    changed = data.model_dump(exclude_unset=True)
+    await _record_behavior_safely(
+        db,
+        user_id=owner,
+        signal_kind="manual_edit",
+        destination=trip.destination if trip else "",
+        actions=[{"op": "replace", "target": {"name": stop.name}, "fields": changed}],
+        summary=f"编辑站点：{stop.name}" + (f"（{', '.join(changed.keys())}）" if changed else ""),
+    )
     return stop
 
 
