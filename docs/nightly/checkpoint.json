@@ -19,9 +19,10 @@
   "completed": [
     "competitive-analysis",
     "task-email-import",
-    "content-agentic-booking-endgame"
+    "content-agentic-booking-endgame",
+    "task-trip-collab-vote（验收升级）"
   ],
-  "current_index": 3,
+  "current_index": 4,
   "issues": [
     "网络受限（web_search 双后端 SSL EOF / 海外 curl 000 / 国内反爬壳）-> competitive-analysis 降级为存量空洞审计3（10-02/10-03 同环境），输出 docs/nightly/competitive-analysis/2026-10-04.md；未抓取新竞品页面、未编造。",
     "工作区存在并发会话未提交改动（frontend PlanWizard/TripDetailView/TripListView 的 departure+trip_type 创建表单方案 A + backend agents/models/schemas/checkin/planning 配套 + migration d0e1f2a3b4c5 + docs/night-build-todo.md 追加区块 task-trip-type-profile-memory），mtimes 00:18-00:21；非本 worker 所为，按铁律 10 不接管、不 stash、不 checkout，仅做 docs 区登记。",
@@ -29,12 +30,14 @@
     "10-03 晚间接力轮分支（nightly/2026-10-03/6/7/8）与早间轮分支（1/2/3/4/5）均未合并 main；本夜登记校正基于分支/工作区实现证据，实际合并由用户 review 决定",
     "本 worker 从当前 HEAD（nightly/2026-10-04/0-competitive-analysis）创建分支 nightly/2026-10-04/0-competitive-analysis 并仅提交 docs 文件（checkpoint + 竞品分析）。工作区并发会话的未提交改动（方案 A 创建表单 + backend 配套）未纳入 commit、未触碰，留在工作区待其自行提交；未 push、未合并 main。",
     "worker-1 完成 task-email-import：新分支 nightly/2026-10-04/1-task-email-import 从 worker-0 的 HEAD（eb7a8ff，含 main 全历史）拉出（checkout main 因并发会话未提交改动被 abort，按既有先例从当前 HEAD 拉分支，内容不丢失）；接管遗留测试文件补实现 service/schema/API（纯新增，不触碰并发会话改动）；后端 264 测试全绿（含 email-import 10 用例）；提交 5a9d894，本地 commit 未 push 未合并。分支从 eb7a8ff 而非 main 拉出，待用户 review 合入。",
-    "worker-3 完成 content-agentic-booking-endgame（doc 区，无代码改动）：新分支 nightly/2026-10-04/2-content-agentic-booking-endgame 从 worker-1 的 HEAD（bac66a6）拉出（checkout main 因并发会话未提交改动被 abort，按既有先例从当前 HEAD 拉分支）；提交 90e6ed0（docs/articles/10-endgame-booking-agentic.md 全文 + publish-list.md 文章⑩卡片与速查表，180 行新增）；代码引用逐条核验与仓库实际一致（revise_service._apply_diff/_recompute_budget、agents.py ReviseCriticAgent/_revise_qa_loop、budget_service.estimate_hotel_cost、collab_service._belongs_to_trip、note_import.parse_note、email_import.parse_email 已由 worker-1 落地）；纯 docs 任务无 pytest/build 需求；本地 commit 未 push 未合并，待用户 review。"
+    "worker-3 完成 content-agentic-booking-endgame（doc 区，无代码改动）：新分支 nightly/2026-10-04/2-content-agentic-booking-endgame 从 worker-1 的 HEAD（bac66a6）拉出（checkout main 因并发会话未提交改动被 abort，按既有先例从当前 HEAD 拉分支）；提交 90e6ed0（docs/articles/10-endgame-booking-agentic.md 全文 + publish-list.md 文章⑩卡片与速查表，180 行新增）；代码引用逐条核验与仓库实际一致（revise_service._apply_diff/_recompute_budget、agents.py ReviseCriticAgent/_revise_qa_loop、budget_service.estimate_hotel_cost、collab_service._belongs_to_trip、note_import.parse_note、email_import.parse_email 已由 worker-1 落地）；纯 docs 任务无 pytest/build 需求；本地 commit 未 push 未合并，待用户 review。",
+    "worker-4 完成 task-trip-collab-vote（验收升级，backend 区）：渐进式推进 consensus 纯计算型实现——VoteOut 加 consensus 字段（默认 False）、collab_service 加 _consensus_threshold（ceil(规模/2)）与 _trip_group_size（max(travelers, 实际投票访客数)）、list_stop_votes/cast_vote 输出 consensus（过半表态且赞成多数才标记）；顺带修复 GET /votes 无 voter_key 时缺 my_value 的潜在 422；新增 3 个测试，后端全量 267 测试通过；提交 89341ba。分支从 worker-3 HEAD（e767135）拉出（checkout main 因并发会话未提交改动 abort，按既有先例）；未 push 未合并。前端 ShareView 展示 consensus 徽标未做——ShareView.vue 为并发会话脏文件，不触碰，等待用户合并后补（已记录）。docs/night-build-todo.md 中 task-trip-collab-vote（验收升级）一行因该文件为并发会话脏文件未勾选。"
   ],
   "branches": [
     "nightly/2026-10-04/0-competitive-analysis",
     "nightly/2026-10-04/1-task-email-import",
-    "nightly/2026-10-04/2-content-agentic-booking-endgame"
+    "nightly/2026-10-04/2-content-agentic-booking-endgame",
+    "nightly/2026-10-04/3-task-trip-collab-vote"
   ],
   "claims": {}
 }
