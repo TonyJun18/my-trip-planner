@@ -32,6 +32,8 @@ const lastReviseSummary = ref('')
 const lastReviseDiff = ref([])
 const reviseError = ref('')
 const reviseDone = ref(false)
+// 修订质控闭环：后端返回的 quality 报告（score/passed/issues/summary/fix_applied）
+const lastReviseQuality = ref(null)
 
 // diff 预览折叠：超过 8 条默认收起，避免卡片过高
 const REVISE_DIFF_PREVIEW_MAX = 8
@@ -86,10 +88,12 @@ async function revise() {
   reviseDone.value = false
   lastReviseSummary.value = ''
   lastReviseDiff.value = []
+  lastReviseQuality.value = null
   try {
     const r = await api.reviseTrip(route.params.id, { message: msg, provider: 'auto' })
     lastReviseSummary.value = r.summary || ''
     lastReviseDiff.value = Array.isArray(r.diff) ? r.diff : []
+    lastReviseQuality.value = r.quality || null
     reviseDone.value = true
     ElMessage.success(r.summary || t('tripDetail.revised'))
     reviseMsg.value = ''
@@ -99,6 +103,7 @@ async function revise() {
     // 全局拦截器已 toast 具体错误；内联横幅展示后端 detail（若有）并提示保留输入（避免双 toast）
     lastReviseSummary.value = ''
     lastReviseDiff.value = []
+    lastReviseQuality.value = null
     reviseError.value = e?.response?.data?.detail || e?.response?.data?.error?.message || t('tripDetail.reviseFailHint')
   } finally {
     revising.value = false
@@ -849,6 +854,27 @@ onMounted(load)
                 </div>
               </template>
               <div v-else class="revise-diff-empty">{{ $t('tripDetail.diffEmpty') }}</div>
+            </div>
+          </transition>
+          <!-- 修订质控闭环：修订后的 AI 质检报告（task-revise-qa-loop） -->
+          <transition name="el-fade-in">
+            <div v-if="lastReviseQuality" class="revise-quality">
+              <div class="revise-quality-head">
+                <el-icon style="margin-right: 5px"><DataAnalysis /></el-icon>
+                <span class="revise-quality-title">{{ $t('tripDetail.reviseQualityTitle') }}</span>
+                <span class="revise-quality-score" :class="{ pass: lastReviseQuality.passed, warn: !lastReviseQuality.passed }">
+                  {{ lastReviseQuality.score }}/100
+                </span>
+                <span v-if="lastReviseQuality.fix_applied" class="revise-quality-badge">{{ $t('tripDetail.reviseQualityFixApplied') }}</span>
+                <span v-if="lastReviseQuality.degraded" class="revise-quality-badge degraded">{{ $t('tripDetail.reviseQualityDegraded') }}</span>
+              </div>
+              <div v-if="lastReviseQuality.summary" class="revise-quality-summary">{{ lastReviseQuality.summary }}</div>
+              <ul v-if="lastReviseQuality.issues && lastReviseQuality.issues.length" class="revise-quality-issues">
+                <li v-for="(issue, i) in lastReviseQuality.issues.slice(0, 3)" :key="i" class="revise-quality-issue">
+                  <span class="revise-quality-sev" :class="issue.severity">{{ issue.severity }}</span>
+                  {{ issue.message }}
+                </li>
+              </ul>
             </div>
           </transition>
         </div>

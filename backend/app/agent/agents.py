@@ -1028,6 +1028,109 @@ def _pass_critique(summary: str) -> dict[str, Any]:
 
 
 # ═══════════════════════════════════════════════════════════
+#  ReviseCriticAgent —— 修订复核质检专家（task-revise-qa-loop 新增）
+# ═══════════════════════════════════════════════════════════
+# 与 TravelCriticAgent 同一 CritiqueSchema 契约，但语境是「修订后的行程」：
+# 审查重点 = 本次修改是否忠实满足用户请求 + 是否引入新的业务问题。
+# 未通过且问题可精确修复时附带 fix（CriticFixSchema），修订闭环把它转成
+# 可执行 diff 应用后继续下一轮复审（Evaluator-Optimizer 循环）。
+REVISE_CRITIC_SYSTEM_PROMPT = """你是旅行规划团队中的【行程质检专家·修订复核】。你的唯一任务：在用户对已生成行程发起一次修订后，复核修订结果。
+
+你将收到：
+1. 用户原始需求（目的地 / 预算）
+2. 用户本次修订请求（用户想让 AI 改什么）
+3. AI 已执行的修订摘要（diff 的 summary）
+4. 修订后的完整行程 JSON
+
+审查维度（按重要性排序）：
+1. 修订是否忠实满足用户请求（最重要）：用户要改的改了吗？用户没让动的被无故改了吗？
+2. 修订是否引入新的业务合理性问题（schedule 日程 / budget 预算 / geography 地理 / logistics 完整性）
+3. 修订后行程是否自相矛盾
+
+输出规则：
+1. 只输出一个 JSON 对象，不要任何多余文字（不要 ``` 代码块）
+2. JSON 结构与质检报告一致：{"score": 0-100, "passed": bool, "issues": [...], "summary": "...", "fix": {...}}
+3. passed=false 且问题可通过少数精确动作修复 → 必须给出 fix（1-3 个动作；op 语义与修订一致：replace=改站点字段 / add=新增站点（fields 带 name+type）/ remove=删除 / reorder=调序，type 只能 attraction|food|hotel，只对真实存在的站点操作）
+4. 纯警告/信息类问题、或需要大改（>3 个动作）→ 省略 fix 字段
+5. score >= 80 为 passed=true；issue severity：critical=必须修改 / warning=建议修改 / info=提示
+6. 只审查实际看到的问题；没有就列空 issues，不要为了凑数编造问题"""
+
+
+async def revise_critic_agent(
+    request: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    provider: str = "auto",
+    max_corrections: int = 2,
+) -> dict[str, Any]:
+    """复核一次修订后的行程，输出结构化质检报告（可带精确 fix）。
+
+    与 ``critic_agent`` 同契约（CritiqueSchema 强校验 + 失败降级放行），
+    但请求语境包含「用户本次修订请求 + 已执行修订摘要」，让质检能判断
+    「修订是否忠实满足用户意图」。调用方（revise_service 复审闭环）承诺
+    永远得到可消费报告——质检绝不阻断已落库的合法修订。
+    """
+    prov = get_provider(provider)
+    messages: list[Any] = [SystemMessage(content=REVISE_CRITIC_SYSTEM_PROMPT)]
+    critic_req = (
+        f"【用户原始需求】目的地：{request.get('destination', '')}；"
+        f"人数：{request.get('travelers', 1)}；预算：{request.get('budget', '未指定')} 元；"
+        f"偏好：{', '.join(request.get('preferences') or []) or '无'}"
+    )
+    if request.get("message"):
+        critic_req += f"\n【用户本次修订请求】{request['message']}"
+    if request.get("revise_summary"):
+        critic_req += f"\n【AI 已执行的修订摘要】{request['revise_summary']}"
+    messages.append(
+        HumanMessage(
+            content=(
+                f"{critic_req}\n\n"
+                f"【修订后行程 JSON】\n{json.dumps(plan, ensure_ascii=False)[:6000]}\n\n"
+                "请审查并输出质检报告 JSON。"
+            )
+        )
+    )
+
+    corrections = 0
+    last_error: str | None = None
+    for _ in range(max_corrections + 1):
+        try:
+            # 显式传 providers=[prov]：与 critic_agent 一致，不参与自动兜底链
+            response = await invoke_with_resilience(prov, messages, providers=[prov])
+        except Exception as exc:  # noqa: BLE001 — 质检失败降级放行，绝不阻断主流程
+            logger.warning("ReviseCritic 调用失败，降级放行: %s", exc)
+            return {
+                "status": "degraded",
+                "critique": _pass_critique("修订复核调用失败，按通过处理"),
+                "corrections": corrections,
+            }
+        content = str(getattr(response, "content", ""))
+        parsed = _extract_json(content)
+        if not isinstance(parsed, dict):
+            corrections += 1
+            last_error = "未找到合法 JSON"
+            messages.append(SystemMessage(content="你的输出中未找到合法的质检 JSON。请只输出一个 JSON 对象，不要解释。"))
+            continue
+        try:
+            clean = validate_critique(parsed)
+            # 归一化 passed：以 score 为准（>=80），避免 LLM 自相矛盾
+            clean["passed"] = clean["score"] >= CRITIC_PASS_SCORE
+            return {"status": "completed", "critique": clean, "corrections": corrections}
+        except Exception as exc:  # noqa: BLE001 — Pydantic ValidationError
+            corrections += 1
+            last_error = str(exc)
+            logger.info("ReviseCritic 校验失败 (correction=%d): %s", corrections, exc)
+            messages.append(SystemMessage(content=_validation_feedback(exc)))
+
+    logger.warning("ReviseCritic 多次校验失败，降级放行: %s", last_error)
+    return {
+        "status": "degraded",
+        "critique": _pass_critique("修订复核报告生成失败，按通过处理"),
+        "corrections": corrections,
+    }
+
+
+# ═══════════════════════════════════════════════════════════
 #  PlanReviseAgent —— 行程修订专家（方案 B：对话改行程）
 # ═══════════════════════════════════════════════════════════
 REVISE_SYSTEM_PROMPT = """你是旅行规划团队中的【行程修订专家】。你的唯一任务：把用户对已生成行程的修改请求，转成结构化的变更指令（diff）。

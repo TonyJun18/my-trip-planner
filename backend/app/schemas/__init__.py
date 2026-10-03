@@ -238,6 +238,56 @@ class ReviseDiff(BaseModel):
     summary: str = Field(default=None, max_length=300)
     """给用户看的变更摘要（如「已把第三天西湖调整为半天，新增楼外楼晚餐」）。"""
 
+    # 修订质控闭环（task-revise-qa-loop）：AI 生成 diff 后由 Critic 复审，
+    # 未通过时可携带精确修订 fix（CriticFixSchema 同契约，plan JSON 字段名）。
+    # 该单选 fix 由编排层通过 critic_fix_to_revise_diff 转换成可执行 diff，
+    # 应用成功后继续下一轮复审；无 fix / 大改 / 降级时为空。
+    fix: dict | None = None
+
+
+# Critic fix 动作的字段名（plan JSON 名）→ ORM 字段名（ReviseAction 白名单）映射。
+# CriticFixAction.fields 用 type / duration_minutes（plan JSON 约定），
+# 而 ReviseAction.fields 用 stop_type / estimated_duration_minutes（ORM 名）。
+# 转换后可直接走 revise_service._apply_diff 的字段白名单校验。
+_FIX_FIELD_NAME_MAP = {
+    "type": "stop_type",
+    "duration_minutes": "estimated_duration_minutes",
+}
+
+
+def critic_fix_to_revise_diff(fix: dict | None) -> dict:
+    """把 Critic 精确修订 fix（CriticFixSchema 结构）转成可执行的 ReviseDiff 结构。
+
+    Rules:
+    - 只接受含非空 actions 的对象；op / day_number / target / index 原样拷贝
+    - fields 的键按 _FIX_FIELD_NAME_MAP 映射（type→stop_type 等），其余字段名保持
+    - 转换不校验合法性（交给 _apply_diff 的原子预检）；空 actions → 返回
+      {"actions": [], ...}（调用方视作「无法精确修正」）
+    """
+    if not isinstance(fix, dict):
+        return {"actions": [], "summary": None}
+    actions = fix.get("actions") or []
+    out_actions = []
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        fields = action.get("fields") or {}
+        mapped_fields = {
+            _FIX_FIELD_NAME_MAP.get(k, k): v for k, v in fields.items()
+        }
+        mapped: dict = {"op": action.get("op"), "day_number": action.get("day_number")}
+        if action.get("target") is not None:
+            mapped["target"] = action["target"]
+        if mapped_fields:
+            mapped["fields"] = mapped_fields
+        if action.get("index") is not None:
+            mapped["index"] = action["index"]
+        out_actions.append(mapped)
+    return {
+        "actions": out_actions,
+        "summary": (fix.get("summary") or "Critic 修正"),
+    }
+
 
 class ReviseOut(BaseModel):
     """修订结果：新行程 + 摘要。"""
@@ -249,6 +299,10 @@ class ReviseOut(BaseModel):
     trace: list[AgentTraceStep]
     provider: str | None = None
     model: str | None = None
+    # 修订质控闭环：Critic 复审报告（score/passed/issues/summary/fix）。
+    # 健康修订必然带 quality=passed: True（或降级 degraded）；未通过但已修正的
+    # 修订 quality.passed=True 且 quality.fix_applied=True。前端可据此展示质检透明度。
+    quality: dict | None = None
 
 
 class AgentTraceStep(BaseModel):

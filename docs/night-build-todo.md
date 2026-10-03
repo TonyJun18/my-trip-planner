@@ -83,3 +83,23 @@
 ## 2026-10-02 竞品分析追加（存量空洞审计①，来自 docs/nightly/competitive-analysis/2026-10-02.md）
 
 - [ ] task-map-drag-edit: 地图拖拽修订——拖动 marker 改 lat/lng → 生成 ReorderDiff → 复用 revise 原子应用（docs/articles/05-map-edit-paradigms.md §4/§5 已论证「统一 diff 内核」工程基础；Wandercrafted/AiGo 地图交互为竞品亮点而 TripMap.vue 目前只读）（验收：拖动 marker 改坐标 → diff 原子应用 + DrivingGate 约束前置提示 + 移动端隐藏拖拽 + 测试覆盖；2026-10-03 worker-1 复核仍为真空洞，保持排队）
+
+## 用户白天下达任务（2026-10-03 追加·移动端 A→B 路线）
+
+> PRD：docs/prd/2026-10-03-mobile-app.md（用户确认「先做 A，然后做 B」；A=纯前端 PWA 深化，B=Capacitor 打包上架物料）。
+> 进度：A1~A4 为阶段 A（前端移动化），B1~B2 为阶段 B（打包与上架物料，需用户明确授权 Capacitor 依赖与 Android 环境后才执行）。
+
+- [ ] task-mobile-shell: 移动 App Shell——底部 Tab 导航（登录态：我的行程/新建规划，共 2 个主入口；未登录态不显示）+ 顶栏窄屏压缩（品牌+语言+用户入口，不换行不溢出）+ 移动端隐藏 footer（验收：前端 `npm run build` 通过；375px 视口无水平滚动（scrollWidth ≤ 375）、底部 Tab 可切换；屏宽 ≥1280px 桌面布局回归无破坏）
+- [ ] task-mobile-views: 三大核心视图断点适配——PlanWizard/TripDetailView/ShareView 系统性移动断点（表格转卡片、横向滚动卡片收起、操作区 44px 触控目标、leaflet 高度与全宽适配）（验收：build 通过；375px 下规划/详情/分享（含受邀编辑）三流程可用、可滚动、无水平滚动；桌面板回归）——分解优先级：TripDetailView（最常用）> PlanWizard > ShareView，单 worker 窗口不足时先完成详情页并记录
+- [ ] task-mobile-install: PWA 安装引导——beforeinstallprompt 非侵入提示（仅登录用户、可关闭、本地标记）+ iOS apple-touch-icon / apple-mobile-web-app meta 补全 + manifest 增加 192/512 PNG 图标（复用现有 SVG 转换或手工模板）（验收：build 通过；Chrome 触发安装提示；Safari 可添加到主屏幕全屏启动；manifest icons 含 PNG 192/512）
+- [ ] task-pwa-cache-deep: 离线深化——行程列表页与分享页断网缓存展示（延续现有 network-first 回退 stale 缓存策略；列表静默缓存 + 详情按需缓存；写请求仍不拦截）+ SW 更新提示（新版本 ready 时 toast 引导刷新）（验收：build 通过；DevTools offline 下 /trips 显示缓存列表+离线标识、已缓存分享页可读、恢复在线自动清除标识；写请求不缓存验证）
+- [ ] task-capacitor-shell:（B 阶段）Capacitor 壳——引入 @capacitor/core/cli/android + npx cap init + 同步 web build（验收：npx cap sync android 通过 + Android 工程构建产物可安装到模拟器/真机；API 地址支持配置注入不硬编码；本机 Android SDK/Java 不可用则记 issues 并降级验证 web build，不伪造 APK）
+- [ ] task-capacitor-stores:（B 阶段）上架物料——公网可访问 /privacy 静态页（AI 内容免责 + 数据说明，商店审核必备）+ 商店截图/图标/文案/FAQ 清单文档（docs/nightly/store-listing.md）（验收：/privacy 可访问 + 文档存在；**不实际提交商店**，上架动作由用户手动执行）
+
+## 用户白天下达任务（2026-10-03 追加·完善方案 A→B→C，排序 A→B→C）
+
+> 2026-10-03 用户确认三项完善方案按 A→B→C 排入夜间 todo。方案 A 已被夜间 worker 实现（未提交实现落工作区，本日核验补齐 i18n 键并提交）；B、C 为待办。
+
+- [x] task-revise-qa-loop: 修订质控闭环（方案 A）——修订后 ReviseCriticAgent 复审（Evaluator-Optimizer，最多 2 轮）：未通过且可精确修复 → Critic fix 转可执行 diff 原子应用（fix 独立小事务）→ 复审；无 fix/停滞/自驾约束拒绝 → 有界停止；Critic 熔断/超时降级为通过，绝不阻断合法修订（验收：好 diff 一轮过 / 坏 diff 修正 2 轮内过 / 修不好返回带 warnings / Critic 熔断降级 + 测试覆盖；2026-10-03 核验：revise_critic_agent + _revise_qa_loop + critic_fix_to_revise_diff 已在工作区实现（agents.py +103 / revise_service.py +193 / schemas +54 / TripDetailView.vue +26 / test_revise_qa_loop.py 9 测试），本日补齐 locales zh/en 3 键后全套 234 测试绿 + 前端 build 通过，提交登记）
+- [ ] task-travel-memory-feedback: 行程记忆反馈回路（方案 B）——从"用户声明画像"升级为"系统观察画像"：修订/手动编辑/勾选等行为事件异步回写 user_profiles 增量（fire-and-forget，写失败不阻断主流程），规划时 _profile_text 合并注入静态画像 + 行为增量（标注来源/置信度），并查询历史 trips 做去过城市去重/深度游提示（验收：修订后增量可见、下次规划 prompt 断言注入生效、去过城市去重提示、增量超长降级不静默截断 + 测试覆盖）
+- [ ] task-night-pipeline-parallel: 夜间流水线并行化升级（方案 C）——手册定义并行安全区（改 backend/app / 改 frontend/src / 纯 docs 三类互不冲突可并行）+ night-start 台账加 task→安全组/依赖/建议拆分字段 + worker 可重试错误（flaky/超时）自动重跑 1 次（指数退避）不可重试记 issues 跳过 + checkpoint 写前重读校验（night+index 未变防并行写坏唯一事实源）（验收：手册更新 + 台账字段 + 一次真实并行演练，checkpoint 无损坏）

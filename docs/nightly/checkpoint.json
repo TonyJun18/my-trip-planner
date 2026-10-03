@@ -11,7 +11,9 @@
     "content-agentic-booking-endgame",
     "task-trip-collab-vote（验收升级）",
     "task-screenshot-import（验收升级）",
-    "task-map-drag-edit"
+    "task-map-drag-edit",
+    "task-travel-memory-feedback",
+    "task-night-pipeline-parallel"
   ],
   "completed": [
     "competitive-analysis",
@@ -28,7 +30,8 @@
     "oss-license",
     "task-revise-ux",
     "task-deploy-pack",
-    "content-planning-vs-booking"
+    "content-planning-vs-booking",
+    "task-revise-qa-loop"
   ],
   "current_index": 5,
   "issues": [
@@ -47,7 +50,8 @@
     "oss-license 为「已实现未登记」完成态：LICENSE 与 README 开源小节已在 09-29 入 main（commit 90dc87a，合并 6a4f854），todo 漏勾、checkpoint 未登记。本 worker 仅补登记（勾选 todo + 登记 completed + 追加分支 nightly/2026-10-02/1-oss-license），无新代码改动，验收标准（LICENSE 存在 + README 含开源许可小节）核验通过。",
     "task-revise-ux 为「已实现未登记」完成态：加载态/错误态/diff 预览主体已入 main（commit ee2cab9 2026-09-21 基础版经 b1865b3 合并 + d7929c6 2026-09-29 增强 diff 折叠/错误 detail 经 4864485 合并），todo 漏勾、checkpoint 未登记。本 worker 仅补登记（勾选 todo + 登记 completed + 追加分支 nightly/2026-10-02/2-task-revise-ux），无新代码改动，验收核验通过：后端 187 测试全绿 + 前端 build 通过。",
     "task-deploy-pack 为「已实现未登记」完成态：Docker 化部署包主体已由 commit eab675f（backend/frontend Dockerfile + nginx 反代配置 + docker-compose Postgres17+后端+前端 + deploy/README.md，compose 构建/启动/注册登录建行程全链路验证通过）+ 48311a7（根 .env.example 部署模板 + compose env_file 可选化 + 部署文档同步）完成，并经 a8ba2f6 合并 main；todo 漏勾、checkpoint 未登记导致本夜重跑。本 worker 仅补登记（勾选 todo + 登记 completed + 追加分支 nightly/2026-10-02/3-task-deploy-pack），无新代码改动，验收核验通过：docker compose config -q 通过（Docker 27.5.1 + Compose v2.32.4）+ 后端 187 测试全绿 + 前端 npm run build 通过。",
-    "content-planning-vs-booking 为「已实现未登记」完成态：文章⑥《AI 旅行规划正在变成预订漏斗——独立工具的机会在「规划层」》已由 2026-09-23 commit c0dc031（docs/articles/06-planning-vs-booking.md 全文 115 行 + 发布清单补卡片，代码引用与仓库实际一致——revise_service/budget_service/collab_service 逐项核验）经后续 merge 入 main，d3bce54 修正互链占位；todo 漏勾、checkpoint 未登记导致本夜重跑。worker-5 仅补登记（勾选 todo + 登记 completed + 追加分支 nightly/2026-10-02/4-content-planning-vs-booking），并按 d3bce54 注明补齐 04 姊妹篇互链（04 已在 main）；验收核验通过：后端 187 测试全绿。"
+    "content-planning-vs-booking 为「已实现未登记」完成态：文章⑥《AI 旅行规划正在变成预订漏斗——独立工具的机会在「规划层」》已由 2026-09-23 commit c0dc031（docs/articles/06-planning-vs-booking.md 全文 115 行 + 发布清单补卡片，代码引用与仓库实际一致——revise_service/budget_service/collab_service 逐项核验）经后续 merge 入 main，d3bce54 修正互链占位；todo 漏勾、checkpoint 未登记导致本夜重跑。worker-5 仅补登记（勾选 todo + 登记 completed + 追加分支 nightly/2026-10-02/4-content-planning-vs-booking），并按 d3bce54 注明补齐 04 姊妹篇互链（04 已在 main）；验收核验通过：后端 187 测试全绿。",
+    "task-revise-qa-loop（2026-10-03 白天用户下达执行）：found 未提交实现落工作区（git log -S revise_qa_loop 全分支查无，git status 显示 agents.py +103 / schemas/__init__.py +54 / revise_service.py +193 / TripDetailView.vue +26 / 全新 test_revise_qa_loop.py 9 测试）——与 task-food-agent 同款「被掐断 worker 留下未提交实现」。核验：revise_critic_agent / _revise_qa_loop / critic_fix_to_revise_diff 实现完整（Evaluator-Optimizer 有界 2 轮 + fix 原子应用 + 停滞检测 + 自驾约束门 + 熔断降级放行）；补缺失前端 i18n 键 3 个（zh/en：reviseQualityTitle/FixApplied/Degraded）；后端全套 234 测试绿（test_revise_qa_loop 9 + test_api 27 含 quality 透出）+ 前端 build 通过。登记 completed 并提交分支 nightly/2026-10-03/6-task-revise-qa-loop（本地 commit，未 push 未合并）。注意：docs/night-build-todo.md 先前已有未提交的移动端 A→B 区块（本轮一并登记提交），docs/prd/（移动端 PRD）未纳入本任务 commit。"
   ],
   "branches": [
     "nightly/2026-10-03/0-competitive-analysis",
