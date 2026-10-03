@@ -1,0 +1,3 @@
+# OCR 编译产物（本机已编译可用；新环境按 scripts/ocr_vision.swift 重新编译）
+# 本 .gitignore 位于 backend/bin/ 下，模式相对本目录
+ocr_vision
