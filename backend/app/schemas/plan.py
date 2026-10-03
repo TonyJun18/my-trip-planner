@@ -103,6 +103,32 @@ class CritiqueIssueSchema(BaseModel):
     day_number: int | None = Field(default=None, ge=1)
 
 
+class CriticFixAction(BaseModel):
+    """Critic 精确修订的一条动作（与 ReviseDiff 同契约，字段用 plan JSON 名）。
+
+    该结构让 TravelCriticAgent 从「打分手」升级为「协作者」：
+    不过审时直接产出可执行的修订 diff（复用修订执行器语义），
+    编排层应用成功则不必整段重生成（省一次大模型生成、保留其余站点的细节）。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    op: Literal["replace", "add", "remove", "reorder"] = "replace"
+    day_number: int = Field(ge=1)
+    target: dict = Field(default_factory=dict, description="定位目标：{name} 或 {index}（1-based）")
+    fields: dict = Field(default_factory=dict, description="replace 的新字段 / add 的站点字段（plan JSON 字段名）")
+    index: int | None = Field(default=None, ge=1, description="add/reorder 的目标位置（1-based）")
+
+
+class CriticFixSchema(BaseModel):
+    """Critic 修正 diff：AI 只出指令，编排层代码执行（与 ReviseDiff 语义一致）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    actions: list[CriticFixAction] = Field(default_factory=list, min_length=1, max_length=5)
+    summary: str | None = Field(default=None, max_length=300)
+
+
 class CritiqueSchema(BaseModel):
     """行程质检报告（TravelCriticAgent 输出）。"""
 
@@ -114,6 +140,9 @@ class CritiqueSchema(BaseModel):
     """score >= 80 视为通过。"""
     issues: list[CritiqueIssueSchema] = Field(default_factory=list, max_length=20)
     summary: str | None = Field(default=None, max_length=300)
+    # Critic 协作者扩展：不过审时附带精确修订 diff（可选；编排层优先尝试应用，
+    # 失败则回退整段重生成。列表型/纯警告类问题可不带 fix）
+    fix: CriticFixSchema | None = None
 
 
 def validate_plan(data: dict) -> dict:

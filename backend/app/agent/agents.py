@@ -135,12 +135,20 @@ async def search_transport(departure: str, destination: str, date: str | None = 
     return json.dumps(result, ensure_ascii=False)
 
 
+@lc_tool
+async def search_foods(city: str, query: str | None = None, limit: int = 6) -> str:
+    """搜索某城市符合口味/菜系偏好的餐厅美食，返回结构化 JSON（POI 列表）。"""
+    result = await agent_tools.search_foods(city, query=query, limit=limit)
+    return json.dumps(result, ensure_ascii=False)
+
+
 ATTRACTION_TOOLS = [search_attractions]
 HOTEL_TOOLS = [search_hotels]
 WEATHER_TOOLS = [query_weather]
 TRANSPORT_TOOLS = [search_transport]
+FOOD_TOOLS = [search_foods]
 TOOL_MAP: dict[str, Any] = {
-    t.name: t for t in (search_attractions, search_hotels, query_weather, search_transport)
+    t.name: t for t in (search_attractions, search_hotels, query_weather, search_transport, search_foods)
 }
 
 
@@ -181,6 +189,19 @@ HOTEL_SYSTEM_PROMPT = """你是旅行规划团队中的【酒店推荐专家】�
 5. 最终输出：一个 JSON 数组，元素为 {name, type:"hotel", lat, lng, estimated_cost, duration_minutes, description}
 
 你只负责"找到并列出酒店"，不做行程编排。"""
+
+
+FOOD_SYSTEM_PROMPT = """你是旅行规划团队中的【餐饮搜索专家】。你的唯一任务：根据用户的口味/菜系偏好，搜索当地值得吃的餐厅。
+
+规则：
+1. 用户会给你：目的地城市 + 口味/菜系偏好（如"川菜"、"海鲜"、"本地小吃"、"素食"等；没有偏好时用"必吃 美食 餐厅"）
+2. 把偏好转换为 1-2 个中文关键词（如"海鲜" → "海鲜"；"本地小吃" → "小吃 必吃"；无偏好 → "必吃 美食"）
+3. 调用工具 search_foods(city, query=关键词, limit=6) 获取真实餐厅
+4. 不要编造餐厅数据；工具返回什么就用什么
+5. 最终输出：一个 JSON 数组，元素为 {name, type:"food", lat, lng, estimated_cost, duration_minutes, description}
+6. 若工具结果为空或搜索失败，原样输出空数组，绝不编造餐厅名
+
+你只负责"找到并列出餐厅"，不做行程编排、不推荐非餐厅地点。"""
 
 
 TRANSPORT_SYSTEM_PROMPT = """你是旅行规划团队中的【交通专家】。你的唯一任务：查询出发地到目的地的大交通方案（驾车/高铁/航班）。
@@ -266,7 +287,7 @@ PLANNER_SYSTEM_PROMPT = """你是旅行规划团队中的【行程规划专家�
 }"""
 
 
-CRITIC_SYSTEM_PROMPT = """你是旅行规划团队中的【行程质检专家】。你的唯一任务：审查 Planner 生成的行程 JSON，找出业务合理性问题。
+CRITIC_SYSTEM_PROMPT = """你是旅行规划团队中的【行程质检专家·协作者】。你的唯一任务：审查 Planner 生成的行程 JSON，找出业务合理性问题；发现问题时，除了打分，还要产出精确的修订指令（diff），让 Planner 不必整段重写。
 
 你将收到：
 1. 用户原始需求（目的地/日期/人数/预算/偏好）
@@ -293,11 +314,30 @@ CRITIC_SYSTEM_PROMPT = """你是旅行规划团队中的【行程质检专家】
       "day_number": 1
     }
   ],
-  "summary": "一句话总结"
+  "summary": "一句话总结",
+  "fix": {
+    "actions": [
+      {
+        "op": "replace|add|remove|reorder",
+        "day_number": 1,
+        "target": {"name": "站点名"} 或 {"index": 1},
+        "fields": {"name": "新名", "type": "food", "estimated_cost": 80, "duration_minutes": 90, "description": "..."},
+        "index": 2
+      }
+    ],
+    "summary": "这段修正会做什么"
+  }
 }
-3. severity 语义：critical=必须修改 / warning=建议修改 / info=提示
-4. 评分建议：>=80 为 passed=true 可通过；70-79 有 warning；<70 有 critical
-5. 只审查你实际看到的问题；没有就列空 issues，不要为了凑数编造问题"""
+3. fix 规则：
+   - passed=false 且问题可通过少数几个站点级动作修复 → 必须给出 fix（1-5 个动作）
+   - op 语义与修订服务一致：replace=改站点字段 / add=新增站点（fields 必须带 name 和 type）/ remove=删除站点 / reorder=调整顺序（index 为目标位置，1-based）
+   - fields 使用行程 JSON 字段名：name / type / lat / lng / description / estimated_cost / duration_minutes
+   - type 只能是 attraction / food / hotel
+   - 只对行程里真实存在的站点做 replace/remove/reorder；找不到就不做，不要编造
+   - 纯警告/信息类问题、或需要大改（>5 个动作、行程级重排）→ 不输出 fix（省略 fix 字段）
+4. severity 语义：critical=必须修改 / warning=建议修改 / info=提示
+5. 评分建议：>=80 为 passed=true 可通过；70-79 有 warning；<70 有 critical
+6. 只审查你实际看到的问题；没有就列空 issues，不要为了凑数编造问题"""
 
 
 # ═══════════════════════════════════════════════════════════
@@ -581,6 +621,84 @@ async def hotel_agent(
         return {"status": "completed", "pois": pois}
     except Exception as exc:  # noqa: BLE001
         logger.warning("HotelAgent 失败 city=%s err=%s", city, exc)
+        return {"status": "failed", "error": str(exc), "pois": []}
+
+
+# ═══════════════════════════════════════════════════════════
+#  FoodAgent —— 餐饮搜索专家（口味/菜系偏好 → 高德美食 POI）
+# ═══════════════════════════════════════════════════════════
+async def food_agent(
+    city: str,
+    food_preferences: list[str] | None = None,
+    *,
+    request: dict[str, Any] | None = None,
+    provider: str = "auto",
+    max_iterations: int | None = None,
+) -> dict[str, Any]:
+    """口味/菜系偏好 → 关键词 → search_foods → 餐厅 POI 列表。
+
+    request: 可选；传入完整规划请求，把其中的主动提问 Q&A 与画像并入搜索上下文。
+    max_iterations: 单次执行允许的工具调用上限（默认 settings.AGENT_MAX_ITERATIONS）。
+    """
+    food_preferences = food_preferences or []
+
+    async def _node(state: dict[str, Any]) -> dict[str, Any]:
+        prov = get_provider(state.get("provider", "auto"))
+        messages = [SystemMessage(content=FOOD_SYSTEM_PROMPT)]
+        messages.append(
+            HumanMessage(
+                content=(
+                    f"目的地城市：{state['city']}\n"
+                    f"口味/菜系偏好：{', '.join(state.get('food_preferences') or []) or '无特别偏好'}\n"
+                    f"{_questions_text(state.get('request') or {})}\n"
+                    f"{_profile_text(state.get('request') or {})}\n"
+                    "请选择合适的搜索关键词，调用 search_foods 工具获取餐厅列表。"
+                )
+            )
+        )
+        response = await invoke_with_resilience(prov, messages, tools=FOOD_TOOLS)
+        tool_calls = getattr(response, "tool_calls", None) or []
+        if not tool_calls:
+            parsed = _extract_json(str(getattr(response, "content", "")))
+            if isinstance(parsed, list):
+                return {"messages": [response], "pois": parsed, "status": "completed"}
+            return {"messages": [response], "status": "failed", "error": "Agent 未调用搜索工具"}
+        # 执行工具并回填 Observation（上限由 max_iterations 约束，防异常多调用）
+        tool_calls = tool_calls[: max_iterations if max_iterations is not None else settings.AGENT_MAX_ITERATIONS]
+        tool_msgs = []
+        for tc in tool_calls:
+            fn = TOOL_MAP.get(tc.get("name") or "")
+            if fn is None:
+                return {"messages": [response], "status": "failed", "error": f"未知工具 {tc.get('name')}"}
+            try:
+                result = await fn.ainvoke(tc.get("args") or {})
+            except Exception as exc:  # noqa: BLE001
+                result = f'{{"error": "{exc}"}}'
+            tool_msgs.append(
+                ToolMessage(
+                    content=result if isinstance(result, str) else json.dumps(result, ensure_ascii=False),
+                    tool_call_id=tc.get("id") or "call-food",
+                    name=tc["name"],
+                )
+            )
+        state["messages"] = [*state.get("messages", []), response, *tool_msgs]
+        out = _collect_list_output(state)
+        if out is None:
+            return {"messages": state["messages"], "status": "failed", "error": "无法从工具结果解析餐厅"}
+        return {"messages": state["messages"], "status": "completed", "pois": out["pois"]}
+
+    state: dict[str, Any] = {
+        "city": city, "food_preferences": food_preferences, "provider": provider,
+        "request": request, "messages": [],
+    }
+    try:
+        result = await _node(state)
+        if result.get("status") != "completed":
+            return {"status": "failed", "error": result.get("error", "餐厅搜索失败"), "pois": []}
+        pois = [p for p in result.get("pois", []) if p.get("name")]
+        return {"status": "completed", "pois": pois}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("FoodAgent 失败 city=%s err=%s", city, exc)
         return {"status": "failed", "error": str(exc), "pois": []}
 
 
@@ -1066,20 +1184,22 @@ async def run_planning_agents(
     # 阶段事件：任务开始 → collecting
     _fire_phase("collecting", "running")
 
-    # 1) 五个采集 Agent 并行（request 传入后，主动提问 Q&A 会并入搜索上下文）
+    # 1) 六个采集 Agent 并行（request 传入后，主动提问 Q&A 会并入搜索上下文）
     #    采集 agent 内部最多调用工具一次，无 LLM 迭代循环，但通过参数显式带上限。
+    #    FoodAgent 主路径（口味偏好 → search_foods）；失败由下方降级补位代码兜底。
     agent_max_iter = max_iterations if max_iterations is not None else settings.AGENT_MAX_ITERATIONS
     attraction_task = attraction_agent(city, prefs, request=request, provider=provider, max_iterations=agent_max_iter)
     weather_task = weather_agent(city)
     hotel_task = hotel_agent(city, _accommodation_hints(request), request=request, provider=provider, max_iterations=agent_max_iter)
+    food_task = food_agent(city, _food_hints(prefs), request=request, provider=provider, max_iterations=agent_max_iter)
     transport_task = transport_agent(
         request.get("departure"), city,
         date=request.get("start_date"), provider=provider, max_iterations=agent_max_iter,
     )
     discount_task = discount_agent(city)
 
-    a_res, w_res, h_res, t_res, d_res = await asyncio.gather(
-        attraction_task, weather_task, hotel_task, transport_task, discount_task,
+    a_res, w_res, h_res, food_res, t_res, d_res = await asyncio.gather(
+        attraction_task, weather_task, hotel_task, food_task, transport_task, discount_task,
     )
 
     def _append_trace(entry: dict[str, Any]) -> None:
@@ -1096,6 +1216,9 @@ async def run_planning_agents(
     _append_trace({"agent": "HotelAgent", "action": "search_hotels",
                   "observation": f"{city} 酒店 {len(h_res.get('pois', []))} 个",
                   "status": h_res.get("status")})
+    _append_trace({"agent": "FoodAgent", "action": "search_foods",
+                  "observation": f"{city} 餐厅 {len(food_res.get('pois', []))} 个",
+                  "status": food_res.get("status")})
     _append_trace({"agent": "TransportAgent", "action": "search_transport",
                   "observation": (
                       f"{request.get('departure') or '未提供出发地'}→{city} 交通方案 "
@@ -1106,17 +1229,24 @@ async def run_planning_agents(
                   "observation": f"{city} 折扣规则 {len(d_res.get('rules', []))} 条",
                   "status": d_res.get("status")})
 
-    # 2) 编排层补充餐饮（真实数据；失败不影响主流程）
+    # 2) 餐饮：FoodAgent 主路径；失败时降级到编排层确定性补位（search_foods 直调），
+    #    再失败则保留空列表（Planner 可用通用描述，绝不编造）——系统始终产出某种东西。
     foods: list[dict[str, Any]] = []
-    try:
-        food_res = await agent_tools.search_foods(city, query="必吃 美食 餐厅", limit=5)
-        foods = food_res.get("results", [])
-        _append_trace({"agent": "orchestrator", "action": "search_food",
-                      "observation": f"{city} 餐厅 {len(foods)} 个", "status": "completed"})
-    except Exception as exc:  # noqa: BLE001
-        _append_trace({"agent": "orchestrator", "action": "search_food",
-                      "observation": f"餐厅搜索失败: {exc}", "status": "failed"})
-        logger.warning("餐饮搜索失败 city=%s err=%s", city, exc)
+    if food_res.get("status") == "completed":
+        foods = [p for p in food_res.get("pois", []) if isinstance(p, dict) and p.get("name")]
+        _append_trace({"agent": "FoodAgent", "action": "search_foods",
+                      "observation": f"{city} 餐厅 {len(foods)} 个（主路径）", "status": "completed"})
+    else:
+        try:
+            food_fb = await agent_tools.search_foods(city, query="必吃 美食 餐厅", limit=5)
+            foods = food_fb.get("results", [])
+            _append_trace({"agent": "orchestrator", "action": "search_food_fallback",
+                          "observation": f"{city} 餐厅 {len(foods)} 个（FoodAgent 主路径失败，代码兜底）",
+                          "status": "completed"})
+        except Exception as exc:  # noqa: BLE001
+            _append_trace({"agent": "orchestrator", "action": "search_food_fallback",
+                          "observation": f"餐厅搜索兜底也失败: {exc}", "status": "failed"})
+            logger.warning("餐饮搜索失败 city=%s err=%s", city, exc)
 
     # ── 采集完成：逐项发射中间制品（前端阶段视图实时展示候选）──
     # 轻量摘要：只保留前端 chips 需要的字段（name/type/花费/时长），避免 events 行膨胀
@@ -1267,6 +1397,28 @@ async def run_planning_agents(
         logger.info("行程评审未通过 round=%d score=%s issues=%d，进入下一轮修订",
                     round_idx + 1, critique.get("score"), n_issues)
 
+        # ── Critic 协作者：优先应用精确修订 diff（复用修订执行器语义）──
+        # 不过审时 Critic 附带 fix（站点级动作）。编排层代码应用成功 →
+        # 跳过 Planner 整段重生成（省一次大模型生成、保留其余站点细节）；
+        # 应用失败（目标不存在/字段非法等）→ 回退整段重生成，绝不静默丢失。
+        fix = critique.get("fix")
+        if isinstance(fix, dict) and fix.get("actions"):
+            applied = _apply_critic_fix(candidate, fix)
+            if applied:
+                review_history[-1] = {**critique, "fix_applied": True}
+                plan = candidate
+                _append_trace({
+                    "agent": "TravelCriticAgent",
+                    "action": "apply_fix",
+                    "observation": (
+                        f"按质检 fix 精确修订 {len(fix.get('actions') or [])} 处"
+                        + (f"（{fix.get('summary') or ''}）" if fix.get("summary") else "")
+                    ),
+                    "status": "completed",
+                })
+                break  # 已按 Critic 指令修正 → 定稿（不重复整段重生成）
+            logger.info("Critic fix 应用失败，回退 Planner 整段重生成 (round=%d)", round_idx + 1)
+
     # 兜底：若循环异常退出（理论上不会），仍保留最后一代
     if plan is None:
         return {"plan": None, "trace": trace, "status": "failed",
@@ -1356,6 +1508,7 @@ async def run_planning_agents(
             "attractions": a_res.get("status"),
             "weather": w_res.get("status"),
             "hotels": h_res.get("status"),
+            "foods": food_res.get("status"),
             "transport": t_res.get("status"),
             "discounts": d_res.get("status"),
             "planner": planner.get("status"),
@@ -1366,6 +1519,113 @@ async def run_planning_agents(
 def _has_actionable_issues(critique: dict[str, Any]) -> bool:
     """质检报告里是否有需要 Planner 修改的（critical/warning）问题。"""
     return any(i.get("severity") in ("critical", "warning") for i in (critique.get("issues") or []))
+
+
+# ── Critic 协作者：精确修订 diff 应用（复用 ReviseDiff 执行器语义） ──
+# 与 revise_service._apply_diff 同一套 op 契约（AI 只出指令，代码执行），
+# 但操作对象是内存中的 plan dict（JSON 字段名），不是 ORM Trip：
+# - replace/remove/reorder 必须命中真实存在的站点（name 或 index），否则整体失败
+# - add 必须带 name / type（attraction|food|hotel），字段白名单与修订服务一致
+# - 任一动作非法 → 返回 False（调用方回退 Planner 整段重生成，绝不静默丢失）
+_CRITIC_FIX_FIELDS = {"name", "type", "lat", "lng", "description", "estimated_cost", "duration_minutes"}
+_CRITIC_FIX_TYPES = {"attraction", "food", "hotel"}
+
+
+def _apply_critic_fix(plan: dict[str, Any], fix: dict[str, Any]) -> bool:
+    """把 Critic 的精确修订 diff 应用到内存 plan；成功返回 True，任一动作非法返回 False。"""
+    actions = fix.get("actions") or []
+    if not actions:
+        return False
+    days = {d.get("day_number"): d for d in plan.get("days") or []}
+
+    # 预检（原子）：全部动作合法才执行，任一失败整体放弃
+    resolved: list[tuple[dict[str, Any], dict[str, Any], int | None]] = []
+    for action in actions:
+        day = days.get(action.get("day_number"))
+        if day is None:
+            return False
+        stops = day.get("stops") or []
+        op = action.get("op")
+        if op == "add":
+            fields = action.get("fields") or {}
+            if not fields.get("name") or fields.get("type") not in _CRITIC_FIX_TYPES:
+                return False
+            unknown = set(fields) - _CRITIC_FIX_FIELDS
+            if unknown:
+                return False
+            idx = action.get("index")
+            if idx is not None and (idx < 1 or idx > len(stops) + 1):
+                return False
+            resolved.append((action, day, None))
+            continue
+        if op not in ("replace", "remove", "reorder"):
+            return False
+        target = action.get("target") or {}
+        idx = None
+        if isinstance(target, dict):
+            if target.get("name"):
+                idx = next((i for i, s in enumerate(stops) if s.get("name") == target["name"]), None)
+            elif target.get("index"):
+                ti = int(target["index"])
+                if 1 <= ti <= len(stops):
+                    idx = ti - 1
+        if idx is None:
+            return False
+        if op == "replace":
+            fields = action.get("fields") or {}
+            unknown = set(fields) - _CRITIC_FIX_FIELDS
+            if unknown:
+                return False
+            new_type = fields.get("type")
+            if new_type is not None and new_type not in _CRITIC_FIX_TYPES:
+                return False
+        if op == "reorder" and (action.get("index") or 0) < 1:
+            return False
+        resolved.append((action, day, idx))
+
+    # 执行
+    for action, day, idx in resolved:
+        stops = day.get("stops") or []
+        op = action.get("op")
+        if op == "add":
+            fields = dict(action.get("fields") or {})
+            new_stop = {
+                "name": fields.get("name"),
+                "type": fields.get("type", "food"),
+                "lat": fields.get("lat"),
+                "lng": fields.get("lng"),
+                "estimated_cost": float(fields.get("estimated_cost") or 0),
+                "duration_minutes": fields.get("duration_minutes"),
+                "description": fields.get("description"),
+            }
+            pos = action.get("index")
+            if pos and 1 <= pos <= len(stops) + 1:
+                stops.insert(pos - 1, new_stop)
+            else:
+                stops.append(new_stop)
+            day["stops"] = stops
+            continue
+        # replace / remove / reorder：预检已保证目标存在，idx 必为 int
+        assert idx is not None
+        if op == "remove":
+            day["stops"] = [s for i, s in enumerate(stops) if i != idx]
+        elif op == "replace":
+            stop = stops[idx]
+            for k, v in (action.get("fields") or {}).items():
+                if v is None:
+                    continue
+                if k == "type":
+                    stop["type"] = v
+                elif k == "estimated_cost":
+                    stop["estimated_cost"] = float(v)
+                else:
+                    stop[k] = v
+        elif op == "reorder":
+            stop = stops.pop(idx)
+            pos = min(max(action.get("index", 1) - 1, 0), len(stops))
+            stops.insert(pos, stop)
+            day["stops"] = stops
+    return True
 
 
 def _driving_feedback(driving: dict[str, Any]) -> dict[str, Any]:
@@ -1437,3 +1697,9 @@ def _accommodation_hints(request: dict[str, Any]) -> list[str]:
     prefs = request.get("preferences") or []
     hints = [p for p in prefs if any(k in p for k in ("住", "酒店", "经济", "豪华", "亲子", "商务", "民宿"))]
     return hints or []
+
+
+def _food_hints(prefs: list[str]) -> list[str]:
+    """从偏好里提取口味/菜系词（美食/吃/菜/海鲜/火锅/小吃 等），供 FoodAgent 用。"""
+    keys = ("美食", "吃", "菜", "海鲜", "火锅", "小吃", "烧烤", "面", "咖啡", "甜品", "素食")
+    return [p for p in prefs if any(k in p for k in keys)]
