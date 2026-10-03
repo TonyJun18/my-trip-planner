@@ -92,6 +92,26 @@ function goHome() {
           <span>{{ t('app.tagline') }}</span>
         </div>
       </footer>
+
+      <!-- 移动端底部 Tab（仅登录态，≤720px 显示） -->
+      <nav v-if="auth.isLoggedIn" class="mobile-tabbar" aria-label="mobile-nav">
+        <button
+          class="tab-item"
+          :class="{ active: $route.path === '/trips' }"
+          @click="router.push('/trips')"
+        >
+          <el-icon :size="22"><Van /></el-icon>
+          <span class="tab-label">{{ t('app.myTrips') }}</span>
+        </button>
+        <button
+          class="tab-item"
+          :class="{ active: $route.path === '/plan' }"
+          @click="router.push('/plan')"
+        >
+          <el-icon :size="22"><MagicStick /></el-icon>
+          <span class="tab-label">{{ t('app.planTrip') }}</span>
+        </button>
+      </nav>
     </el-container>
   </el-config-provider>
 </template>
@@ -197,7 +217,50 @@ function goHome() {
 @media (max-width: 720px) {
   .app-header { padding: 0 16px; height: 56px; }
   .brand-sub { display: none; }
-  .app-main { padding: 20px 16px 40px; }
+  .app-main { padding: 20px 16px 56px; } /* 底部 Tab 高度 + 余量，避免内容被遮挡 */
   .user-name { display: none; }
+  .app-footer { display: none; }
+
+  /* 顶栏窄屏进一步压缩：登录态隐藏「我的行程」文字导航（Tab 已有），仅保留品牌 + 新建 + 语言 + 用户 */
+  .nav .nav-link { display: none; }
+  .nav .btn-primary { padding: 8px 12px; font-size: 13px; }
+}
+
+/* ── 移动端底部 Tab（≤720px）── */
+.mobile-tabbar {
+  display: none;
+}
+@media (max-width: 720px) {
+  .mobile-tabbar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1200;
+    height: 56px;
+    padding-bottom: env(safe-area-inset-bottom);
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: saturate(180%) blur(12px);
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.04);
+  }
+  .tab-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--faint);
+    font-size: 11px;
+    padding: 4px 0 6px;
+    transition: color 0.2s;
+  }
+  .tab-item.active { color: var(--brand); }
+  .tab-label { line-height: 1; }
 }
 </style>
