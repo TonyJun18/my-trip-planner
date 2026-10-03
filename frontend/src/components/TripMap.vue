@@ -4,9 +4,15 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
 const props = defineProps({
-  // [{lat, lng, name, type, description}]
+  // [{lat, lng, name, stop_type, description, day_number?, stop_id?}]
   markers: { type: Array, default: () => [] },
   height: { type: String, default: '480px' },
+  // 地图拖拽修订（task-map-drag-edit）：允许拖动 marker 改坐标。
+  // 移动端（≤768px）自动隐藏拖拽（触控误触率高，且移动端视图要求隐藏拖拽）。
+  draggable: { type: Boolean, default: false },
+  // 拖拽结束回调：onMove({ name, lat, lng, day_number, stop_id })。
+  // 父组件负责调用 /map-edit API 并刷新 markers；本组件只发出事件。
+  onMove: { type: Function, default: null },
 })
 
 const mapEl = ref(null)
@@ -16,6 +22,12 @@ let polyline = null
 
 const typeColors = { attraction: '#ff385c', food: '#c2410c', hotel: '#0d8a5f' }
 const typeLabel = { attraction: '景点', food: '餐饮', hotel: '住宿' }
+
+// 移动端隐藏拖拽：拖拽需要精确点击，触控设备误触率极高。
+// 与「task-trip-collab-vote」的移动端适配同策略——响应式能力，不读状态。
+function isMobileViewport() {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
+}
 
 // 自定义 divIcon（避免 Leaflet 默认 marker 图片加载失败）
 function makeIcon(stopType, order) {
@@ -41,6 +53,9 @@ function renderMarkers(markers) {
   const valid = markers.filter((m) => typeof m.lat === 'number' && typeof m.lng === 'number')
   if (!valid.length) return
 
+  // 拖拽只在桌面端启用（移动端自动隐藏，满足验收「移动端隐藏拖拽」）
+  const canDrag = props.draggable && !isMobileViewport()
+
   valid.forEach((m, i) => {
     const t = m.stop_type || m.type || 'attraction'
     const icon = makeIcon(t, i + 1)
@@ -63,7 +78,24 @@ function renderMarkers(markers) {
       descEl.textContent = m.description
       popupEl.appendChild(descEl)
     }
-    L.marker([m.lat, m.lng], { icon }).addTo(markerLayer).bindPopup(popupEl)
+
+    const marker = L.marker([m.lat, m.lng], { icon, draggable: canDrag }).addTo(markerLayer)
+    marker.bindPopup(popupEl)
+
+    if (canDrag) {
+      marker.on('dragend', (ev) => {
+        const ll = ev.target.getLatLng()
+        // 只发出事件，不在这里改数据；父组件决定是否调 API。
+        // 若父组件拒绝（如自驾约束 400），会重新渲染 markers 把 marker 拉回原位。
+        props.onMove?.({
+          name: m.name,
+          lat: ll.lat,
+          lng: ll.lng,
+          day_number: m.day_number,
+          stop_id: m.stop_id,
+        })
+      })
+    }
   })
 
   // 游览路线（按顺序连点成线）
@@ -115,5 +147,12 @@ onBeforeUnmount(() => {
 .trip-marker {
   background: transparent;
   border: none;
+}
+/* 拖拽光标提示（桌面端可拖） */
+.trip-map .leaflet-marker-icon[draggable='true'] {
+  cursor: grab;
+}
+.trip-map .leaflet-marker-icon[draggable='true']:active {
+  cursor: grabbing;
 }
 </style>
