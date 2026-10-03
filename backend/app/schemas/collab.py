@@ -39,12 +39,16 @@ class VoteIn(BaseModel):
 
 
 class VoteOut(BaseModel):
-    """投票结果：该站点最新计数 + 我的选择（-1/0/1）。"""
+    """投票结果：该站点最新计数 + 我的选择（-1/0/1）+ 渐进式推进共识标记。"""
 
     stop_id: str
     up: int
     down: int
     my_value: int = Field(ge=-1, le=1)
+    consensus: bool = Field(
+        default=False,
+        description="渐进式推进：该站点已投票（确认）成员数 ≥ 小组规模的 50% 即标记「小组一致」，未响应成员不阻塞",
+    )
 
 
 class InvitedStopUpdate(BaseModel):

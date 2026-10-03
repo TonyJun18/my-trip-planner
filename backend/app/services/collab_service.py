@@ -126,6 +126,35 @@ async def _counts_for_stop(db: AsyncSession, stop_id: str) -> dict[str, int]:
     return {"up": up, "down": down}
 
 
+def _consensus_threshold(group_size: int) -> int:
+    """「渐进式推进」阈值：已确认成员 ≥ 小组规模的 50%（向上取整）。
+
+    - 规模 < 2 不启用共识语义（单人行程无需小组一致，返回 0）。
+    - 未响应成员不阻塞：达到阈值即标记「小组一致」，不必等全员投票。
+    - 例：3 人行 → 2 人投票即可推进；4 人行 → 2 人即可推进。
+    """
+    if group_size < 2:
+        return 0
+    return (group_size + 1) // 2  # ceil(group_size / 2)
+
+
+async def _trip_group_size(db: AsyncSession, trip: Trip) -> int:
+    """小组规模 = max(行程人数 travelers, 实际参与过的访客数)。
+
+    - travelers 是 owner 声明的同行人数（受邀成员规模的近似）。
+    - 实际投票访客数兜底：分享链接传播后参与人数可能超过声明值，
+      以「已响应者」为下限保证 never 高估分母（避免永远凑不齐 50%）。
+    """
+    distinct = await db.scalar(
+        select(func.count(func.distinct(StopVote.voter_key)))
+        .select_from(StopVote)
+        .join(Stop, Stop.id == StopVote.stop_id)
+        .join(TripDay, TripDay.id == Stop.day_id)
+        .where(TripDay.trip_id == trip.id)
+    )
+    return max(trip.travelers or 1, distinct or 0)
+
+
 async def list_stop_votes(db: AsyncSession, token: str, *, voter_key: str | None = None) -> dict[str, Any]:
     """行程内全部站点的投票汇总；给定 voter_key 时附带我的选择。"""
     trip = await _get_trip_by_token(db, token)
@@ -146,6 +175,14 @@ async def list_stop_votes(db: AsyncSession, token: str, *, voter_key: str | None
             item["up"] = cnt
         elif value == -1:
             item["down"] = cnt
+
+    # 渐进式推进共识：过半成员表态且赞成多于反对 → 「小组一致」（未响应不阻塞）
+    group_size = await _trip_group_size(db, trip)
+    threshold = _consensus_threshold(group_size)
+    for item in result.values():
+        responded = item["up"] + item["down"]
+        item["consensus"] = responded >= threshold and item["up"] > item["down"] if threshold > 0 else False
+        item.setdefault("my_value", 0)  # 无 voter_key 时给默认值，保证 response 校验通过
 
     if voter_key:
         mine = (
@@ -183,7 +220,20 @@ async def cast_vote(
         await db.flush()
 
     counts = await _counts_for_stop(db, stop_id)
-    return {"stop_id": stop_id, "up": counts["up"], "down": counts["down"], "my_value": data.value}
+
+    # 渐进式推进：过半成员表态且赞成多于反对 → 「小组一致」（未响应不阻塞）
+    group_size = await _trip_group_size(db, trip)
+    threshold = _consensus_threshold(group_size)
+    responded = counts["up"] + counts["down"]
+    consensus = responded >= threshold and counts["up"] > counts["down"] if threshold > 0 else False
+
+    return {
+        "stop_id": stop_id,
+        "up": counts["up"],
+        "down": counts["down"],
+        "my_value": data.value,
+        "consensus": consensus,
+    }
 
 
 # ── 受邀编辑（凭 edit_token，受限字段直写，不经 AI 修订） ─────────────
