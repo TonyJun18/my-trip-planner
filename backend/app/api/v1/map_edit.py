@@ -6,6 +6,11 @@
 - 坐标交给 Pydantic 范围校验（422），服务层兜底再校验（400）；
 - 自驾约束门拒绝时返回 400 + detail.issues（前端提示「自驾约束前置」）；
 - 站点找不到返回 404。
+
+受邀编辑版（task-map-drag-edit 分享页接线）：POST /api/v1/trips/edit/{token}/map-edit
+- 凭 edit_token 免登录（与 update_invited_stop 同信任语义）；
+- ShareView 受邀编辑模式（?edit=1）下的地图拖拽使用此端点，
+  避免受邀者以只读 view 身份打 owner 鉴权端点被 401 踢去登录页。
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.models import User
 from app.schemas.map_edit import MapEditOut, MapEditRequest
-from app.services.map_edit_service import map_edit_trip
+from app.services.map_edit_service import map_edit_trip, map_edit_trip_by_token
 
 router = APIRouter()
 
@@ -42,5 +47,31 @@ async def map_edit(
         lng=data.lng,
         day_number=data.day_number,
         owner=user.id,
+    )
+    return MapEditOut(**result)
+
+
+@router.post(
+    "/trips/edit/{token}/map-edit",
+    response_model=MapEditOut,
+    summary="受邀编辑地图拖拽修订：凭 edit_token 免登录移动站点坐标（同 diff 内核 + DrivingGate）",
+)
+async def map_edit_by_token(
+    token: str,
+    data: MapEditRequest,
+    db: AsyncSession = Depends(get_session),
+) -> MapEditOut:
+    """受邀编辑者（持 edit_token）拖拽 marker 改坐标，走同一条 diff 内核。
+
+    与 update_invited_stop 同信任语义：持有效 edit_token 即视为受邀协作授权；
+    令牌过期/吊销 → 生命周期门禁 410/403；无此令牌 → 404。
+    """
+    result = await map_edit_trip_by_token(
+        db,
+        token,
+        name=data.name,
+        lat=data.lat,
+        lng=data.lng,
+        day_number=data.day_number,
     )
     return MapEditOut(**result)
