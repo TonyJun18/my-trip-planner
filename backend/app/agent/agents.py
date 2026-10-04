@@ -405,6 +405,23 @@ def _profile_text(request: dict[str, Any]) -> str:
     return "【跨会话用户画像】（来自该用户历史偏好，规划时请优先尊重；与本次请求冲突时以本次请求为准）\n" + profile.strip()
 
 
+def _trip_type_hint(trip_type: str) -> str:
+    """出行性质 → 规划约束提示（确定性规则，仅指导 LLM 侧重点，不硬编码站点）。
+
+    未知/自定义性质时给出通用基调，避免误导 LLM。
+    """
+    hints = {
+        "商务出差": "节奏紧凑高效，优先商务区/交通枢纽周边酒店与符合工作行程的餐饮；"
+                    "保留必要的会务/休息时间；可含少量当地特色体验但不宜拖沓。",
+        "亲子出游": "节奏放缓，优先亲子友好景点与家庭房酒店；每日站点不宜过多；"
+                    "餐饮选择适合儿童；预留机动时间。",
+        "蜜月度假": "浪漫氛围优先，节奏松弛，住宿与景点侧重私密/景观/纪念意义；少赶路多体验。",
+        "探亲访友": "以亲友相聚时间为中心，住宿建议靠近亲友住处；景点安排灵活，"
+                    "优先本地人推荐与团聚便利的餐饮。",
+    }
+    return hints.get(trip_type, "以用户整体需求为基调合理安排节奏、住宿与景点，行程务实可行。")
+
+
 def _collect_list_output(state: dict[str, Any]) -> dict[str, Any] | None:
     """（列表输出型 Agent 共用）从消息历史取出工具结果并解析为统一 POI 列表。"""
     # agent 内部已把 ToolMessage 写入 messages；取最后一个工具结果
@@ -879,11 +896,20 @@ def _planner_user_text(request: dict[str, Any], materials: dict[str, Any]) -> st
     """
     lines: list[str] = []
     lines.append("【用户原始需求】")
+    departure = request.get("departure") or ""
+    dep_text = f"出发地：{departure}；" if departure else ""
+    # 出行性质（trip_type）：影响节奏/住宿/景点取舍；无则按默认休闲理解
+    trip_type = (request.get("trip_type") or "").strip()
+    tt_text = f"出行性质：{trip_type}；" if trip_type else "出行性质：休闲旅游（未指定）；"
     lines.append(
-        f"目的地：{request.get('destination', '')}；日期：{request.get('start_date', '')} 至 {request.get('end_date', '')}；"
+        f"{dep_text}目的地：{request.get('destination', '')}；日期：{request.get('start_date', '')} 至 {request.get('end_date', '')}；"
         f"人数：{request.get('travelers', 1)}；预算：{request.get('budget', '未指定')} 元；"
-        f"偏好：{', '.join(request.get('preferences') or []) or '无'}"
+        f"{tt_text}偏好：{', '.join(request.get('preferences') or []) or '无'}"
     )
+    # 出行性质 → 规划约束（仅在有明确性质时追加；让 LLM 更易遵循）
+    if trip_type:
+        hint = _trip_type_hint(trip_type)
+        lines.append(f"【出行性质约束】{hint}")
 
     # 主动提问 Q&A（需求澄清）：有回答才注入，未回答的问题忽略
     qa_text = _questions_text(request)
@@ -1426,9 +1452,19 @@ async def run_planning_agents(
 
         candidate = planner["plan"]
 
-        # 预算校准前置：先以真实 stops 计算预算（覆盖 LLM 估值），再交给质检
+        # 预算校准前置：先以真实 stops 计算预算（覆盖 LLM 估值），再交给质检；
+        # 若采集阶段有大交通参考价，则把「往返参考价」并入 by_type.transport 与总额，
+        # 使 plan.budget 与详情页 budget API（compute_budget(plan_data=...)）口径一致。
         all_stops = [s for d in candidate.get("days", []) for s in d.get("stops", [])]
         candidate["budget"] = agent_tools.compute_budget(all_stops)
+        from app.services.budget_service import transport_round_trip_cost
+
+        transport_cost = transport_round_trip_cost(t_res.get("transport") if isinstance(t_res, dict) else None)
+        if transport_cost is not None:
+            candidate["budget"]["by_type"]["transport"] = transport_cost
+            candidate["budget"]["total_estimated"] = round(
+                float(candidate["budget"].get("total_estimated") or 0.0) + transport_cost, 2
+            )
         candidate["hotels"] = _normalize_hotels(materials.get("hotels") or [])
 
         # 行程草案制品（每代都发；前端「编排阶段」实时展示天数/主题）
@@ -1529,6 +1565,13 @@ async def run_planning_agents(
 
     # 质检摘要注入 plan.quality（随 plan JSON 落库，前端可直接消费）
     plan["quality"] = _plan_quality(review_history, review_rounds, max_review_rounds)
+    # ── 采集产物回填（task: 详情页大交通/折扣）──────────────────
+    # 采集阶段的 TransportAgent / DiscountAgent 产物只出现在 materials，
+    # 若不回填 plan，落库后的 plan_data.transport / .discount_rules 恒为
+    # null / []（PlanSchema 默认值），详情页 TripServicing 因 options 为空
+    # 直接不渲染大交通卡片。回填后前端零改动即恢复展示；预算口径依赖此数据。
+    plan["transport"] = (t_res.get("transport") or {}) if isinstance(t_res, dict) else None
+    plan["discount_rules"] = (d_res.get("rules") or []) if isinstance(d_res, dict) else []
     # 自驾校验报告注入 plan.driving（最终一代；前端可展示里程/时长/折返告警）
     if driving_reports:
         final_driving = driving_reports[-1]

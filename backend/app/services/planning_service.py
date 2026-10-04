@@ -251,6 +251,8 @@ async def _persist_trip(
         owner=request.get("owner"),
         title=f"{request.get('destination', '')}行程",
         destination=request.get("destination", ""),
+        departure=request.get("departure"),
+        trip_type=request.get("trip_type"),
         start_date=_parse_date(request.get("start_date")) or _today(),
         end_date=_parse_date(request.get("end_date")) or _today(),
         travelers=request.get("travelers", 1),

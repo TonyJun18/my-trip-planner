@@ -102,13 +102,32 @@ const collectingArtifacts = computed(() => [
 
 const form = reactive({
   destination: '',
+  departure: '',
   start_date: '',
   end_date: '',
   travelers: 2,
   budget: 3000,
   preferences: ['food', 'nature'],
+  trip_type: 'leisure',
   provider: 'auto',
 })
+
+// 出行性质：表单内部存 key（语言切换不丢），提交时映射为稳定的中文契约值
+const tripTypeKeyMap = {
+  leisure: '休闲旅游',
+  business: '商务出差',
+  family: '亲子出游',
+  honeymoon: '蜜月度假',
+  visiting: '探亲访友',
+}
+const tripTypeOptions = [
+  { key: 'leisure', labelKey: 'tripTypeLeisure' },
+  { key: 'business', labelKey: 'tripTypeBusiness' },
+  { key: 'family', labelKey: 'tripTypeFamily' },
+  { key: 'honeymoon', labelKey: 'tripTypeHoneymoon' },
+  { key: 'visiting', labelKey: 'tripTypeVisiting' },
+]
+function pickTripType(k) { form.trip_type = k }
 
 // ── 主动提问（马蜂窝 AI 路书差异化：规划前动态追问需求澄清） ──
 // 问题/选项定义用 i18n key，答案存独立状态（qaAnswers）：
@@ -204,6 +223,8 @@ async function submit() {
   try {
     const payload = {
       ...form,
+      // 出行性质 key → 稳定中文契约值（后端按此约束规划）
+      trip_type: tripTypeKeyMap[form.trip_type] || '休闲旅游',
       // 偏好 key → 当前语言 label（默认中文，保持后端契约）
       preferences: form.preferences.map((k) => prefLabel(k)),
       questions: answeredQuestions(),
@@ -333,9 +354,10 @@ const typeLabel = computed(() => ({
   attraction: t('common.typeAttraction'),
   food: t('common.typeFood'),
   hotel: t('common.typeHotel'),
+  transport: t('common.typeTransport'),
 }))
-const typeEmoji = { attraction: '🏞️', food: '🍜', hotel: '🏨' }
-const typeColor = { attraction: 'var(--brand)', food: '#c2410c', hotel: '#0d8a5f' }
+const typeEmoji = { attraction: '🏞️', food: '🍜', hotel: '🏨', transport: '🚄' }
+const typeColor = { attraction: 'var(--brand)', food: '#c2410c', hotel: '#0d8a5f', transport: '#5b6ee1' }
 
 // Agent 名称映射（trace.thought 存了 agent 名）
 const agentLabelKeys = {
@@ -426,6 +448,36 @@ function goDetail() {
                   {{ c }}
                 </button>
               </div>
+            </div>
+          </div>
+
+          <!-- 出发地（可选）：提供后 AI 会查询大交通方案 -->
+          <div class="field">
+            <label class="field-label">{{ $t('planWizard.departureLabel') }} <span class="opt">{{ $t('planWizard.optional') }}</span></label>
+            <div class="dest-row">
+              <el-input
+                v-model="form.departure"
+                size="large"
+                :placeholder="$t('planWizard.departurePlaceholder')"
+                clearable
+                class="dest-input"
+              >
+                <template #prefix><el-icon><Promotion /></el-icon></template>
+              </el-input>
+            </div>
+            <div class="tt-tip">{{ $t('planWizard.departureTip') }}</div>
+          </div>
+
+          <!-- 出行性质 -->
+          <div class="field">
+            <label class="field-label">{{ $t('planWizard.tripTypeLabel') }}</label>
+            <div class="pref-list">
+              <button v-for="tt in tripTypeOptions" :key="tt.key"
+                      type="button" class="chip" :class="{ picked: form.trip_type === tt.key }"
+                      @click="pickTripType(tt.key)">
+                <span v-if="form.trip_type === tt.key" style="margin-right: 4px">✓</span>
+                {{ $t('planWizard.' + tt.labelKey) }}
+              </button>
             </div>
           </div>
 
@@ -725,7 +777,7 @@ function goDetail() {
       <div class="budget-card">
         <h4 class="budget-title"><el-icon :size="16"><PieChart /></el-icon>{{ $t('common.budgetTitle') }}</h4>
         <div class="budget-bars">
-          <div v-for="(label, k) in { attraction: $t('common.typeAttraction'), food: $t('common.typeFood'), hotel: $t('common.typeHotel') }" :key="k" class="budget-bar-row">
+          <div v-for="(label, k) in { attraction: $t('common.typeAttraction'), food: $t('common.typeFood'), hotel: $t('common.typeHotel'), transport: $t('common.typeTransport') }" :key="k" class="budget-bar-row">
             <span class="budget-bar-label">{{ label }}</span>
             <div class="budget-bar-track">
               <div class="budget-bar-fill" :style="{
@@ -823,7 +875,9 @@ function goDetail() {
   margin-bottom: 8px;
 }
 .req { color: var(--brand); }
-.dest-row { display: flex; flex-direction: column; gap: 10px; }
+  .opt { color: var(--faint); font-weight: 400; font-size: 12px; margin-left: 4px; }
+  .tt-tip { font-size: 12px; color: var(--faint); margin-top: 6px; }
+  .dest-row { display: flex; flex-direction: column; gap: 10px; }
 .hot-cities { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
   border: 1px solid var(--line); background: #fff; cursor: pointer;

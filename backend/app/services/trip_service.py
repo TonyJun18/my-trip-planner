@@ -91,8 +91,66 @@ async def get_trip(db: AsyncSession, trip_id: str, *, owner: str | None = None) 
 async def get_plan(db: AsyncSession, trip_id: str, *, owner: str | None = None) -> TripPlan | None:
     """查询行程的 AI 规划方案快照（owner 隔离）。"""
     await _load_trip(db, trip_id, owner=owner)  # 校验行程存在 + 归属
+    return await get_plan_by_trip_id(db, trip_id)
+
+
+async def get_plan_by_trip_id(db: AsyncSession, trip_id: str) -> TripPlan | None:
+    """按 trip_id 直接查 AI 规划方案快照（不做 owner 校验）。
+
+    用于已通过「分享/编辑令牌」校验访问权的场景（trip 本身已确认可见），
+    避免再用 owner=None 过滤导致持有真实 owner 的分享行程查不到。
+    """
     stmt = select(TripPlan).where(TripPlan.trip_id == trip_id).order_by(TripPlan.created_at.desc())
     return (await db.execute(stmt)).scalars().first()
+
+
+async def ensure_plan_transport(
+    db: AsyncSession, trip: Trip, plan: TripPlan | None,
+) -> dict:
+    """读路径惰性补全：老行程 plan.transport 为空时，轻量生成参考方案并写回。
+
+    背景：transport/discount_rules 回填只在「新规划」时发生；此功能上线前落库的
+    行程 plan_data.transport 恒为 null/空，详情页/分享页看不到大交通、预算也不算。
+    本函数在读取 plan 时检测缺省并触发一次轻量补全（高德驾车 + 规则参考价，
+    不调用当前网络不可达的慢速 Tavily），成功后写回 plan_data（请求结束时由
+    session 依赖提交）；失败静默返回原数据，绝不阻断读取。
+
+    返回补全后的 plan_data。
+    """
+    if plan is None:
+        return {}
+    data = plan.plan_data or {}
+    transport = data.get("transport")
+    if isinstance(transport, dict) and transport.get("options"):
+        return data  # 已有方案，无需补全
+    departure = (trip.departure or "").strip()
+    destination = (trip.destination or "").strip()
+    if not departure or not destination:
+        return data  # 缺出发地/目的地 → 无法生成，保持原样
+    try:
+        from app.agent import tools as agent_tools
+        from app.services.budget_service import transport_round_trip_cost
+
+        fallback = await agent_tools.fetch_transport_fallback(
+            departure, destination, timeout=8,
+        )
+        if not fallback.get("options"):
+            return data
+        data["transport"] = fallback
+        # 同步预算口径：往返参考价并入 by_type.transport 与总额（与 compute_budget 同口径）
+        tcost = transport_round_trip_cost(data)
+        if tcost is not None:
+            budget = data.setdefault("budget", {})
+            by_type = budget.setdefault("by_type", {})
+            by_type["transport"] = tcost
+            budget["total_estimated"] = round(
+                float(budget.get("total_estimated") or 0.0) + tcost, 2
+            )
+        plan.plan_data = data
+        logger.info("读路径交通补全 trip=%s options=%d", trip.id, fallback.get("count", 0))
+    except Exception as exc:  # noqa: BLE001 — 补全失败绝不阻断读取
+        logger.debug("读路径交通补全失败 trip=%s err=%s", trip.id, exc)
+    return data
 
 
 # ── 分享（只读链接） ────────────────────────────────────────

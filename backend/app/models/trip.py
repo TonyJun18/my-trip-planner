@@ -40,6 +40,10 @@ class Trip(Base):
     owner: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     destination: Mapped[str] = mapped_column(String(200), nullable=False)
+    # 出发地（AI 规划时可选）：用于大交通方案查询与行程详情展示
+    departure: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # 出行性质（休闲旅游/商务出差/探亲访友/亲子出游/蜜月度假；默认休闲）
+    trip_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     travelers: Mapped[int] = mapped_column(Integer, default=1)

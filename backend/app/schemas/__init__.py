@@ -65,6 +65,8 @@ class DayOut(DayIn):
 class TripCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     destination: str = Field(min_length=1, max_length=200)
+    departure: str | None = Field(default=None, max_length=200, description="出发地（可选）")
+    trip_type: str | None = Field(default=None, max_length=20, description="出行性质：休闲旅游/商务出差/探亲访友/亲子出游/蜜月度假")
     start_date: date
     end_date: date
     travelers: int = Field(default=1, ge=1)
@@ -82,6 +84,8 @@ class TripCreate(BaseModel):
 class TripUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     destination: str | None = Field(default=None, min_length=1, max_length=200)
+    departure: str | None = Field(default=None, max_length=200, description="出发地（可选）；传 null 清空")
+    trip_type: str | None = Field(default=None, max_length=20, description="出行性质：休闲旅游/商务出差/探亲访友/亲子出游/蜜月度假")
     start_date: date | None = None
     end_date: date | None = None
     travelers: int | None = Field(default=None, ge=1)
@@ -94,6 +98,8 @@ class TripOut(BaseModel):
     id: str
     title: str
     destination: str
+    departure: str | None = None
+    trip_type: str | None = None
     start_date: date
     end_date: date
     travelers: int
@@ -199,6 +205,7 @@ class PlanQuestion(BaseModel):
 class PlanRequest(BaseModel):
     destination: str = Field(min_length=1, max_length=200)
     departure: str | None = Field(default=None, max_length=200, description="出发地（可选）；提供后 TransportAgent 会查询大交通方案并约束首日到达/末日离开安排")
+    trip_type: str | None = Field(default=None, max_length=20, description="出行性质：休闲旅游/商务出差/探亲访友/亲子出游/蜜月度假（缺省按休闲旅游理解）")
     start_date: date
     end_date: date
     travelers: int = Field(default=1, ge=1)

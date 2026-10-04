@@ -64,16 +64,13 @@ async def generate_checkin_guide(
 ) -> dict[str, Any]:
     """为定稿行程生成入住办理指引（模板基座 + LLM 可选润色）。
 
-    - 从 plan.hotels（定稿酒店候选）取第一家有地址的酒店；找不到则用
+    - 从 plan 中确定「本次入住的酒店」：优先取行程内实际安排的酒店
+      （days[].stops[] 中 type=hotel 的站点，即已安排住宿）；若行程中
+      没有具体酒店，回退到 plan.hotels（酒店候选列表）第一家；再没有则用
       plan.destination 生成通用指引。
     - LLM 润色全程 try/except：任何失败都回退纯模板，绝不抛异常。
     """
-    hotels = plan.get("hotels") or []
-    hotel = None
-    for h in hotels:
-        if isinstance(h, dict) and h.get("name"):
-            hotel = h
-            break
+    hotel = _pick_checkin_hotel(plan)
     if hotel is None:
         # 没有具体酒店：生成目的地级通用指引
         return {
@@ -129,6 +126,31 @@ async def generate_checkin_guide(
         pass
 
     return base
+
+
+def _pick_checkin_hotel(plan: dict[str, Any]) -> dict[str, Any] | None:
+    """确定「本次入住的酒店」。
+
+    优先级（与「已安排住宿」语义一致）：
+    1. 行程内实际安排的酒店：days[].stops[] 中 type=hotel 的站点；
+    2. 酒店候选列表 plan.hotels 中第一家（兼容酒店信息未进入 days 的情况）；
+    3. None → 调用方生成目的地级通用指引。
+
+    注意优先级 1 优先于 2：候选列表只是「推荐/备选」，只有当行程里
+    真的安排了住宿时，入住指引才应该显示那家酒店。
+    """
+    # 1) 行程内已安排的酒店站点（type=hotel）
+    for day in plan.get("days") or []:
+        for stop in day.get("stops") or []:
+            if not isinstance(stop, dict):
+                continue
+            if stop.get("type") == "hotel" and stop.get("name"):
+                return stop
+    # 2) 酒店候选列表第一家（有名字的）
+    for h in plan.get("hotels") or []:
+        if isinstance(h, dict) and h.get("name"):
+            return h
+    return None
 
 
 def _transit_hints(plan: dict[str, Any], hotel: dict[str, Any]) -> list[str]:

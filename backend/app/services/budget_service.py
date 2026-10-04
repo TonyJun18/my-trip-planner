@@ -92,6 +92,46 @@ def hotel_estimate_basis(estimated_count: int) -> dict:
 #   超出单 worker 窗口，记入检查点 issues 待后续评估（对照 AiGo/Wanderlog 海外场景）。
 
 
+# ── 大交通预算（task: 详情页预算口径）──────────────────────────
+# budget 只汇总 stops（attraction/food/hotel）会导致预算偏小且与心理预期对不上。
+# 从此处读取 plan_data.transport（TransportAgent 采集产物）把「往返大交通参考价」
+# 计入 by_type.transport 与 total；无 price_range（无可信来源）时不编造，置 None。
+_TRANSPORT_BASIS_NOTE = "大交通往返参考（单程最低参考价 ×2，非实时票价，以官方渠道为准）"
+
+
+def _transport_round_trip(plan_data: dict | None) -> float | None:
+    """从 plan_data.transport.options 取「单程最低参考价 ×2」；无可信价格返回 None。"""
+    transport = (plan_data or {}).get("transport") if isinstance(plan_data, dict) else None
+    if not isinstance(transport, dict):
+        return None
+    options = transport.get("options") or []
+    lowest: float | None = None
+    for o in options:
+        if not isinstance(o, dict):
+            continue
+        price_range = o.get("price_range")
+        if not isinstance(price_range, list) or not price_range:
+            continue
+        try:
+            val = float(price_range[0])
+        except (TypeError, ValueError):
+            continue
+        if val > 0 and (lowest is None or val < lowest):
+            lowest = val
+    if lowest is None:
+        return None
+    return round(lowest * 2, 2)
+
+
+def transport_round_trip_cost(plan_data: dict | None) -> float | None:
+    """公开入口：从 plan_data.transport 取「单程最低参考价 ×2」（无可信价格返回 None）。
+
+    供预算计算（compute_budget）与规划编排层的 plan.budget 同步共用同一口径，
+    避免两处各写一份往返估算逻辑导致偏差。
+    """
+    return _transport_round_trip(plan_data)
+
+
 def _per_person_views(result: dict) -> dict:
     """在预算汇总上派生「人均分摊」视图（09-26 竞品分析：AiGo/Wanderlog 海外多人出行刚需）。
 
@@ -117,19 +157,27 @@ def _per_person_views(result: dict) -> dict:
     return per_person
 
 
-def compute_budget(trip: Trip) -> dict:
+def compute_budget(trip: Trip, *, plan_data: dict | None = None) -> dict:
     """根据行程中的站点费用汇总预算明细。
+
+    参数：
+        plan_data: 可选。行程的 AI 规划方案快照（plan_data JSON）。传入后把
+            大交通往返参考价（plan_data.transport，TransportAgent 采集产物）
+            计入 by_type.transport 与 total —— stops 汇总不含大交通，会导致
+            预算偏小且与用户直觉（含往返路费）对不上。无 transport / 无价格
+            时不编造，transport 项置 None。
 
     返回结构：
     {
-      "total_estimated": float,
-      "by_type": {"attraction": float, "food": float, "hotel": float},
+      "total_estimated": float,          # 站点合计 + 大交通（若有）
+      "by_type": {"attraction": float, "food": float, "hotel": float,
+                  "transport": float | None},   # transport 键只在有参考价时出现
       "daily_average": float | None,
       "per_person_total": float | None,        # 人均分摊（task-budget-split）
       "per_person_by_type": dict,              # 人均 × 类别
       "per_person_daily": float | None,        # 人均日均
       "currency": "CNY",
-      "estimate_basis": {"hotel": {...}}       # 09-26 补充：估算口径标注
+      "estimate_basis": {"hotel": {...}, "transport": {...}}  # 估算口径标注
     }
     """
     by_type: dict[str, float] = {"attraction": 0.0, "food": 0.0, "hotel": 0.0}
@@ -143,17 +191,39 @@ def compute_budget(trip: Trip) -> dict:
             if stop.stop_type == "hotel":
                 hotel_count += 1
 
+    # 大交通往返参考价（plan_data.transport → 单程最低 ×2）；无价格不编造
+    transport_cost = _transport_round_trip(plan_data)
+    if transport_cost is not None:
+        by_type["transport"] = transport_cost
+        total += transport_cost
+
     n_days = (trip.end_date - trip.start_date).days + 1
+    # 日均 = 目的地每日花销（不含一次性往返大交通）；总额含大交通。
+    # 若把往返路费摊进日均，「日均约 ¥xxx」会虚高且与直觉不符——
+    # 大交通是一次性成本（去一次/回一次），不是每天发生的费用。
+    local_total = total - (transport_cost or 0.0)
     result = {
         "total_estimated": round(total, 2),
         "by_type": {k: round(v, 2) for k, v in by_type.items()},
-        "daily_average": round(total / n_days, 2) if n_days > 0 and total else None,
+        "daily_average": round(local_total / n_days, 2) if n_days > 0 and local_total else None,
         "currency": "CNY",
     }
     # 人均分摊视图（travelers 人数来自 Trip）
     result.update(_per_person_views({**result, "_travelers": trip.travelers}))
-    # 估算口径标注：hotel 项全部来自代码估算（静态基准价），标注来源/置信度
-    # （09-26 竞品分析补充验收：iPlan.ai 预算偏差 20-30% → 诚实估算差异化）
+    # 估算口径标注：hotel 项全部来自代码估算（静态基准价）；transport 项来自
+    # 采集参考价 ×2 —— 标注来源/置信度，对齐「预算必须是可审计的诚实估算」。
+    basis: dict = {}
     if hotel_count > 0:
-        result["estimate_basis"] = {"hotel": hotel_estimate_basis(hotel_count)}
+        basis["hotel"] = hotel_estimate_basis(hotel_count)
+    if transport_cost is not None:
+        basis["transport"] = {
+            "source": "transport_agent_collected",
+            "base_note": _TRANSPORT_BASIS_NOTE,
+            "confidence": "medium",
+            "estimated_count": 1,
+            "actual_count": 0,
+            "updated_at": "2026-10-04",
+        }
+    if basis:
+        result["estimate_basis"] = basis
     return result

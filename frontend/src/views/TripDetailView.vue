@@ -116,7 +116,15 @@ const editDayId = ref(null)
 const editStopId = ref(null)
 const stopForm = ref({ name: '', stop_type: 'attraction', lat: null, lng: null, description: '', estimated_cost: null, estimated_duration_minutes: null })
 const dayForm = ref({ day_number: 1 })
-const tripForm = ref({ title: '', destination: '', travelers: 1, budget: null })
+const tripForm = ref({ title: '', destination: '', departure: '', trip_type: '', travelers: 1, budget: null })
+// 出行性质选项（与 AI 规划/手动创建同款契约值：稳定中文，后端按此约束）
+const tripTypeOptions = [
+  { key: 'tripTypeLeisure', value: '休闲旅游' },
+  { key: 'tripTypeBusiness', value: '商务出差' },
+  { key: 'tripTypeFamily', value: '亲子出游' },
+  { key: 'tripTypeHoneymoon', value: '蜜月度假' },
+  { key: 'tripTypeVisiting', value: '探亲访友' },
+]
 const dialogVisible = ref(false)
 const stopFormRef = ref(null)
 
@@ -210,9 +218,10 @@ const typeLabel = computed(() => ({
   attraction: t('common.typeAttraction'),
   food: t('common.typeFood'),
   hotel: t('common.typeHotel'),
+  transport: t('common.typeTransport'),
 }))
-const typeColor = { attraction: 'var(--brand)', food: '#c2410c', hotel: '#0d8a5f' }
-const typeEmoji = { attraction: '🏞️', food: '🍜', hotel: '🏨' }
+const typeColor = { attraction: 'var(--brand)', food: '#c2410c', hotel: '#0d8a5f', transport: '#5b6ee1' }
+const typeEmoji = { attraction: '🏞️', food: '🍜', hotel: '🏨', transport: '🚄' }
 
 // 预算环形
 const budgetPercent = computed(() => {
@@ -544,6 +553,8 @@ function openEditTrip() {
   tripForm.value = {
     title: trip.value.title,
     destination: trip.value.destination,
+    departure: trip.value.departure || '',
+    trip_type: trip.value.trip_type || '休闲旅游',
     travelers: trip.value.travelers,
     budget: trip.value.budget,
   }
@@ -554,6 +565,8 @@ async function saveTrip() {
   const data = {}
   if (tripForm.value.title !== trip.value.title) data.title = tripForm.value.title
   if (tripForm.value.destination !== trip.value.destination) data.destination = tripForm.value.destination
+  if ((tripForm.value.departure || '') !== (trip.value.departure || '')) data.departure = tripForm.value.departure || null
+  if (tripForm.value.trip_type !== (trip.value.trip_type || '休闲旅游')) data.trip_type = tripForm.value.trip_type
   if (tripForm.value.travelers !== trip.value.travelers) data.travelers = tripForm.value.travelers
   if (tripForm.value.budget !== trip.value.budget) data.budget = tripForm.value.budget
   await api.updateTrip(trip.value.id, data)
@@ -699,6 +712,8 @@ onMounted(load)
               <h1 class="hero-title">{{ trip.title }}</h1>
               <div class="hero-meta">
                 <span class="hero-pill"><el-icon><Location /></el-icon>{{ trip.destination }}</span>
+                <span class="hero-pill" v-if="trip.departure"><el-icon><Promotion /></el-icon>{{ $t('tripDetail.fromDeparture', { dep: trip.departure }) }}</span>
+                <span class="hero-pill" v-if="trip.trip_type"><el-icon><Briefcase /></el-icon>{{ $t('tripDetail.tripTypeLabel') }}：{{ trip.trip_type }}</span>
                 <span class="hero-pill"><el-icon><Calendar /></el-icon>{{ trip.start_date }} ~ {{ trip.end_date }}</span>
                 <span class="hero-pill"><el-icon><User /></el-icon>{{ trip.travelers }} {{ $t('common.peopleUnit') }}</span>
                 <span class="hero-pill" v-if="trip.budget != null"><el-icon><Wallet /></el-icon>{{ $t('common.budget') }} ¥{{ trip.budget }}</span>
@@ -745,7 +760,7 @@ onMounted(load)
                 </div>
               </div>
               <div class="budget-lines">
-                <div v-for="(label, k) in { attraction: $t('common.typeAttraction'), food: $t('common.typeFood'), hotel: $t('common.typeHotel') }" :key="k" class="budget-line">
+                <div v-for="(label, k) in { attraction: $t('common.typeAttraction'), food: $t('common.typeFood'), hotel: $t('common.typeHotel'), transport: $t('common.typeTransport') }" :key="k" class="budget-line">
                   <span class="budget-dot" :style="{ background: typeColor[k] }" />
                   <span>{{ label }}</span>
                   <span class="budget-line-val">¥{{ budget.by_type?.[k] || 0 }}</span>
@@ -1049,6 +1064,14 @@ onMounted(load)
       <el-form v-if="editType === 'edit-trip'" :model="tripForm" label-width="80px">
         <el-form-item :label="$t('tripDetail.lblTitle')"><el-input v-model="tripForm.title" /></el-form-item>
         <el-form-item :label="$t('tripDetail.lblDestination')"><el-input v-model="tripForm.destination" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblDeparture')">
+          <el-input v-model="tripForm.departure" :placeholder="$t('tripDetail.departurePlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="$t('tripDetail.lblTripType')">
+          <el-select v-model="tripForm.trip_type" style="width: 100%">
+            <el-option v-for="opt in tripTypeOptions" :key="opt.key" :label="t('tripList.' + opt.key)" :value="opt.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="$t('tripDetail.lblTravelers')"><el-input-number v-model="tripForm.travelers" :min="1" /></el-form-item>
         <el-form-item :label="$t('tripDetail.lblBudget')"><el-input-number v-model="tripForm.budget" :min="0" :step="500" /></el-form-item>
       </el-form>

@@ -17,10 +17,18 @@ const pageSize = ref(9)
 // ── 手动创建行程（PATCH/POST /trips 后端已支持，前端补入口） ──
 const createVisible = ref(false)
 const creating = ref(false)
-const createForm = ref({ title: '', destination: '', start_date: '', end_date: '', travelers: 1, budget: 3000 })
+// 出行性质：与 AI 规划同款五档（key 存表单，提交映射稳定中文契约值）
+const createTripTypeOptions = [
+  { key: 'tripTypeLeisure', value: '休闲旅游' },
+  { key: 'tripTypeBusiness', value: '商务出差' },
+  { key: 'tripTypeFamily', value: '亲子出游' },
+  { key: 'tripTypeHoneymoon', value: '蜜月度假' },
+  { key: 'tripTypeVisiting', value: '探亲访友' },
+]
+const createForm = ref({ title: '', destination: '', departure: '', trip_type: '休闲旅游', start_date: '', end_date: '', travelers: 1, budget: 3000 })
 
 function openCreate() {
-  createForm.value = { title: '', destination: '', start_date: '', end_date: '', travelers: 1, budget: 3000 }
+  createForm.value = { title: '', destination: '', departure: '', trip_type: '休闲旅游', start_date: '', end_date: '', travelers: 1, budget: 3000 }
   createVisible.value = true
 }
 async function submitCreate() {
@@ -215,6 +223,14 @@ onMounted(load)
         </el-form-item>
         <el-form-item :label="t('tripList.destination')" required>
           <el-input v-model="createForm.destination" :placeholder="t('tripList.destinationPlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="t('tripList.departure')">
+          <el-input v-model="createForm.departure" :placeholder="t('tripList.departurePlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="t('tripList.tripType')">
+          <el-select v-model="createForm.trip_type" style="width: 100%">
+            <el-option v-for="opt in createTripTypeOptions" :key="opt.key" :label="t('tripList.' + opt.key)" :value="opt.value" />
+          </el-select>
         </el-form-item>
         <el-form-item :label="t('tripList.date')" required>
           <el-date-picker
