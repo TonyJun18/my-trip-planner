@@ -1,16 +1,19 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import * as api from '@/api'
 import TripMap from '@/components/TripMap.vue'
+import { readCachedJson } from '@/utils/pwa'
 
 const route = useRoute()
 const { t } = useI18n()
 const loading = ref(false)
 const error = ref('')
 const trip = ref(null)
+// 离线标识（task-pwa-cache-deep）：网络失败时读 SW 缓存的分享/编辑行程展示
+const offlineFallback = ref(false)
 
 // ── 受邀编辑模式：URL 带 ?edit=1（owner 生成的 edit_url）→ 用 edit_token 访问 ──
 const editMode = computed(() => route.query.edit === '1')
@@ -111,10 +114,30 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    trip.value = editMode.value
-      ? await api.getEditableTrip(route.params.token)
-      : await api.getSharedTrip(route.params.token)
-    await Promise.all([loadComments(), loadVotes()])
+    try {
+      trip.value = editMode.value
+        ? await api.getEditableTrip(route.params.token)
+        : await api.getSharedTrip(route.params.token)
+      // 在线成功：清除离线标识；但若浏览器判定离线（DevTools offline / 断网），
+      // SW 会静默从缓存兜底成功——此时展示的是缓存快照，仍应显示离线标识
+      offlineFallback.value = navigator.onLine === false
+    } catch (e) {
+      // 离线/网络失败：尝试从 SW 的 API 缓存读取分享/编辑行程（key 与白名单一致）
+      const path = editMode.value
+        ? `/api/v1/trips/edit/${route.params.token}`
+        : `/api/v1/trips/share/${route.params.token}`
+      const cached = await readCachedJson(path)
+      if (cached) {
+        trip.value = cached
+        offlineFallback.value = true
+      } else {
+        throw e
+      }
+    }
+    // 离线降级：协作数据（评论/投票）不再请求，只展示行程骨架
+    if (!offlineFallback.value) {
+      await Promise.all([loadComments(), loadVotes()])
+    }
   } catch (e) {
     error.value = editMode.value ? t('share.editLinkInvalid') : t('share.linkInvalid')
   } finally {
@@ -235,6 +258,19 @@ async function moveStop(day, stop, dir) {
 }
 
 onMounted(load)
+
+// 恢复在线：自动清除离线标识并重新加载（task-pwa-cache-deep 验收项「恢复在线自动清除标识」）
+function onGoOnline() {
+  if (!offlineFallback.value) return
+  offlineFallback.value = false
+  load()
+}
+onMounted(() => {
+  window.addEventListener('online', onGoOnline)
+})
+onUnmounted(() => {
+  window.removeEventListener('online', onGoOnline)
+})
 </script>
 
 <template>
@@ -245,6 +281,19 @@ onMounted(load)
       <span v-if="!editMode">{{ $t('share.readonlyBanner') }}</span>
       <span v-else>{{ $t('share.editBanner') }}</span>
     </div>
+
+    <!-- 离线模式标识（PWA task-pwa-cache-deep：网络失败时展示缓存行程） -->
+    <el-alert
+      v-if="offlineFallback && !error"
+      class="share-offline-banner"
+      type="warning"
+      :closable="false"
+      show-icon
+    >
+      <template #title>
+        {{ $t('share.offlineShareBanner') }}
+      </template>
+    </el-alert>
 
     <div v-if="error" class="share-error">
       <el-result icon="warning" :title="error">
@@ -477,6 +526,7 @@ onMounted(load)
 
 .share-error { padding: 40px 0; }
 .share-error-hint { color: var(--faint); font-size: 13px; }
+.share-offline-banner { margin-bottom: 16px; }
 
 /* ── 头图 ── */
 .hero-card { margin-bottom: 20px; }

@@ -152,6 +152,7 @@ export default {
     statusArchived: '已归档',
     totalTrips: '共 {count} 个行程',
     noTrips: '还没有行程',
+    offlineListBanner: '离线模式 · 当前展示的是最近一次缓存的行程列表，联网后自动刷新',
     dateUndecided: '日期未定',
     dateRange: '{start} ~ {end}',
     budgetUnset: '预算未设',
@@ -484,6 +485,13 @@ export default {
     notGo: '不想去 👎',
     consensus: '小组一致',
     consensusTip: '过半成员已表态且赞成占多数，未响应成员不阻塞',
+    offlineShareBanner: '离线模式 · 当前展示的是缓存行程快照，评论与投票需联网查看',
+  },
+  // ── PWA 更新提示（task-pwa-cache-deep） ──────────────
+  pwa: {
+    updateTitle: '发现新版本',
+    updateHint: '新版本已就绪，刷新后即可使用最新功能（当前进度不会丢失）。',
+    updateNow: '立即刷新',
   },
   // ── 小红书笔记（方案 A：内容工厂） ──────────────────────
   xhsNote: {

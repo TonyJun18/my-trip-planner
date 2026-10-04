@@ -152,6 +152,7 @@ export default {
     statusArchived: 'Archived',
     totalTrips: '{count} trips in total',
     noTrips: 'No trips yet',
+    offlineListBanner: 'Offline mode · Showing the last cached trip list. Will refresh when back online',
     dateUndecided: 'Dates TBD',
     dateRange: '{start} ~ {end}',
     budgetUnset: 'No budget set',
@@ -484,6 +485,13 @@ export default {
     notGo: "Don't want to go 👎",
     consensus: 'Group OK',
     consensusTip: 'Majority voted and approval wins — non-responders don\'t block',
+    offlineShareBanner: 'Offline mode · Showing a cached trip snapshot. Comments & votes need a connection',
+  },
+  // ── PWA update prompt (task-pwa-cache-deep) ────────────
+  pwa: {
+    updateTitle: 'New version available',
+    updateHint: 'A new version is ready. Refresh to use the latest features (your progress is kept).',
+    updateNow: 'Refresh now',
   },
   // ── XHS note (Plan A: content factory) ──────────────────
   xhsNote: {
