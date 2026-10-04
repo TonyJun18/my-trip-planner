@@ -43,12 +43,45 @@ const markers = computed(() => {
   for (const day of trip.value?.days || []) {
     for (const stop of day.stops || []) {
       if (stop.lat != null && stop.lng != null) {
-        list.push({ lat: stop.lat, lng: stop.lng, name: stop.name, stop_type: stop.stop_type, description: stop.description })
+        list.push({ lat: stop.lat, lng: stop.lng, name: stop.name, stop_type: stop.stop_type, description: stop.description, day_number: day.day_number, stop_id: stop.id })
       }
     }
   }
   return list
 })
+
+// ── 地图拖拽修订（task-map-drag-edit 前端接线 · 分享页） ──────
+// 拖拽能力随受邀编辑权开放：分享页非 editMode 只读（不发请求）；
+// editMode 下拖拽 → POST /map-edit → 整体刷新（markers 派生自 trip，
+// 引用替换触发 TripMap watch 重绘回正）。失败回弹由后端 4xx + 刷新保证。
+const mapMoving = ref(false)
+async function onMapMove(payload) {
+  if (!editMode.value || mapMoving.value || !trip.value) return
+  mapMoving.value = true
+  try {
+    // 受邀编辑模式：凭 edit_token 免登录调 map-edit（与受邀编辑 stop 更新同链路）
+    const r = await api.mapEditInvitedTrip(route.params.token, {
+      name: payload.name,
+      lat: payload.lat,
+      lng: payload.lng,
+      day_number: payload.day_number ?? null,
+    })
+    await load()
+    if (r?.summary) ElMessage.success(r.summary)
+    if (r?.driving?.critical_count) {
+      ElMessage.warning(
+        t('tripDetail.mapEditDrivingWarn', {
+          count: r.driving.critical_count,
+        }),
+      )
+    }
+  } catch {
+    // 4xx（自驾约束门/令牌失效等）拦截器已 toast；刷新保证服务端状态一致
+    await load()
+  } finally {
+    mapMoving.value = false
+  }
+}
 
 const statusMap = computed(() => ({
   draft: { label: t('tripList.statusDraft'), type: 'info' },
@@ -248,7 +281,7 @@ onMounted(load)
             <span class="card-title">{{ $t('common.mapTitle') }}</span>
             <span class="map-hint">{{ $t('common.mapHint') }}</span>
           </div>
-          <TripMap :markers="markers" height="420px" />
+          <TripMap :markers="markers" height="420px" :draggable="editMode" :on-move="onMapMove" />
         </div>
         <div class="budget-card">
           <div class="card-head"><span class="card-title">{{ $t('common.budgetTitle') }}</span></div>
@@ -333,6 +366,7 @@ onMounted(load)
                 <span v-if="stop.estimated_cost != null"><el-icon><Wallet /></el-icon>¥{{ stop.estimated_cost }}</span>
                 <span v-if="stop.estimated_duration_minutes"><el-icon><Clock /></el-icon>{{ stop.estimated_duration_minutes }} {{ $t('common.minutes') }}</span>
                 <span v-if="!editMode" class="vote-group">
+                  <span v-if="votes[stop.id]?.consensus" class="consensus-badge" :title="$t('share.consensusTip')">✅ {{ $t('share.consensus') }}</span>
                   <button
                     class="vote-btn"
                     :class="{ active: myVote(stop.id) === 1 }"
@@ -557,6 +591,12 @@ onMounted(load)
 
 /* ── 站点投票 ── */
 .vote-group { margin-left: auto; display: inline-flex; gap: 6px; }
+.consensus-badge {
+  display: inline-flex; align-items: center; gap: 2px;
+  background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;
+  border-radius: var(--radius-full); padding: 2px 10px; font-size: 12px;
+  font-weight: 600; cursor: default;
+}
 .vote-btn {
   appearance: none; border: 1px solid var(--line); background: #fff;
   border-radius: var(--radius-full); padding: 3px 10px; font-size: 12.5px;

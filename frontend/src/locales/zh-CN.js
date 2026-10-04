@@ -292,6 +292,7 @@ export default {
     revisePlaceholder: '例如：第三天太赶了，西湖只留半天，晚上加个知味观',
     reviseBtn: '调整',
     reviseWarning: '先告诉我你想怎么调整',
+    mapEditDrivingWarn: '调整后自驾 {count} 处超距/超时，请留意（地图已按修订重排）',
     reviseLoading: 'AI 正在解析并应用修改…',
     reviseFailHint: '调整失败：请确认描述里的站点名称与当前行程一致后重试',
     reviseFailRetry: '已为你保留输入，可直接修改后重试',
@@ -481,6 +482,8 @@ export default {
     notePh: '备注（可选）',
     wantGo: '想去 👍',
     notGo: '不想去 👎',
+    consensus: '小组一致',
+    consensusTip: '过半成员已表态且赞成占多数，未响应成员不阻塞',
   },
   // ── 小红书笔记（方案 A：内容工厂） ──────────────────────
   xhsNote: {

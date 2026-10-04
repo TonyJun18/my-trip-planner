@@ -182,12 +182,46 @@ const markers = computed(() => {
   for (const day of trip.value?.days || []) {
     for (const stop of day.stops || []) {
       if (stop.lat != null && stop.lng != null) {
-        list.push({ lat: stop.lat, lng: stop.lng, name: stop.name, stop_type: stop.stop_type, description: stop.description })
+        list.push({ lat: stop.lat, lng: stop.lng, name: stop.name, stop_type: stop.stop_type, description: stop.description, day_number: day.day_number, stop_id: stop.id })
       }
     }
   }
   return list
 })
+
+// ── 地图拖拽修订（task-map-drag-edit 前端接线） ──────────────
+// 仅行程所属用户可拖拽（TripDetailView 为登录态 owner 视图）；拖拽结束
+// → POST /trips/{id}/map-edit → 成功后整体刷新（markers 由 trip 派生，
+// markers 引用替换触发 TripMap watch 重绘，dragend 位置自动回正）。
+const mapMoving = ref(false)
+async function onMapMove(payload) {
+  if (mapMoving.value || !trip.value) return
+  mapMoving.value = true
+  try {
+    const r = await api.mapEditTrip(route.params.id, {
+      name: payload.name,
+      lat: payload.lat,
+      lng: payload.lng,
+      day_number: payload.day_number ?? null,
+    })
+    // 落库成功：拉最新行程（含修订后坐标/预算/自驾报告）
+    await load()
+    if (r?.summary) ElMessage.success(r.summary)
+    if (r?.driving?.critical_count) {
+      ElMessage.warning(
+        t('tripDetail.mapEditDrivingWarn', {
+          count: r.driving.critical_count,
+        }),
+      )
+    }
+  } catch {
+    // 自驾约束门/权限/坐标校验失败 → 400/401/422，拦截器已 toast；
+    // markers 未变 → TripMap 保持原位置（拖拽回弹）
+    await load() // 服务端可能已部分成功（如预算重算），刷新保证一致
+  } finally {
+    mapMoving.value = false
+  }
+}
 
 // 行程状态：展示 + 切换（label 走 i18n）
 const statusMap = computed(() => ({
@@ -743,7 +777,7 @@ onMounted(load)
               <span class="card-title">{{ $t('common.mapTitle') }}</span>
               <span class="map-hint">{{ $t('common.mapHint') }}</span>
             </div>
-            <TripMap :markers="markers" height="420px" />
+            <TripMap :markers="markers" height="420px" draggable :on-move="onMapMove" />
           </div>
           <div class="budget-card">
             <div class="card-head"><span class="card-title">{{ $t('common.budgetTitle') }}</span></div>

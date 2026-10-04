@@ -292,6 +292,7 @@ export default {
     revisePlaceholder: 'e.g. Day 3 is too packed — keep West Lake to half a day and add Zhiweiguan in the evening',
     reviseBtn: 'Adjust',
     reviseWarning: 'Tell me how you want to adjust first',
+    mapEditDrivingWarn: 'After this move, {count} driving leg(s) exceed distance/time limits — review the rerouted map',
     reviseLoading: 'AI is parsing and applying changes…',
     reviseFailHint: 'Adjustment failed: please make sure the stop names in your message match the current itinerary',
     reviseFailRetry: 'Your input is kept — edit and retry',
@@ -481,6 +482,8 @@ export default {
     notePh: 'Note (optional)',
     wantGo: 'Want to go 👍',
     notGo: "Don't want to go 👎",
+    consensus: 'Group OK',
+    consensusTip: 'Majority voted and approval wins — non-responders don\'t block',
   },
   // ── XHS note (Plan A: content factory) ──────────────────
   xhsNote: {
