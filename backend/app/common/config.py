@@ -110,6 +110,8 @@ class Settings(BaseSettings):
     """单个规划任务的最长执行秒数；超时标记 failed_timeout，避免卡死 worker 队列。"""
     TASK_STALE_RUNNING_SECONDS: int = 300
     """启动恢复扫描：running 超过该秒数视为进程崩溃遗留，标记为失败。"""
+    TASK_PENDING_STALE_SECONDS: int = 300
+    """启动恢复扫描：pending 超过该秒数视为提交后进程崩溃/队列未消费，标记为失败。"""
     ENABLE_PROVIDER_FALLBACK: bool = True
     """主 LLM provider 失败后是否自动切换兜底 provider（deepseek → openai → ollama）。"""
 
