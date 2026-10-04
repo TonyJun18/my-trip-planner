@@ -3,7 +3,6 @@
   "status": "in_progress",
   "todo": [
     "task-mobile-install",
-    "task-pwa-cache-deep",
     "task-capacitor-shell",
     "task-capacitor-stores",
     "task-trip-type-profile-memory",
@@ -14,9 +13,10 @@
     "task-trip-collab-vote（验收升级）",
     "task-screenshot-import（验收升级）",
     "task-map-drag-edit",
-    "task-mobile-views"
+    "task-mobile-views",
+    "task-pwa-cache-deep"
   ],
-  "current_index": 1,
+  "current_index": 2,
   "issues": [
     "night-start 初始化 2026-10-05：HEAD checkpoint 显示 10-04 已完成 7 项（competitive-analysis/email-import/content-agentic-booking-endgame/collab-vote验收升级/screenshot-import验收升级/map-drag-edit/mobile-shell），且均已并入 main（51602c4，含全部 service/API/前端夹具），todo 文件中对应行均已完成。故重建 todo 时剔除已完成项，仅保留真实待办（map-drag-edit 前端接线 + 移动端 A→B 剩余 + 登记注册的 trip-type-profile-memory）。",
     "工作区发现 10-04 worker-7 遗留改动（stash@{0}，分支 nightly/2026-10-04/7-fix-p0-p1-flaws）：P0/P1 修复（planning_service 并行 worker 数+恢复扫描、link_import SSRF 重定向防护、JWT fail-fast、config PLANNING_WORKER_COUNT、test_planning_recovery.py）。全套 pytest 挂起（kevent 空转 + 3 个 PG 连接；杀掉 uvicorn 40911 后仍复现）。根因：executor.start() 无条件起 _recover_queued_pending 后台任务 + _worker_supervisor while True 常驻，conftest plan_executor fixture 的 stop() 只停旧 _worker_task/_recovery_task，新任务未跟踪 → 事件循环永不退出。按重试协议核验不通过 → stash 隔离（备份 /tmp/p0p1_worktree_backup.diff），待用户 review 修复。注：其中 SSRF 重定向防护与 JWT fail-fast 方向正确、价值明确，值得修复后合入。",
@@ -26,12 +26,14 @@
     "worker-3 接管 worker-2 掐断遗留（branch nightly/2026-10-05/1-task-map-drag-edit-frontend，未提交改动 8 文件）：核验通过补登记完成——map_edit_service 拆 _map_edit_trip_core 共用 diff 内核 + map_edit_trip_by_token（POST /trips/edit/{token}/map-edit 受邀拖拽，凭 edit_token 免登录，令牌收回 404）+ 前端接线（TripDetailView/ShareView draggable + onMapMove、自驾 4xx toast、ShareView consensus 徽标、i18n mapEditDrivingWarn/consensus/consensusTip）。原 by_token 端点无测试 → 补 2 测试（免登录拖拽落库 / 令牌收回 404），全套 302 绿（57.8s）+ 前端 build 通过；3 commits 入分支（0c44648/0aaa873/c207fe4），未 push。",
     "checkpoint todo 校正：night-start 初始化剔除未生效——collab-vote验收/screenshot-import验收 已在 10-04 完成并入 main 且 todo 文件已勾选 [x]，本次从 todo 移除并补登 completed；current_index 归位 0 指向首个真实待办 task-mobile-views（原 current_index=1 指向已完成的 screenshot-import验收，不校正会误导后续 worker 重做）。",
     "worker-5 完成 task-mobile-views（todo[0]，frontend 区）：接管 02:33 被掐断 worker 遗留实现并核验通过——TripDetailView +57（顶栏操作横向滚动、头图紧凑、地图预算减边距、AI 调整纵向堆叠、Day 头部纵向、站点操作 44px 触控、底部两列网格、弹窗窄屏）+ PlanWizard +35（wizard-head/page-title/ai-badge、步骤指示器收敛、chip 44px、日期选择器不溢出、阶段头部换行、汇总卡单列、预算条紧凑）+ ShareView +30（头图紧凑、Day 头部纵向、受邀编辑行内改名全宽、stop-meta 横向滚动、评论区紧凑）+ TripMap +7（leaflet 375px 高度 300px）；验收：npm build 通过（3.03s）+ Playwright 20/20（375px 列表/详情/规划/分享/受邀编辑五流程无水平滚动 sw=375、44px 触控按钮、预算 chips 不溢出；1280px 桌面回归无破坏、底部 Tab 隐藏、地图预算并排）。分支 nightly/2026-10-05/2-task-mobile-views 从 ca6948d（worker-3 HEAD）拉出，本地 commit 未 push 未合并；checkpoint 完成登记（claims 清空、todo 移除、completed 追加、current_index=1）。",
-    "遗留观察：/private/tmp/mtp-wt8-20261004 worktree（分支 nightly/2026-10-04/7-task-mobile-views，10-04 夜遗留 5 文件脏改动 + theme.css）未触碰、未合并；主工作区 preview 4175（本 worker 启动，供验收）已完成使命，preview 进程保留待环境清理。"
+    "遗留观察：/private/tmp/mtp-wt8-20261004 worktree（分支 nightly/2026-10-04/7-task-mobile-views，10-04 夜遗留 5 文件脏改动 + theme.css）未触碰、未合并；主工作区 preview 4175（本 worker 启动，供验收）已完成使命，preview 进程保留待环境清理。",
+    "worker-7 完成 task-pwa-cache-deep（todo[1]，frontend 区）：接管 2-task-mobile-views 工作区 7 文件未提交遗留（sw.js/pwa.js/main.js/TripListView/ShareView/locales×2）并核验通过——SW v2 列表静默缓存（pathname 归一化忽略分页 query）+ 导航与 API network-first 回退 stale + 写请求（非 GET）不拦截；updatefound→installed→ElMessageBox「发现新版本」→SKIP_WAITING→controllerchange reload（移除了 install skipWaiting，改前端确认接管）；TripListView 离线读缓存列表+offline-banner+online 事件自动清除重载；ShareView 分享/受邀编辑离线缓存快照+offlineShareBanner（离线跳过评论/投票请求）；i18n zh/en 补 5 键。验收：npm build 3.25s + Playwright 主验收 11/11（离线列表/分享读缓存+标识、恢复在线清标识、写请求未缓存）+ 更新提示 3/3（弹窗出现、SKIP_WAITING 后 v3 接管 v2 清理）。坑：①分支误从 main 拉出（stash 含 1/2 任务累积 → locales 冲突），改用 git branch -f 重置到 2-task-mobile-views HEAD 修正（层叠式保序）；②更新提示验收脚本 reload 触发 flaky（register 在 window load 才挂监听，浏览器导航时已并行查更新）→ 改 reg.update() 手动触发确定性通过，产品逻辑无 bug；③vite preview 只绑 IPv6::1，脚本 BASE 用 127.0.0.1 连不上 → 改 localhost。2 commits 入分支（7362764/2528119），后端 302 测试全绿 + 前端 build 通过，未 push 未合并。"
   ],
   "branches": [
     "nightly/2026-10-05/0-competitive-analysis",
     "nightly/2026-10-05/1-task-map-drag-edit-frontend",
-    "nightly/2026-10-05/2-task-mobile-views"
+    "nightly/2026-10-05/2-task-mobile-views",
+    "nightly/2026-10-05/3-task-pwa-cache-deep"
   ],
   "claims": {}
 }
