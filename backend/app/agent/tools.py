@@ -557,15 +557,148 @@ def compute_budget(stops: list[dict[str, Any]]) -> dict[str, Any]:
 #   + 官方购买链接；价格一律标注「参考价，以官方为准」，来源缺失即丢弃。
 # - 所有 IO 复用 tools.py 顶部 _SourceCircuit 熔断（amap/tavily/nominatim）。
 
-_AMAP_ROUTE_ENDPOINT = "https://restapi.amap.com/v3/direction/transit/integrated"
+_AMAP_ROUTE_ENDPOINT = "https://restapi.amap.com/v3/direction/driving"
+_AMAP_GEOCODE_ENDPOINT = "https://restapi.amap.com/v3/geocode/geo"
 _ADVICE_QUERY_TEMPLATE = "{dep}到{arr} 高铁 机票 怎么去 攻略"
 
 
 async def _geocode_city(city: str) -> dict[str, Any] | None:
-    """把城市名地理编码为经纬度（复用 geocode 工具，source=nominatim）。"""
+    """把城市名解析为经纬度：高德 geocode 优先，Nominatim（OSM）兜底。
+
+    高德对国内城市更准且已在生产网络可达（Nominatim 在部分网络环境不可达，
+    曾导致交通链路 geocode 失败 → 大交通方案恒空）。返回 {lat, lng, source}。
+    """
     if not city:
         return None
+    # 1) 高德优先（有 key 且本次调用成功 → 直接用）
+    if settings.AMAP_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=_GEO_TIMEOUT) as client:
+                resp = await client.get(
+                    _AMAP_GEOCODE_ENDPOINT,
+                    params={"key": settings.AMAP_API_KEY, "address": city},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            if data.get("status") == "1" and data.get("geocodes"):
+                loc = (data["geocodes"][0] or {}).get("location")  # "lng,lat"
+                if loc:
+                    lng, lat = str(loc).split(",")
+                    return {"lat": float(lat), "lng": float(lng), "source": "amap"}
+        except Exception as exc:  # noqa: BLE001 — 高德失败不阻断，交给 Nominatim 兜底
+            logger.warning("高德地理编码失败 city=%s err=%s", city, exc)
+    # 2) Nominatim 兜底（免费 OSM，带 UA/限速；不可达时返回 None，绝不编造）
     return await geocode(city)
+
+
+# ── 大交通确定性参考价兜底（方案1：数据源不可达/无价格时不空手，给可审计参考） ──
+# 高铁二等座费率 ≈0.45 元/km（2024 公开口径参考）；航班经济舱按距离分段费率。
+# 仅用于「无任何可信价格」时的降级：标注 source=rule + 明确参考口径，绝不冒充实时票价。
+_TRAIN_RATE_PER_KM = 0.45
+_FLIGHT_RATE_KM_RANGES = [
+    (0, 600, 0.9),      # 短途：约 0.9 元/km（按距离折算经济舱参考）
+    (600, 1500, 0.55),  # 中长途：约 0.55 元/km
+    (1500, 1e9, 0.4),   # 长途：约 0.4 元/km
+]
+_RULE_TRANSPORT_NOTE = "静态估算参考价（按直线距离费率折算，非实时票价；以官方渠道为准）"
+
+
+async def _round_trip_rule_options(departure: str, destination: str) -> list[dict[str, Any]]:
+    """确定性估算：出发地→目的地的大交通参考价（单程参考区间）。
+
+    无外部依赖，绝不失败。基于 haversine 直线距离 × 费率：
+    - 高铁二等座：约 0.45 元/km（区间给出 0.8~1.2 倍浮动，标注参考）
+    - 航班经济舱：按距离分段费率
+    返回 1-2 条 mode=train / flight 的参考条目（带 source=rule）。
+    """
+    from app.services.driving_service import haversine_km
+
+    # 地理编码（高德优先；失败则无法算距离 → 空兜底，不编造）
+    o = await _geocode_city(departure)
+    d = await _geocode_city(destination)
+    if not o or not d:
+        return []
+    km = haversine_km(o["lat"], o["lng"], d["lat"], d["lng"])
+    if not km or km < 1:
+        return []
+
+    # 高铁参考：按距离 × 费率，给 0.85~1.2 的浮动区间（单程）
+    train_mid = km * _TRAIN_RATE_PER_KM
+    train_lo = round(train_mid * 0.85, 0)
+    train_hi = round(train_mid * 1.2, 0)
+    if train_hi - train_lo < 5:  # 至少给个有意义的区间
+        train_hi = train_lo + 10
+
+    # 航班参考：按距离分段费率（距离过近不产航班，避免不合理）
+    flight_rate = None
+    for lo, hi, rate in _FLIGHT_RATE_KM_RANGES:
+        if lo <= km < hi:
+            flight_rate = rate
+            break
+    items: list[dict[str, Any]] = [
+        {
+            "mode": "train",
+            "duration_minutes": None,
+            "distance_km": round(km, 1),
+            "price_range": [float(train_lo), float(train_hi)],
+            "frequency": None,
+            "source": "rule",
+            "source_url": None,
+            "confidence": 0.5,
+            "note": _RULE_TRANSPORT_NOTE,
+        }
+    ]
+    if flight_rate and km >= 300:  # 300km 以上才建议航班
+        fl_mid = km * flight_rate
+        fl_lo = round(fl_mid * 0.8, 0)
+        fl_hi = round(fl_mid * 1.3, 0)
+        if fl_hi - fl_lo < 5:
+            fl_hi = fl_lo + 10
+        items.append({
+            "mode": "flight",
+            "duration_minutes": None,
+            "distance_km": round(km, 1),
+            "price_range": [float(fl_lo), float(fl_hi)],
+            "frequency": None,
+            "source": "rule",
+            "source_url": None,
+            "confidence": 0.5,
+            "note": _RULE_TRANSPORT_NOTE,
+        })
+    return items
+
+
+async def fetch_transport_fallback(
+    departure: str, destination: str, *, timeout: float | None = None,
+) -> dict[str, Any]:
+    """轻量快速兜底（读路径/老行程补全用）：只走高德 + 规则参考价。
+
+    不调用 Tavily（当前网络环境不可达且每次等超时很慢），
+    保证 GET /trips/{id}/plan 与 /budget 在无真实班次数据时也能在
+    1-2s 内给出可展示/可计费的参考方案。绝不抛异常，失败返回空 options。
+    """
+    options: list[dict[str, Any]] = []
+    # 1) 高德驾车（真实路径；同城/邻近）
+    try:
+        legs = await _amap_driving_options(departure, destination, timeout=timeout)
+        if legs:
+            options.append(legs)
+    except Exception:  # noqa: BLE001
+        logger.warning("读路径高德驾车失败 %s→%s", departure, destination, exc_info=True)
+    # 2) 规则参考价（高铁/航班，source=rule）
+    try:
+        options.extend(await _round_trip_rule_options(departure, destination))
+    except Exception:  # noqa: BLE001
+        logger.warning("读路径规则兜底失败 %s→%s", departure, destination, exc_info=True)
+    return {
+        "from": departure,
+        "to": destination,
+        "mode": "transport",
+        "options": options,
+        "count": len(options),
+        "status": "completed" if options else "degraded",
+        "note": None,
+    }
 
 
 async def fetch_transport_options(
@@ -632,6 +765,19 @@ async def fetch_transport_options(
     else:
         degraded = True
 
+    # 3) 兜底：若真实数据源全部不可用/无价格 → 补充确定性参考价（source=rule，标注口径）。
+    #    保证交通方案与预算「始终有东西可算」：可信来源缺失时不编造实时价，
+    #    但给可审计的静态估算（高铁/航班按距离费率），前端/预算可据此展示参考费用。
+    if not options and not degraded:
+        # 无降级但也没条目（理论上不会；保险起见）
+        degraded = True
+    if degraded or not any(o.get("price_range") for o in options):
+        try:
+            ruled = await _round_trip_rule_options(departure, destination)
+            options.extend(ruled)
+        except Exception:  # noqa: BLE001 — 兜底估算失败不阻断
+            logger.warning("大交通规则兜底失败 %s→%s", departure, destination, exc_info=True)
+
     return {
         "from": departure,
         "to": destination,
@@ -639,7 +785,9 @@ async def fetch_transport_options(
         "options": options,
         "count": len(options),
         "status": "completed" if not degraded else "degraded",
-        "note": None if not degraded else "部分数据源不可用，方案可能不完整（未编造缺失数据）",
+        "note": None if not degraded else (
+            "部分数据源不可用，已用静态参考价兜底（非实时票价，以官方渠道为准）"
+        ),
     }
 
 

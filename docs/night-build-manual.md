@@ -58,6 +58,36 @@
 - 每个 `night-worker`：读 checkpoint → 取 `todo[current_index]` → 执行 → 成功则移入 `completed` 并 `current_index+1`；失败则记入 `issues`，同样 `current_index+1`（避免死循环）。
 - 若当天日期变化（`night` 字段 ≠ 今天），说明跨夜/补跑：按当前日期重建检查点。
 - 写检查点 = 先 `read_file` 读当前值 → 计算新值 → `write_file` 原子覆盖。
+- **乐观锁（task-night-pipeline-parallel）**：写入前**必须重读** checkpoint，校验 `night` 与 `current_index` 与预期一致；若被其他 worker 改过（`night` 变 / `index` 前进），**用最新值重新计算再写**，绝不盲目覆盖——防止并行 worker 写坏唯一事实源。
+
+## 3.5 并行安全区（task-night-pipeline-parallel，2026-10-03 加入）
+
+> 夜间 8 个 worker 目前**串行错峰**（0:15~5:30）。当待办队列出现**不同安全区**的任务时，允许并行执行以提升吞吐；同区任务仍必须串行。
+
+**安全区定义（互不冲突，可并行）：**
+
+| 安全区 | 触及路径 | 冲突判定 |
+|---|---|---|
+| `backend` | `backend/app/**`、`backend/tests/**`、`alembic/**` | 同区任务**禁止**并行（都可能改同一 service/测试夹具） |
+| `frontend` | `frontend/src/**`、`frontend/package*.json` | 同区任务**禁止**并行 |
+| `docs` | `docs/**`（articles、nightly、prd 等） | 同区任务**禁止**并行 |
+| `ops` | 根目录 Dockerfile、`docker-compose.yml`、`deploy/**` | 同区任务**禁止**并行 |
+
+**并行规则：**
+1. worker 读 checkpoint 拿到任务后，先按 task slug 判定安全区（task-* 默认按实现判断：改后端→backend、改前端→frontend、纯文档→docs、部署→ops；没把握 → 归入最保守的 backend 且注释）。
+2. **任务认领（claimed 机制，并行正确性关键）**：单指针 `current_index` 无法区分「谁拿了哪个任务」——两个 worker 可能同时读到同一个 index。因此 worker 拿任务时**先写认领**：
+   ```json
+   "claims": { "task-slug": { "by": "night-worker-N", "at": "ISO8601", "zone": "backend" } }
+   ```
+   认领规则：①拿任务时在 checkpoint `claims` 里登记（worker 名 + 时间 + 安全区）；②**不认领已被其他 worker 认领的任务**（跳过一个未认领的任务，或等它完成）；③任务完成后从 `claims` 移除并移入 `completed`；④认领后超过 90 分钟未完成视为「worker 被掐断」，后续 worker 可接管（先核验未提交实现，见重试协议）。
+3. **只有不同安全区的 worker 可并行**。同区 → 保持占用，等前一个完成（依赖 checkpoint `current_index` 前移 / 认领消失判断）。
+4. 每个任务在 checkpoint `branches` 只追加自己的分支；**绝不 merge / rebase / 动别人的分支**。
+5. 并行产生的分支冲突（两个分支都改了 README）由清晨用户 review 时处理，worker 不自行解决。
+
+**重试协议（task-night-pipeline-parallel）：**
+- **可重试错误**：测试 flaky（首跑失败、重跑通过）、LLM/provider 瞬时超时、cron 超时掐断前的未提交改动 → **自动重跑 1 次**（指数退避：等 30s 再重试；第二次仍失败才放弃）。
+- **不可重试错误**：缺凭证、API 失效、schema 看不懂、安全扫描拦截 → 记入 `issues`，跳过（`current_index+1`），不自动重试。
+- **未提交改动检测**：开工前 `git status --porcelain` 非空（且不是自己刚改的）→ 视为「上个 worker 被掐断遗留」，按第 10 条铁律接管：先核验遗留实现质量（测试绿 + 验收满足），通过则补登记完成；不通过则记 issues 并清理（`git stash`/`mv`），不背着旧账开新任务。
 
 ## 4. 任务执行模板（night-worker 必做步骤）
 

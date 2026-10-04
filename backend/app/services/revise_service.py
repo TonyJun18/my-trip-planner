@@ -20,11 +20,15 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.agents import plan_revise_agent
+from app.agent.agents import CRITIC_PASS_SCORE, plan_revise_agent
 from app.core.exceptions import AppError
+from app.core.logging import get_logger
 from app.models import Stop, Trip, TripDay, TripPlan
+from app.schemas import critic_fix_to_revise_diff
 from app.services._common import TRIP_LOADS as _TRIP_LOADS
 from app.services._common import normalize_trace as _normalize_trace
+
+logger = get_logger(__name__)
 
 
 async def revise_trip(
@@ -34,8 +38,21 @@ async def revise_trip(
     *,
     owner: str | None = None,
     provider: str = "auto",
+    max_review_rounds: int = 2,
 ) -> dict[str, Any]:
-    """执行一次行程修订，返回 {plan, summary, trace, provider, model}。
+    """执行一次行程修订，返回 {plan, summary, trace, provider, model, quality}。
+
+    修订质控闭环（task-revise-qa-loop）：
+    1. AI 生成 diff（无工具；失败可自纠正）→ 代码原子应用 + 自驾约束
+    2. 主修订先落库（独立小事务）：用户请求的修订一定生效，绝不因质检回滚
+    3. 修订复核 Critic（ReviseCriticAgent）审查修订后的行程：
+       - 通过 → 结束
+       - 未通过但给了精确 fix → 转成可执行 diff 原子应用（fix 独立小事务），再回看
+       - 未通过且无 fix（大改/纯警告）→ 停在此轮（有界，不无限循环）
+       - Critic 熔断/超时 → 降级为通过（质检绝不阻断合法修订）
+    4. 停滞检测：修正后行程无变化（上一轮已应用过完全相同的动作）→ 强制跳出
+    5. 无论是否通过，都在返回值带 quality 报告（score/passed/issues/summary），
+       调用方（API ReviseOut）可透出给前端展示质检透明度。
 
     失败时抛 AppError（调用方转成 4xx 响应）。
     """
@@ -64,13 +81,51 @@ async def revise_trip(
     # 2.5) 自驾约束门（DrivingGate）：修订后站点组合超距/超时 → 整体拒绝
     await _enforce_driving_constraints(trip)
 
-    # 3) 落库 + 预算重算
+    # 3) 主修订落库（独立小事务）——用户请求的修订一定生效。
+    #    后续质检 fix 各自独立提交，任何 fix 失败都只回滚 fix，不回滚主修订。
     await db.flush()
     await _recompute_budget(db, trip)
     await db.commit()
 
-    # 4) 组装响应（新 trip + plan 快照）
-    new_plan = _plan_snapshot(trip)
+    # 4) 修订质控闭环：Critic 复审（最多 max_review_rounds 轮；fix 独立小事务）
+    quality = await _revise_qa_loop(
+        db,
+        trip_id,
+        request={
+            "destination": trip.destination,
+            "travelers": trip.travelers or 1,
+            "budget": trip.budget,
+            "preferences": [],
+            "message": message,
+            "revise_summary": diff.get("summary") or "",
+        },
+        owner=owner,
+        provider=provider,
+        max_rounds=max_review_rounds,
+    )
+
+    # 4.5) 行为记忆回写（task-travel-memory-feedback 触点）：修订成功落库后
+    #      fire-and-forget 写一条 revise 信号。已有画像才写；失败绝不阻断修订响应。
+    if owner:
+        try:
+            from app.services import profile_service
+
+            await profile_service._record_behavior(
+                db,
+                user_id=owner,
+                signal_kind="revise",
+                destination=trip.destination or "",
+                actions=diff.get("actions") or [],
+                summary=diff.get("summary") or "",
+            )
+            await db.commit()  # 独立小事务：只提交行为记忆，与主修订隔离
+        except Exception:  # noqa: BLE001 — 行为记忆是可丢弃的，绝不阻断修订
+            logger.debug("行为记忆回写失败（已忽略）", exc_info=True)
+            await db.rollback()
+
+    # 5) 组装响应（终态快照：重新加载，保证 ORM 属性新鲜）
+    final_trip = await _load_trip(db, trip_id, owner=owner)
+    new_plan = _plan_snapshot(final_trip)
     return {
         "trip_id": trip.id,
         "summary": diff.get("summary") or "行程已更新",
@@ -79,7 +134,149 @@ async def revise_trip(
         "trace": _normalize_trace(revise.get("trace") or []),
         "provider": revise.get("provider"),
         "model": revise.get("model"),
+        "quality": quality,
     }
+
+
+# ── 内部：修订质检闭环 ────────────────────────────────────────
+async def _revise_qa_loop(
+    db: AsyncSession,
+    trip_id: str,
+    *,
+    request: dict[str, Any],
+    owner: str | None,
+    provider: str,
+    max_rounds: int,
+) -> dict[str, Any] | None:
+    """ReviseCritic 复审闭环（Evaluator-Optimizer，有界）。
+
+    每轮从 DB 重新加载行程（主修订已提交，作为本轮基线），fix 应用后
+    自驾约束通过才 commit（fix 独立小事务）；自驾失败 → rollback 丢弃
+    本轮 fix，行程留在主修订状态，停止闭环。
+
+    返回给前端展示的 quality 报告：pass（含 fix_applied）/ fail（无 fix）/
+    degraded（Critic 失败降级）。注意：**降级视为通过**，绝不阻断合法修订。
+    """
+    from app.agent.agents import revise_critic_agent
+
+    if max_rounds <= 0:
+        return None  # 未开启修订复核（调用方显式关闭）
+
+    applied_fix_count = 0
+    last_fix_actions: list[tuple[Any, ...]] = []
+    quality: dict[str, Any] = {
+        "score": CRITIC_PASS_SCORE,
+        "passed": True,
+        "issues": [],
+        "summary": "修订复核通过",
+    }
+
+    for _ in range(max_rounds):
+        trip = await _load_trip(db, trip_id, owner=owner)
+        snapshot = _plan_snapshot(trip)
+        result = await revise_critic_agent(
+            dict(request),
+            snapshot,
+            provider=provider,
+        )
+        critique: dict[str, Any] = result.get("critique") or {}
+
+        if result.get("status") == "degraded":
+            # Critic 熔断/超时 → 降级通过（质检是可选优化，绝不阻断修订）
+            quality = {
+                "score": CRITIC_PASS_SCORE,
+                "passed": True,
+                "issues": [],
+                "summary": critique.get("summary") or "修订复核降级：质检调用失败，按通过处理",
+                "degraded": True,
+                "fix_applied": applied_fix_count > 0,
+            }
+            break
+
+        # 通过 → 结束闭环
+        if critique.get("passed"):
+            quality = {
+                "score": critique.get("score", CRITIC_PASS_SCORE),
+                "passed": True,
+                "issues": critique.get("issues") or [],
+                "summary": critique.get("summary") or "修订复核通过",
+                "rounds": applied_fix_count + 1,
+                "fix_applied": applied_fix_count > 0,
+            }
+            break
+
+        # 未通过：尝试精确 fix（CriticFixSchema → ReviseDiff，原子应用）
+        fix = critique.get("fix")
+        if not fix or not (fix.get("actions") or []):
+            # 大改/纯警告（无精确 fix）→ 停在此轮；有界，不再重复复审
+            quality = {
+                "score": critique.get("score", 0),
+                "passed": False,
+                "issues": critique.get("issues") or [],
+                "summary": critique.get("summary") or "修订复核未通过（无精确修正建议）",
+                "rounds": applied_fix_count + 1,
+                "fix_applied": applied_fix_count > 0,
+            }
+            break
+
+        fix_diff = critic_fix_to_revise_diff(fix)
+        fix_actions = fix_diff.get("actions") or []
+        signature = tuple(
+            (a.get("op"), a.get("day_number"), str(a.get("target") or {}), str(a.get("fields") or {}))
+            for a in fix_actions
+        )
+        # 停滞检测：本轮 fix 与上一轮完全相同 → 再应用也无效，强制跳出
+        if signature and signature in last_fix_actions:
+            quality = {
+                "score": critique.get("score", 0),
+                "passed": False,
+                "issues": critique.get("issues") or [],
+                "summary": "修订复核未通过（修正建议未产生变化，已停止重试）",
+                "rounds": applied_fix_count + 1,
+                "fix_applied": applied_fix_count > 0,
+            }
+            break
+        last_fix_actions.append(signature)
+
+        # fix 应用（原子预检失败 → 停在此轮）
+        try:
+            _apply_diff(trip, fix_diff)
+        except AppError:
+            quality = {
+                "score": critique.get("score", 0),
+                "passed": False,
+                "issues": critique.get("issues") or [],
+                "summary": "修订复核未通过（精确修正无法应用）",
+                "rounds": applied_fix_count + 1,
+                "fix_applied": applied_fix_count > 0,
+            }
+            break
+
+        # 自驾约束门：修正后若产生超距/超时 → 回滚本轮 fix 并停止（不引入新问题）
+        try:
+            await _enforce_driving_constraints(trip)
+        except AppError as exc:
+            await db.rollback()  # 丢弃未提交的 fix（trip 回到主修订状态）
+            quality = {
+                "score": critique.get("score", 0),
+                "passed": False,
+                "issues": critique.get("issues") or [],
+                "summary": f"修订复核未通过：精确修正被自驾约束拒绝（{getattr(exc, 'detail', exc)}）",
+                "rounds": applied_fix_count + 1,
+                "fix_applied": False,
+            }
+            break
+
+        # fix 落库（独立小事务）
+        applied_fix_count += 1
+        await db.flush()
+        await _recompute_budget(db, trip)
+        await db.commit()
+
+        # 修正应用成功 → 下一轮复审（重新加载修正后的行程）
+        continue
+
+    return quality
 
 
 # ── 内部：加载 / 快照 ──────────────────────────────────────
@@ -247,10 +444,16 @@ def _find_stop(day: TripDay, target: dict) -> Stop | None:
 
 def _normalize_fields(fields: dict[str, Any]) -> dict[str, Any]:
     """站点字段宽容归一化：容忍 LLM 输出别名（duration_minutes），映射为
-    Stop 模型字段 estimated_duration_minutes；未知字段保持不变（由白名单把关）。"""
+    Stop 模型字段 estimated_duration_minutes；未知字段保持不变（由白名单把关）。
+
+    也支持 Critic fix 的 plan JSON 名（type → stop_type），使修订复审
+    闭环的修正 diff 与主修订 diff 走同一套字段校验。
+    """
     out = dict(fields)
     if "duration_minutes" in out and "estimated_duration_minutes" not in out:
         out["estimated_duration_minutes"] = out.pop("duration_minutes")
+    if "type" in out and "stop_type" not in out:
+        out["stop_type"] = out.pop("type")
     return out
 
 

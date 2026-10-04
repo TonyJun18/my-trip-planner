@@ -24,6 +24,7 @@ from app.schemas import (
     StopOrderIn,
     StopOut,
     StopUpdate,
+    TripBudgetOut,
     TripCreate,
     TripListOut,
     TripOut,
@@ -55,9 +56,14 @@ async def get_shared_trip(
     返回 TripOut + budget 汇总（compute_budget），分享页前端无需本地重复计算。
     """
     trip = await trip_service.get_trip_by_share_token(db, token)
+    # 分享 token 已校验访问权：直接按 trip_id 查 plan（不做 owner 过滤）
+    plan = await trip_service.get_plan_by_trip_id(db, trip.id)
+    plan_data = await trip_service.ensure_plan_transport(db, trip, plan)
     return SharedTripOut(
         **TripOut.model_validate(trip).model_dump(),
-        budget_summary=budget_service.compute_budget(trip),
+        budget_summary=TripBudgetOut.model_validate(
+            budget_service.compute_budget(trip, plan_data=plan_data)
+        ),
     )
 
 
@@ -127,9 +133,14 @@ async def get_editable_trip(
 ) -> SharedTripOut:
     """编辑令牌同时授予只读权限：受邀者看到与只读分享相同的行程内容。"""
     trip = await trip_service.get_trip_by_edit_token(db, token)
+    # 编辑 token 已校验访问权：直接按 trip_id 查 plan（不做 owner 过滤）
+    plan = await trip_service.get_plan_by_trip_id(db, trip.id)
+    plan_data = await trip_service.ensure_plan_transport(db, trip, plan)
     return SharedTripOut(
         **TripOut.model_validate(trip).model_dump(),
-        budget_summary=budget_service.compute_budget(trip),
+        budget_summary=TripBudgetOut.model_validate(
+            budget_service.compute_budget(trip, plan_data=plan_data)
+        ),
     )
 
 
@@ -515,7 +526,9 @@ async def get_budget(
     user: User = Depends(get_current_user),
 ) -> dict:
     trip = await trip_service.get_trip(db, trip_id, owner=user.id)
-    return budget_service.compute_budget(trip)
+    plan = await trip_service.get_plan(db, trip_id, owner=user.id)
+    plan_data = await trip_service.ensure_plan_transport(db, trip, plan)
+    return budget_service.compute_budget(trip, plan_data=plan_data)
 
 
 @router.get("/{trip_id}/plan", summary="行程完整方案（Agent 输出快照）")
@@ -532,7 +545,8 @@ async def get_trip_plan(
     plan = await trip_service.get_plan(db, trip_id, owner=user.id)
     if plan is None:
         raise NotFoundError("该行程还没有 AI 规划方案", code="trip_plan_not_found")
-    return plan.plan_data
+    trip = await trip_service.get_trip(db, trip_id, owner=user.id)
+    return await trip_service.ensure_plan_transport(db, trip, plan)
 
 
 @router.post("/{trip_id}/revise", response_model=ReviseOut, summary="对话式修订行程（AI 生成 diff，代码执行）")

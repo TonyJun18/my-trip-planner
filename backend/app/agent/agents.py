@@ -405,6 +405,23 @@ def _profile_text(request: dict[str, Any]) -> str:
     return "【跨会话用户画像】（来自该用户历史偏好，规划时请优先尊重；与本次请求冲突时以本次请求为准）\n" + profile.strip()
 
 
+def _trip_type_hint(trip_type: str) -> str:
+    """出行性质 → 规划约束提示（确定性规则，仅指导 LLM 侧重点，不硬编码站点）。
+
+    未知/自定义性质时给出通用基调，避免误导 LLM。
+    """
+    hints = {
+        "商务出差": "节奏紧凑高效，优先商务区/交通枢纽周边酒店与符合工作行程的餐饮；"
+                    "保留必要的会务/休息时间；可含少量当地特色体验但不宜拖沓。",
+        "亲子出游": "节奏放缓，优先亲子友好景点与家庭房酒店；每日站点不宜过多；"
+                    "餐饮选择适合儿童；预留机动时间。",
+        "蜜月度假": "浪漫氛围优先，节奏松弛，住宿与景点侧重私密/景观/纪念意义；少赶路多体验。",
+        "探亲访友": "以亲友相聚时间为中心，住宿建议靠近亲友住处；景点安排灵活，"
+                    "优先本地人推荐与团聚便利的餐饮。",
+    }
+    return hints.get(trip_type, "以用户整体需求为基调合理安排节奏、住宿与景点，行程务实可行。")
+
+
 def _collect_list_output(state: dict[str, Any]) -> dict[str, Any] | None:
     """（列表输出型 Agent 共用）从消息历史取出工具结果并解析为统一 POI 列表。"""
     # agent 内部已把 ToolMessage 写入 messages；取最后一个工具结果
@@ -879,11 +896,20 @@ def _planner_user_text(request: dict[str, Any], materials: dict[str, Any]) -> st
     """
     lines: list[str] = []
     lines.append("【用户原始需求】")
+    departure = request.get("departure") or ""
+    dep_text = f"出发地：{departure}；" if departure else ""
+    # 出行性质（trip_type）：影响节奏/住宿/景点取舍；无则按默认休闲理解
+    trip_type = (request.get("trip_type") or "").strip()
+    tt_text = f"出行性质：{trip_type}；" if trip_type else "出行性质：休闲旅游（未指定）；"
     lines.append(
-        f"目的地：{request.get('destination', '')}；日期：{request.get('start_date', '')} 至 {request.get('end_date', '')}；"
+        f"{dep_text}目的地：{request.get('destination', '')}；日期：{request.get('start_date', '')} 至 {request.get('end_date', '')}；"
         f"人数：{request.get('travelers', 1)}；预算：{request.get('budget', '未指定')} 元；"
-        f"偏好：{', '.join(request.get('preferences') or []) or '无'}"
+        f"{tt_text}偏好：{', '.join(request.get('preferences') or []) or '无'}"
     )
+    # 出行性质 → 规划约束（仅在有明确性质时追加；让 LLM 更易遵循）
+    if trip_type:
+        hint = _trip_type_hint(trip_type)
+        lines.append(f"【出行性质约束】{hint}")
 
     # 主动提问 Q&A（需求澄清）：有回答才注入，未回答的问题忽略
     qa_text = _questions_text(request)
@@ -1024,6 +1050,109 @@ def _pass_critique(summary: str) -> dict[str, Any]:
         "passed": True,
         "issues": [],
         "summary": summary,
+    }
+
+
+# ═══════════════════════════════════════════════════════════
+#  ReviseCriticAgent —— 修订复核质检专家（task-revise-qa-loop 新增）
+# ═══════════════════════════════════════════════════════════
+# 与 TravelCriticAgent 同一 CritiqueSchema 契约，但语境是「修订后的行程」：
+# 审查重点 = 本次修改是否忠实满足用户请求 + 是否引入新的业务问题。
+# 未通过且问题可精确修复时附带 fix（CriticFixSchema），修订闭环把它转成
+# 可执行 diff 应用后继续下一轮复审（Evaluator-Optimizer 循环）。
+REVISE_CRITIC_SYSTEM_PROMPT = """你是旅行规划团队中的【行程质检专家·修订复核】。你的唯一任务：在用户对已生成行程发起一次修订后，复核修订结果。
+
+你将收到：
+1. 用户原始需求（目的地 / 预算）
+2. 用户本次修订请求（用户想让 AI 改什么）
+3. AI 已执行的修订摘要（diff 的 summary）
+4. 修订后的完整行程 JSON
+
+审查维度（按重要性排序）：
+1. 修订是否忠实满足用户请求（最重要）：用户要改的改了吗？用户没让动的被无故改了吗？
+2. 修订是否引入新的业务合理性问题（schedule 日程 / budget 预算 / geography 地理 / logistics 完整性）
+3. 修订后行程是否自相矛盾
+
+输出规则：
+1. 只输出一个 JSON 对象，不要任何多余文字（不要 ``` 代码块）
+2. JSON 结构与质检报告一致：{"score": 0-100, "passed": bool, "issues": [...], "summary": "...", "fix": {...}}
+3. passed=false 且问题可通过少数精确动作修复 → 必须给出 fix（1-3 个动作；op 语义与修订一致：replace=改站点字段 / add=新增站点（fields 带 name+type）/ remove=删除 / reorder=调序，type 只能 attraction|food|hotel，只对真实存在的站点操作）
+4. 纯警告/信息类问题、或需要大改（>3 个动作）→ 省略 fix 字段
+5. score >= 80 为 passed=true；issue severity：critical=必须修改 / warning=建议修改 / info=提示
+6. 只审查实际看到的问题；没有就列空 issues，不要为了凑数编造问题"""
+
+
+async def revise_critic_agent(
+    request: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    provider: str = "auto",
+    max_corrections: int = 2,
+) -> dict[str, Any]:
+    """复核一次修订后的行程，输出结构化质检报告（可带精确 fix）。
+
+    与 ``critic_agent`` 同契约（CritiqueSchema 强校验 + 失败降级放行），
+    但请求语境包含「用户本次修订请求 + 已执行修订摘要」，让质检能判断
+    「修订是否忠实满足用户意图」。调用方（revise_service 复审闭环）承诺
+    永远得到可消费报告——质检绝不阻断已落库的合法修订。
+    """
+    prov = get_provider(provider)
+    messages: list[Any] = [SystemMessage(content=REVISE_CRITIC_SYSTEM_PROMPT)]
+    critic_req = (
+        f"【用户原始需求】目的地：{request.get('destination', '')}；"
+        f"人数：{request.get('travelers', 1)}；预算：{request.get('budget', '未指定')} 元；"
+        f"偏好：{', '.join(request.get('preferences') or []) or '无'}"
+    )
+    if request.get("message"):
+        critic_req += f"\n【用户本次修订请求】{request['message']}"
+    if request.get("revise_summary"):
+        critic_req += f"\n【AI 已执行的修订摘要】{request['revise_summary']}"
+    messages.append(
+        HumanMessage(
+            content=(
+                f"{critic_req}\n\n"
+                f"【修订后行程 JSON】\n{json.dumps(plan, ensure_ascii=False)[:6000]}\n\n"
+                "请审查并输出质检报告 JSON。"
+            )
+        )
+    )
+
+    corrections = 0
+    last_error: str | None = None
+    for _ in range(max_corrections + 1):
+        try:
+            # 显式传 providers=[prov]：与 critic_agent 一致，不参与自动兜底链
+            response = await invoke_with_resilience(prov, messages, providers=[prov])
+        except Exception as exc:  # noqa: BLE001 — 质检失败降级放行，绝不阻断主流程
+            logger.warning("ReviseCritic 调用失败，降级放行: %s", exc)
+            return {
+                "status": "degraded",
+                "critique": _pass_critique("修订复核调用失败，按通过处理"),
+                "corrections": corrections,
+            }
+        content = str(getattr(response, "content", ""))
+        parsed = _extract_json(content)
+        if not isinstance(parsed, dict):
+            corrections += 1
+            last_error = "未找到合法 JSON"
+            messages.append(SystemMessage(content="你的输出中未找到合法的质检 JSON。请只输出一个 JSON 对象，不要解释。"))
+            continue
+        try:
+            clean = validate_critique(parsed)
+            # 归一化 passed：以 score 为准（>=80），避免 LLM 自相矛盾
+            clean["passed"] = clean["score"] >= CRITIC_PASS_SCORE
+            return {"status": "completed", "critique": clean, "corrections": corrections}
+        except Exception as exc:  # noqa: BLE001 — Pydantic ValidationError
+            corrections += 1
+            last_error = str(exc)
+            logger.info("ReviseCritic 校验失败 (correction=%d): %s", corrections, exc)
+            messages.append(SystemMessage(content=_validation_feedback(exc)))
+
+    logger.warning("ReviseCritic 多次校验失败，降级放行: %s", last_error)
+    return {
+        "status": "degraded",
+        "critique": _pass_critique("修订复核报告生成失败，按通过处理"),
+        "corrections": corrections,
     }
 
 
@@ -1323,9 +1452,19 @@ async def run_planning_agents(
 
         candidate = planner["plan"]
 
-        # 预算校准前置：先以真实 stops 计算预算（覆盖 LLM 估值），再交给质检
+        # 预算校准前置：先以真实 stops 计算预算（覆盖 LLM 估值），再交给质检；
+        # 若采集阶段有大交通参考价，则把「往返参考价」并入 by_type.transport 与总额，
+        # 使 plan.budget 与详情页 budget API（compute_budget(plan_data=...)）口径一致。
         all_stops = [s for d in candidate.get("days", []) for s in d.get("stops", [])]
         candidate["budget"] = agent_tools.compute_budget(all_stops)
+        from app.services.budget_service import transport_round_trip_cost
+
+        transport_cost = transport_round_trip_cost(t_res.get("transport") if isinstance(t_res, dict) else None)
+        if transport_cost is not None:
+            candidate["budget"]["by_type"]["transport"] = transport_cost
+            candidate["budget"]["total_estimated"] = round(
+                float(candidate["budget"].get("total_estimated") or 0.0) + transport_cost, 2
+            )
         candidate["hotels"] = _normalize_hotels(materials.get("hotels") or [])
 
         # 行程草案制品（每代都发；前端「编排阶段」实时展示天数/主题）
@@ -1426,6 +1565,13 @@ async def run_planning_agents(
 
     # 质检摘要注入 plan.quality（随 plan JSON 落库，前端可直接消费）
     plan["quality"] = _plan_quality(review_history, review_rounds, max_review_rounds)
+    # ── 采集产物回填（task: 详情页大交通/折扣）──────────────────
+    # 采集阶段的 TransportAgent / DiscountAgent 产物只出现在 materials，
+    # 若不回填 plan，落库后的 plan_data.transport / .discount_rules 恒为
+    # null / []（PlanSchema 默认值），详情页 TripServicing 因 options 为空
+    # 直接不渲染大交通卡片。回填后前端零改动即恢复展示；预算口径依赖此数据。
+    plan["transport"] = (t_res.get("transport") or {}) if isinstance(t_res, dict) else None
+    plan["discount_rules"] = (d_res.get("rules") or []) if isinstance(d_res, dict) else []
     # 自驾校验报告注入 plan.driving（最终一代；前端可展示里程/时长/折返告警）
     if driving_reports:
         final_driving = driving_reports[-1]

@@ -61,9 +61,10 @@ const typeLabel = computed(() => ({
   attraction: t('common.typeAttraction'),
   food: t('common.typeFood'),
   hotel: t('common.typeHotel'),
+  transport: t('common.typeTransport'),
 }))
-const typeColor = { attraction: 'var(--brand)', food: '#c2410c', hotel: '#0d8a5f' }
-const typeEmoji = { attraction: '🏞️', food: '🍜', hotel: '🏨' }
+const typeColor = { attraction: 'var(--brand)', food: '#c2410c', hotel: '#0d8a5f', transport: '#5b6ee1' }
+const typeEmoji = { attraction: '🏞️', food: '🍜', hotel: '🏨', transport: '🚄' }
 
 // ── 预算：公开分享接口（GET /trips/share/{token}）返回 budget_summary 汇总，无需本地重复计算 ──
 const budget = computed(() => trip.value?.budget_summary || null)
@@ -264,7 +265,7 @@ onMounted(load)
               </div>
             </div>
             <div class="budget-lines">
-              <div v-for="(label, k) in { attraction: $t('common.typeAttraction'), food: $t('common.typeFood'), hotel: $t('common.typeHotel') }" :key="k" class="budget-line">
+              <div v-for="(label, k) in { attraction: $t('common.typeAttraction'), food: $t('common.typeFood'), hotel: $t('common.typeHotel'), transport: $t('common.typeTransport') }" :key="k" class="budget-line">
                 <span class="budget-dot" :style="{ background: typeColor[k] }" />
                 <span>{{ label }}</span>
                 <span class="budget-line-val">¥{{ budget.by_type?.[k] || 0 }}</span>

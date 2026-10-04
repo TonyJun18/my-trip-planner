@@ -9,9 +9,47 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundError
+from app.core.logging import get_logger
 from app.models import Stop, Trip, TripDay, TripPlan
 from app.schemas import DayIn, StopIn, StopUpdate, TripCreate, TripUpdate
 from app.services._common import TRIP_LOADS as _TRIP_LOADS
+
+logger = get_logger(__name__)
+
+
+async def _record_behavior_safely(
+    db: AsyncSession,
+    *,
+    user_id: str | None,
+    signal_kind: str,
+    destination: str,
+    actions: list[dict],
+    summary: str,
+) -> None:
+    """行为记忆回写（task-travel-memory-feedback 触点，fire-and-forget）。
+
+    主操作已在调用方 flush；这里先 commit 提交主操作（API 层后续 commit
+    为 no-op），再用独立小事务写行为记忆——记忆写失败仅回滚记忆本身，
+    绝不阻断（或回滚）主流程。
+    """
+    if not user_id:
+        return
+    try:
+        await db.commit()  # 提交主操作（已 flush）
+        from app.services import profile_service
+
+        await profile_service._record_behavior(
+            db,
+            user_id=user_id,
+            signal_kind=signal_kind,
+            destination=destination,
+            actions=actions,
+            summary=summary,
+        )
+        await db.commit()  # 独立小事务：只提交行为记忆
+    except Exception:  # noqa: BLE001 — 行为记忆是可丢弃的，绝不阻断主流程
+        logger.debug("行为记忆回写失败（已忽略）", exc_info=True)
+        await db.rollback()
 
 
 def _owner_expr(owner: str | None):
@@ -53,8 +91,66 @@ async def get_trip(db: AsyncSession, trip_id: str, *, owner: str | None = None) 
 async def get_plan(db: AsyncSession, trip_id: str, *, owner: str | None = None) -> TripPlan | None:
     """查询行程的 AI 规划方案快照（owner 隔离）。"""
     await _load_trip(db, trip_id, owner=owner)  # 校验行程存在 + 归属
+    return await get_plan_by_trip_id(db, trip_id)
+
+
+async def get_plan_by_trip_id(db: AsyncSession, trip_id: str) -> TripPlan | None:
+    """按 trip_id 直接查 AI 规划方案快照（不做 owner 校验）。
+
+    用于已通过「分享/编辑令牌」校验访问权的场景（trip 本身已确认可见），
+    避免再用 owner=None 过滤导致持有真实 owner 的分享行程查不到。
+    """
     stmt = select(TripPlan).where(TripPlan.trip_id == trip_id).order_by(TripPlan.created_at.desc())
     return (await db.execute(stmt)).scalars().first()
+
+
+async def ensure_plan_transport(
+    db: AsyncSession, trip: Trip, plan: TripPlan | None,
+) -> dict:
+    """读路径惰性补全：老行程 plan.transport 为空时，轻量生成参考方案并写回。
+
+    背景：transport/discount_rules 回填只在「新规划」时发生；此功能上线前落库的
+    行程 plan_data.transport 恒为 null/空，详情页/分享页看不到大交通、预算也不算。
+    本函数在读取 plan 时检测缺省并触发一次轻量补全（高德驾车 + 规则参考价，
+    不调用当前网络不可达的慢速 Tavily），成功后写回 plan_data（请求结束时由
+    session 依赖提交）；失败静默返回原数据，绝不阻断读取。
+
+    返回补全后的 plan_data。
+    """
+    if plan is None:
+        return {}
+    data = plan.plan_data or {}
+    transport = data.get("transport")
+    if isinstance(transport, dict) and transport.get("options"):
+        return data  # 已有方案，无需补全
+    departure = (trip.departure or "").strip()
+    destination = (trip.destination or "").strip()
+    if not departure or not destination:
+        return data  # 缺出发地/目的地 → 无法生成，保持原样
+    try:
+        from app.agent import tools as agent_tools
+        from app.services.budget_service import transport_round_trip_cost
+
+        fallback = await agent_tools.fetch_transport_fallback(
+            departure, destination, timeout=8,
+        )
+        if not fallback.get("options"):
+            return data
+        data["transport"] = fallback
+        # 同步预算口径：往返参考价并入 by_type.transport 与总额（与 compute_budget 同口径）
+        tcost = transport_round_trip_cost(data)
+        if tcost is not None:
+            budget = data.setdefault("budget", {})
+            by_type = budget.setdefault("by_type", {})
+            by_type["transport"] = tcost
+            budget["total_estimated"] = round(
+                float(budget.get("total_estimated") or 0.0) + tcost, 2
+            )
+        plan.plan_data = data
+        logger.info("读路径交通补全 trip=%s options=%d", trip.id, fallback.get("count", 0))
+    except Exception as exc:  # noqa: BLE001 — 补全失败绝不阻断读取
+        logger.debug("读路径交通补全失败 trip=%s err=%s", trip.id, exc)
+    return data
 
 
 # ── 分享（只读链接） ────────────────────────────────────────
@@ -160,9 +256,20 @@ async def delete_stop(db: AsyncSession, stop_id: str, *, owner: str | None = Non
     stop = await db.get(Stop, stop_id)
     if stop is None:
         raise NotFoundError("站点不存在", code="stop_not_found")
-    await _load_day_for_owner(db, stop.day_id, owner=owner)
+    day = await _load_day_for_owner(db, stop.day_id, owner=owner)
+    name = stop.name
     await db.delete(stop)
     await db.flush()
+    # 行为记忆触点：手动删除站点（显式加载 Trip，避免 lazy load MissingGreenlet）
+    trip = await db.get(Trip, day.trip_id)
+    await _record_behavior_safely(
+        db,
+        user_id=owner,
+        signal_kind="manual_remove",
+        destination=trip.destination if trip else "",
+        actions=[{"op": "remove", "target": {"name": name}}],
+        summary=f"删除站点：{name}",
+    )
 
 
 async def add_day(db: AsyncSession, trip_id: str, data: DayIn, *, owner: str | None = None) -> TripDay:
@@ -191,6 +298,16 @@ async def add_stop(db: AsyncSession, day_id: str, data: StopIn, *, owner: str | 
     db.add(stop)
     await db.flush()
     await db.refresh(stop)
+    # 行为记忆触点：手动新增站点（显式加载 Trip，避免 lazy load 在 async 下 MissingGreenlet）
+    trip = await db.get(Trip, day.trip_id)
+    await _record_behavior_safely(
+        db,
+        user_id=owner,
+        signal_kind="manual_add",
+        destination=trip.destination if trip else "",
+        actions=[{"op": "add", "fields": {"name": stop.name, "type": stop.stop_type}}],
+        summary=f"新增站点：{stop.name}",
+    )
     return stop
 
 
@@ -216,6 +333,17 @@ async def update_stop(
         setattr(stop, field, value)
     await db.flush()
     await db.refresh(stop)
+    # 行为记忆触点：手动编辑站点（显式加载 Trip，避免 lazy load MissingGreenlet）
+    trip = await db.get(Trip, day.trip_id)
+    changed = data.model_dump(exclude_unset=True)
+    await _record_behavior_safely(
+        db,
+        user_id=owner,
+        signal_kind="manual_edit",
+        destination=trip.destination if trip else "",
+        actions=[{"op": "replace", "target": {"name": stop.name}, "fields": changed}],
+        summary=f"编辑站点：{stop.name}" + (f"（{', '.join(changed.keys())}）" if changed else ""),
+    )
     return stop
 
 

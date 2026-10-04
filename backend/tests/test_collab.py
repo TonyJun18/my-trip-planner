@@ -316,3 +316,126 @@ async def test_invited_edit_validation(client, auth_user):
     resp = await client.patch(f"/api/v1/trips/edit/{edit_token}/stops/{stop1}", json={"estimated_cost": 999})
     assert resp.status_code == 200
     assert resp.json()["estimated_cost"] == 0.0  # 保持原值，未被改成 999
+
+
+# ── 渐进式推进（consensus）：已投票成员 ≥ 50% 即「小组一致」，未响应不阻塞 ──
+async def _make_trip_with_travelers(client, headers, travelers: int) -> tuple[str, str, list[str]]:
+    """建 travelers 人行程 + 站点 + 分享 token → (trip_id, token, stop_id)。"""
+    from datetime import date
+
+    today = date.today()
+    resp = await client.post("/api/v1/trips", json={
+        "title": f"{travelers}人协作行程", "destination": "东京",
+        "start_date": today.isoformat(), "end_date": today.isoformat(),
+        "travelers": travelers, "budget": 10000,
+    }, headers=headers)
+    assert resp.status_code == 201, resp.text
+    trip_id = resp.json()["id"]
+
+    resp = await client.post(f"/api/v1/trips/{trip_id}/days", json={"day_number": 1}, headers=headers)
+    day_id = resp.json()["id"]
+    stop_ids = []
+    for name in ("晴空塔", "浅草寺"):
+        resp = await client.post(f"/api/v1/trips/days/{day_id}/stops", json={
+            "name": name, "stop_type": "attraction",
+        }, headers=headers)
+        assert resp.status_code == 201, resp.text
+        stop_ids.append(resp.json()["id"])
+
+    resp = await client.post(f"/api/v1/trips/{trip_id}/share", headers=headers)
+    token = resp.json()["share_token"]
+    return trip_id, token, stop_ids
+
+
+async def test_consensus_half_majority_progressive(client, auth_user):
+    """渐进式推进：3 人行 → 2 人投赞成即 consensus=True；未响应第 3 人不阻塞。"""
+    _, headers = auth_user
+    _, token, stop_ids = await _make_trip_with_travelers(client, headers, travelers=3)
+    stop_a, stop_b = stop_ids
+
+    # 成员 A 投 👍（UA=member-a）
+    resp = await client.post(
+        f"/api/v1/trips/share/{token}/votes/{stop_a}", json={"value": 1},
+        headers={"User-Agent": "member-a"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["up"] == 1
+    assert body["consensus"] is False  # 1/3 < 50%，未到阈值
+
+    # 成员 B 投 👍（UA=member-b）→ 2/3 ≥ 50% → consensus=True
+    resp = await client.post(
+        f"/api/v1/trips/share/{token}/votes/{stop_a}", json={"value": 1},
+        headers={"User-Agent": "member-b"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["up"] == 2
+    assert body["consensus"] is True
+
+    # 汇总接口同样带 consensus 标记（未投票的 stop_b 本就不在汇总里 → 不出现）
+    resp = await client.get(f"/api/v1/trips/share/{token}/votes", headers={"User-Agent": "member-a"})
+    assert resp.status_code == 200
+    votes = resp.json()
+    assert votes[stop_a]["consensus"] is True
+    assert stop_b not in votes
+
+
+async def test_consensus_threshold_ceil_and_solo(client, auth_user):
+    """边界：4 人行 → 2 人即可；单人行程永不标记 consensus。"""
+    _, headers = auth_user
+    _, token4, stop_ids4 = await _make_trip_with_travelers(client, headers, travelers=4)
+    stop_a = stop_ids4[0]
+    # 2/4 = 50% → ceil(4/2)=2 → consensus=True
+    for ua in ("m1", "m2"):
+        resp = await client.post(
+            f"/api/v1/trips/share/{token4}/votes/{stop_a}", json={"value": 1},
+            headers={"User-Agent": ua},
+        )
+        assert resp.status_code == 200
+    resp = await client.get(f"/api/v1/trips/share/{token4}/votes")
+    assert resp.json()[stop_a]["consensus"] is True
+
+    # 单人行程：travelers=1 → 不启用共识（threshold=0）→ 永远 False
+    _, token1, stop_ids1 = await _make_trip_with_travelers(client, headers, travelers=1)
+    resp = await client.post(
+        f"/api/v1/trips/share/{token1}/votes/{stop_ids1[0]}", json={"value": 1},
+        headers={"User-Agent": "solo"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["consensus"] is False
+
+
+async def test_consensus_flip_removes_progress(client, auth_user):
+    """翻转投票：过半但赞成不占多数 → 不标记；多数反对则标记回落。"""
+    _, headers = auth_user
+    _, token, stop_ids = await _make_trip_with_travelers(client, headers, travelers=4)
+    stop_a = stop_ids[0]
+
+    # 2 人 👍 → consensus=True（2/4 达标且赞成多数）
+    for ua in ("flip-a", "flip-b"):
+        resp = await client.post(
+            f"/api/v1/trips/share/{token}/votes/{stop_a}", json={"value": 1},
+            headers={"User-Agent": ua},
+        )
+        assert resp.status_code == 200
+    assert resp.json()["consensus"] is True
+
+    # 成员 flip-c 投 👎 → 2👍1👎：表态 3/4 ≥50% 但赞成 2 > 1 仍多数 → True
+    resp = await client.post(
+        f"/api/v1/trips/share/{token}/votes/{stop_a}", json={"value": -1},
+        headers={"User-Agent": "flip-c"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["up"] == 2 and resp.json()["down"] == 1
+    assert resp.json()["consensus"] is True
+
+    # 成员 flip-a 翻转成 👎 → 1👍2👎：赞成不再多数 → consensus=False
+    resp = await client.post(
+        f"/api/v1/trips/share/{token}/votes/{stop_a}", json={"value": -1},
+        headers={"User-Agent": "flip-a"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["up"] == 1 and body["down"] == 2
+    assert body["consensus"] is False

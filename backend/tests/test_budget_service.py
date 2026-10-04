@@ -183,3 +183,81 @@ def test_compute_budget_travelers_zero_is_single():
     trip2.travelers = 0
     b2 = compute_budget(trip2)
     assert b2["per_person_total"] == 100.0
+
+
+# ── 大交通往返预算（task: 详情页预算口径） ─────────────────────
+def _plan_with_transport(price_range: list[float] | None) -> dict:
+    return {
+        "transport": {
+            "from": "上海",
+            "to": "杭州",
+            "options": [
+                {
+                    "mode": "train",
+                    "duration_minutes": 60,
+                    "price_range": price_range,
+                    "confidence": 0.7,
+                    "source": "tavily",
+                }
+            ],
+        }
+    }
+
+
+def test_compute_budget_includes_transport_round_trip():
+    """plan_data.transport 有参考价 → by_type.transport = 单程最低 ×2，总额含往返。"""
+    from app.services.budget_service import compute_budget
+
+    trip = _fake_trip(
+        stops=[
+            {"name": "西湖", "stop_type": "attraction", "estimated_cost": 50.0},
+            {"name": "楼外楼", "stop_type": "food", "estimated_cost": 120.0},
+        ]
+    )
+    budget = compute_budget(trip, plan_data=_plan_with_transport([72.5, 118.0]))
+    # 单程最低 72.5 ×2 = 145；总额 = 50 + 120 + 145 = 315
+    assert budget["by_type"]["transport"] == 145.0
+    assert budget["total_estimated"] == 315.0
+    assert budget["estimate_basis"]["transport"]["source"] == "transport_agent_collected"
+
+
+def test_compute_budget_transport_daily_average_excludes_one_off():
+    """日均不含一次性往返大交通（大交通不是每天发生），总额含。"""
+    from app.services.budget_service import compute_budget
+
+    trip = _fake_trip(
+        stops=[
+            {"name": "西湖", "stop_type": "attraction", "estimated_cost": 90.0},
+            {"name": "楼外楼", "stop_type": "food", "estimated_cost": 120.0},
+        ]
+    )
+    budget = compute_budget(trip, plan_data=_plan_with_transport([100.0, 200.0]))
+    # 总额 = 90 + 120 + 200 = 410；日均 = (90+120)/3 = 70（不含 200 往返）
+    assert budget["total_estimated"] == 410.0
+    assert budget["daily_average"] == 70.0
+    assert budget["per_person_daily"] == 70.0
+
+
+def test_compute_budget_transport_missing_price_no_fabrication():
+    """transport 无参考价（price_range 缺失）→ 不编造，transport 键不出现。"""
+    from app.services.budget_service import compute_budget
+
+    trip = _fake_trip(
+        stops=[{"name": "西湖", "stop_type": "attraction", "estimated_cost": 50.0}]
+    )
+    budget = compute_budget(trip, plan_data=_plan_with_transport(None))
+    assert "transport" not in budget["by_type"]
+    assert budget["total_estimated"] == 50.0
+    assert "transport" not in (budget.get("estimate_basis") or {})
+
+
+def test_compute_budget_transport_plan_data_none():
+    """无 plan_data（旧行程/无 AI 方案）→ 与既有行为一致，不报错不加项。"""
+    from app.services.budget_service import compute_budget
+
+    trip = _fake_trip(
+        stops=[{"name": "西湖", "stop_type": "attraction", "estimated_cost": 50.0}]
+    )
+    budget = compute_budget(trip)  # 不传 plan_data
+    assert "transport" not in budget["by_type"]
+    assert budget["total_estimated"] == 50.0

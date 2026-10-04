@@ -13,6 +13,8 @@ import json
 
 import pytest
 
+from app.agent import agents
+from app.schemas import PlanRequest
 from app.services import discount_service, servicing_service
 from app.services.checkin_service import generate_checkin_guide
 from app.services.driving_service import leg_distance_km
@@ -99,6 +101,26 @@ class TestCheckinGuide:
         plan = {"destination": "成都"}
         guide = await generate_checkin_guide(plan)
         assert "成都" in guide["hotel_name"]
+        assert guide["source"] == "template"
+
+    async def test_arranged_hotel_wins_over_candidates(self, monkeypatch):
+        """已安排的酒店（days 中 type=hotel 的站点）优先于候选列表 hotels。"""
+        # 强制模板路径（mock LLM），测试确定性、不依赖真实模型
+        async def _boom(*a, **k):
+            raise RuntimeError("llm off")
+
+        monkeypatch.setattr("app.agent.providers.invoke_with_resilience", _boom)
+        plan = {
+            "destination": "杭州",
+            # 候选列表第一家与行程内实际安排的酒店不同
+            "hotels": [{"name": "候选A酒店", "address": "候选A地址"}],
+            "days": [{"day_number": 1, "stops": [
+                {"name": "西湖", "type": "attraction"},
+                {"name": "实际入住B酒店", "type": "hotel", "lat": 30.2, "lng": 120.1},
+            ]}],
+        }
+        guide = await generate_checkin_guide(plan, provider="deepseek")
+        assert guide["hotel_name"] == "实际入住B酒店"
         assert guide["source"] == "template"
 
     def test_docs_do_not_contain_credential_numbers(self, monkeypatch):
@@ -413,3 +435,164 @@ class TestLegDistance:
 
     def test_missing_coords_none(self):
         assert leg_distance_km({"lat": None, "lng": None}, {"lat": 30.0, "lng": 120.0}) is None
+
+
+# ── 大交通确定性参考价兜底（方案1：外部源不可达时仍产出可审计参考价） ──
+class TestRuleTransportFallback:
+    async def test_rule_options_produce_train_price(self, monkeypatch):
+        """geocode 成功 → 产出高铁参考价（按距离×费率），标注 source=rule。"""
+        from app.agent import tools
+
+        async def _fake_geocode(city: str, **kw):
+            if city == "杭州":
+                return {"lat": 30.246, "lng": 120.21, "source": "amap"}
+            return {"lat": 31.23, "lng": 121.47, "source": "amap"}  # 上海
+
+        monkeypatch.setattr(tools, "_geocode_city", _fake_geocode)
+        items = await tools._round_trip_rule_options("杭州", "上海")
+        assert items, "应有规则兜底条目"
+        train = next(i for i in items if i["mode"] == "train")
+        assert train["source"] == "rule"
+        assert train["confidence"] == 0.5
+        assert len(train["price_range"]) == 2
+        assert train["price_range"][0] > 0  # 距离费率 → 正价格
+        assert "非实时" in train["note"]  # 诚实标注口径
+        # 距离约 160km → 高铁费率 0.45 → 区间合理（不夸张）
+        assert 30 < train["price_range"][0] < 200
+
+    async def test_rule_options_flight_only_when_far(self, monkeypatch):
+        """近距不产航班；远距（≥300km）产航班。"""
+        from app.agent import tools
+
+        async def _fake_geocode(city: str, **kw):
+            # 上海(31.23,121.47) 与 杭州(30.24,120.21) 直线约 160km
+            if city == "杭州":
+                return {"lat": 30.246, "lng": 120.21, "source": "amap"}
+            return {"lat": 31.23, "lng": 121.47, "source": "amap"}
+
+        monkeypatch.setattr(tools, "_geocode_city", _fake_geocode)
+        near = await tools._round_trip_rule_options("杭州", "上海")
+        assert not any(i["mode"] == "flight" for i in near)  # 160km 不产航班
+
+        async def _fake_geocode_far(city: str, **kw):
+            if city == "北京":
+                return {"lat": 39.90, "lng": 116.40, "source": "amap"}
+            return {"lat": 31.23, "lng": 121.47, "source": "amap"}  # 上海
+
+        monkeypatch.setattr(tools, "_geocode_city", _fake_geocode_far)
+        far = await tools._round_trip_rule_options("上海", "北京")
+        assert any(i["mode"] == "flight" for i in far)  # 远距产航班
+        assert any(i["mode"] == "train" for i in far)
+
+    async def test_rule_options_geocode_failure_empty(self, monkeypatch):
+        """geocode 全失败（外部不可达）→ 返回空，绝不编造。"""
+        from app.agent import tools
+
+        async def _boom(city: str, **kw):
+            return None
+
+        monkeypatch.setattr(tools, "_geocode_city", _boom)
+        items = await tools._round_trip_rule_options("杭州", "上海")
+        assert items == []
+
+    async def test_fetch_transport_appends_rule_when_degraded(self, monkeypatch):
+        """外部数据源全部失败（degraded）→ options 至少含规则参考条目。"""
+        from app.agent import tools
+
+        async def _fake_amap(dep, dest, **kw):
+            return None  # 驾车失败
+
+        async def _fake_advice(dep, dest, **kw):
+            raise RuntimeError("tavily down")
+
+        async def _fake_geocode(city: str, **kw):
+            if city == "杭州":
+                return {"lat": 30.246, "lng": 120.21, "source": "amap"}
+            return {"lat": 31.23, "lng": 121.47, "source": "amap"}
+
+        monkeypatch.setattr(tools, "_amap_driving_options", _fake_amap)
+        monkeypatch.setattr(tools, "_tavily_transport_advice", _fake_advice)
+        monkeypatch.setattr(tools, "_geocode_city", _fake_geocode)
+        res = await tools.fetch_transport_options("杭州", "上海")
+        assert res["status"] == "degraded"
+        assert res["count"] >= 1
+        assert any(o["source"] == "rule" for o in res["options"])
+        assert any(o.get("price_range") for o in res["options"])
+
+
+# ── 出发地 + 出行性质（方案 A：创建表单完善） ──────────────
+class TestDepartureAndTripType:
+    def test_plan_request_accepts_departure_and_trip_type(self):
+        from datetime import date
+
+        req = PlanRequest(
+            destination="杭州",
+            departure="上海",
+            trip_type="商务出差",
+            start_date=date(2026, 10, 1),
+            end_date=date(2026, 10, 3),
+        )
+        assert req.departure == "上海"
+        assert req.trip_type == "商务出差"
+
+    def test_plan_request_defaults_none(self):
+        from datetime import date
+
+        req = PlanRequest(destination="杭州", start_date=date(2026, 10, 1), end_date=date(2026, 10, 3))
+        assert req.departure is None
+        assert req.trip_type is None
+
+    def test_trip_type_hint_known(self):
+        from app.agent.agents import _trip_type_hint
+
+        hint = _trip_type_hint("商务出差")
+        assert "节奏" in hint or "商务" in hint or "酒店" in hint or "高效" in hint
+        hint_family = _trip_type_hint("亲子出游")
+        assert "家庭" in hint_family or "亲子" in hint_family or "儿童" in hint_family or "放缓" in hint_family
+
+    def test_trip_type_hint_unknown_falls_back(self):
+        from app.agent.agents import _trip_type_hint
+
+        hint = _trip_type_hint("自定义未知性质")
+        assert hint  # 有通用基调，不抛错
+
+    def test_planner_user_text_injects_departure_and_trip_type(self):
+        text = agents._planner_user_text(
+            {
+                "departure": "上海",
+                "destination": "杭州",
+                "start_date": "2026-10-01",
+                "end_date": "2026-10-03",
+                "travelers": 2,
+                "budget": 3000,
+                "trip_type": "商务出差",
+                "preferences": ["美食", "历史"],
+            },
+            {},
+        )
+        assert "出发地：上海" in text
+        assert "出行性质：商务出差" in text
+        assert "【出行性质约束】" in text
+
+    def test_planner_user_text_without_trip_type_says_leisure(self):
+        text = agents._planner_user_text(
+            {
+                "destination": "杭州",
+                "start_date": "2026-10-01",
+                "end_date": "2026-10-03",
+                "travelers": 2,
+                "budget": 3000,
+            },
+            {},
+        )
+        assert "出行性质：休闲旅游（未指定）" in text
+        assert "【出行性质约束】" not in text  # 无明确性质不追加约束
+
+    def test_trip_update_schema_accepts_departure_trip_type(self):
+        from app.schemas import TripUpdate
+
+        u = TripUpdate(departure="北京", trip_type="亲子出游")
+        assert u.departure == "北京"
+        assert u.trip_type == "亲子出游"
+        # 可传 null 清空
+        assert TripUpdate(departure=None).departure is None
