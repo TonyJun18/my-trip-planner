@@ -638,4 +638,34 @@ onMounted(load)
   .hero-overlay { padding: 24px; }
   .hero-title { font-size: 24px; }
 }
+
+/* ── 移动端（≤720px）系统性断点适配（含受邀编辑流程） ── */
+@media (max-width: 720px) {
+  /* 头图：更紧凑 */
+  .hero-cover { height: 140px; }
+  .hero-overlay { padding: 16px 18px; }
+  .hero-title { font-size: 20px; margin-bottom: 10px; }
+  .hero-pill { font-size: 11.5px; padding: 5px 10px; }
+  .status-badge { top: 10px; right: 10px; }
+
+  /* 地图+预算卡片：减内边距 */
+  .map-card, .budget-card { padding: 14px; }
+
+  /* 每日行程：Day 头部纵向 */
+  .day-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+
+  /* 受邀编辑行内改名输入框：窄屏全宽（默认 220px 可能挤压 stop-head） */
+  .inline-edit-name { width: 100%; }
+
+  /* 站点操作区：横向可滚动（投票/编辑按钮组不折行） */
+  .stop-meta { gap: 8px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
+  .vote-group, .edit-group { margin-left: auto; flex-shrink: 0; }
+  .vote-btn { min-height: 44px; padding: 6px 12px; }
+  .stop-meta .el-button { min-height: 44px; }
+
+  /* 评论区：紧凑 */
+  .comments-card { padding: 14px; }
+  .comment-name-input { max-width: 100%; }
+  .comment-actions .el-button { width: 100%; }
+}
 </style>

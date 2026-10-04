@@ -155,4 +155,11 @@ onBeforeUnmount(() => {
 .trip-map .leaflet-marker-icon[draggable='true']:active {
   cursor: grabbing;
 }
+/* 移动端：leaflet 高度收紧（inline height 由父组件 prop 控制，需 !important 覆盖），
+   375px 下 420px 的桌面高度会占据整屏，压缩到 300px 提升站点列表可读性 */
+@media (max-width: 720px) {
+  .trip-map {
+    height: 300px !important;
+  }
+}
 </style>

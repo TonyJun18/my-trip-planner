@@ -1419,4 +1419,57 @@ onMounted(load)
   .hero-overlay { padding: 24px; }
   .hero-title { font-size: 24px; }
 }
+
+/* ── 移动端（≤720px）系统性断点适配 ── */
+@media (max-width: 720px) {
+  /* 顶栏操作按钮收敛：操作太多横向溢出 → 可横向滚动，不折行 */
+  .topbar { flex-wrap: wrap; gap: 8px; }
+  .topbar-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    gap: 6px;
+    padding-bottom: 4px;
+  }
+  .topbar-actions::-webkit-scrollbar { display: none; }
+  .topbar-actions .el-button { flex-shrink: 0; margin-left: 0 !important; }
+
+  /* 头图：更紧凑 */
+  .hero-cover { height: 140px; }
+  .hero-overlay { padding: 16px 18px; }
+  .hero-title { font-size: 20px; margin-bottom: 10px; }
+  .hero-pill { font-size: 11.5px; padding: 5px 10px; }
+  .status-group { top: 10px; right: 10px; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .status-switch { width: 92px; }
+
+  /* 地图+预算卡片：减内边距 */
+  .map-card, .budget-card { padding: 14px; }
+
+  /* AI 调整：输入+按钮纵向堆叠 */
+  .revise-row { flex-direction: column; }
+  .revise-row .el-button { width: 100%; }
+  .revise-head { flex-direction: column; align-items: flex-start; gap: 4px; }
+
+  /* 备选方案：头部纵向 */
+  .planb-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+
+  /* 每日行程：Day 头部纵向，动作按钮不再右侧挤压 */
+  .day-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .day-actions { width: 100%; display: flex; gap: 8px; }
+  .day-actions .el-button { flex: 1; margin-left: 0 !important; }
+
+  /* 站点操作：44px 触控目标（≥44px 高，符合移动端触控规范） */
+  .stop-actions { justify-content: flex-start; gap: 2px; flex-wrap: wrap; }
+  .stop-actions .el-button { min-height: 44px; margin-left: 0 !important; }
+
+  /* 底部操作：两列网格铺满 */
+  .bottom-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .bottom-bar .el-button { margin-left: 0 !important; width: 100%; }
+
+  /* 弹窗：窄屏 full-width（Element Plus 默认 width 480px 超 375px 视口有边距） */
+  :deep(.el-dialog) { --el-dialog-width: calc(100vw - 32px) !important; width: var(--el-dialog-width); }
+  .latlng { flex-direction: column; gap: 6px; }
+}
 </style>

@@ -1173,10 +1173,41 @@ function goDetail() {
 
 /* 响应式 */
 @media (max-width: 720px) {
-  .panel { padding: 24px 20px; }
+  .wizard-head { margin-bottom: 16px; }
+  .page-title { font-size: 22px; }
+  .ai-badge { position: static; display: inline-flex; margin-top: 8px; }
+  .panel { padding: 24px 18px; }
   .two-col { grid-template-columns: 1fr; }
-  .summary-grid { grid-template-columns: repeat(2, 1fr); }
   .day-card { flex-direction: column; }
   .success-actions { margin-left: 0; width: 100%; }
+  .success-actions .btn-primary, .success-actions .btn-ghost { width: 100%; justify-content: center; }
+
+  /* 步骤指示器：窄屏收敛（1 → 2 → 3 保持可读） */
+  .steps { margin: 4px 0 20px; }
+  .step-label { font-size: 12px; }
+  .step-line { margin: 0 8px; }
+
+  /* 表单 chip：44px 触控目标 */
+  .chip { min-height: 44px; display: inline-flex; align-items: center; }
+
+  /* 日期选择器：窄屏不溢出 */
+  .date-row { gap: 6px; }
+  .date-row .el-date-editor { min-width: 0; flex: 1; }
+  .date-sep { font-size: 13px; }
+
+  /* 阶段卡片：头部换行，摘要不再 margin-left 挤压 */
+  .phase-head { flex-wrap: wrap; gap: 6px; }
+  .phase-summary { margin-left: 0; width: 100%; }
+  .artifact-row { align-items: flex-start; }
+
+  /* 汇总卡：单列（375px 下两列过挤） */
+  .summary-grid { grid-template-columns: 1fr; gap: 10px; }
+
+  /* 预算条：标签与数值紧凑 */
+  .budget-bar-label { width: 34px; font-size: 12px; }
+  .budget-bar-value { width: 52px; font-size: 12px; }
+
+  /* 弹窗窄屏（若有） */
+  :deep(.el-dialog) { --el-dialog-width: calc(100vw - 32px) !important; width: var(--el-dialog-width); }
 }
 </style>
