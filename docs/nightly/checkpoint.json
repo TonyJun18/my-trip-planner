@@ -2,9 +2,6 @@
   "night": "2026-10-05",
   "status": "in_progress",
   "todo": [
-    "task-trip-collab-vote（验收升级）",
-    "task-screenshot-import（验收升级）",
-    "task-map-drag-edit",
     "task-mobile-views",
     "task-mobile-install",
     "task-pwa-cache-deep",
@@ -14,18 +11,24 @@
     "task-import-ui-wiring"
   ],
   "completed": [
-    "competitive-analysis"
+    "competitive-analysis",
+    "task-trip-collab-vote（验收升级）",
+    "task-screenshot-import（验收升级）",
+    "task-map-drag-edit"
   ],
-  "current_index": 1,
+  "current_index": 0,
   "issues": [
     "night-start 初始化 2026-10-05：HEAD checkpoint 显示 10-04 已完成 7 项（competitive-analysis/email-import/content-agentic-booking-endgame/collab-vote验收升级/screenshot-import验收升级/map-drag-edit/mobile-shell），且均已并入 main（51602c4，含全部 service/API/前端夹具），todo 文件中对应行均已完成。故重建 todo 时剔除已完成项，仅保留真实待办（map-drag-edit 前端接线 + 移动端 A→B 剩余 + 登记注册的 trip-type-profile-memory）。",
     "工作区发现 10-04 worker-7 遗留改动（stash@{0}，分支 nightly/2026-10-04/7-fix-p0-p1-flaws）：P0/P1 修复（planning_service 并行 worker 数+恢复扫描、link_import SSRF 重定向防护、JWT fail-fast、config PLANNING_WORKER_COUNT、test_planning_recovery.py）。全套 pytest 挂起（kevent 空转 + 3 个 PG 连接；杀掉 uvicorn 40911 后仍复现）。根因：executor.start() 无条件起 _recover_queued_pending 后台任务 + _worker_supervisor while True 常驻，conftest plan_executor fixture 的 stop() 只停旧 _worker_task/_recovery_task，新任务未跟踪 → 事件循环永不退出。按重试协议核验不通过 → stash 隔离（备份 /tmp/p0p1_worktree_backup.diff），待用户 review 修复。注：其中 SSRF 重定向防护与 JWT fail-fast 方向正确、价值明确，值得修复后合入。",
     "10-04 worker-7 P0/P1 遗留改动单独测试 test_planning_recovery.py 2 failed（基线下直接失败：db_session 未 commit，恢复扫描新连接看不到插入，断言 running==failed）。",
     "竞品分析完成（网络降级版·存量审计④）：web_search 四后端 SSL EOF / 海外 curl 000 / 百度 CAPTCHA / web_extract Blocked，与 10-02/03/04 环境一致；输出 docs/nightly/competitive-analysis/2026-10-05.md，登记校正 6 项（email-import/文章10/collab-vote共识/screenshot-link/map-drag 后端/mobile-shell 全部并入 main 51602c4），新增 1 行动项 task-import-ui-wiring（三导入 API 前端零入口空洞）。",
-    "本 worker 未做任何代码改动（纯 docs 区登记校正），后端未改无需 pytest；已跑 main 基线 300 测试全绿（58.9s）确认环境健康。"
+    "本 worker 未做任何代码改动（纯 docs 区登记校正），后端未改无需 pytest；已跑 main 基线 300 测试全绿（58.9s）确认环境健康。",
+    "worker-3 接管 worker-2 掐断遗留（branch nightly/2026-10-05/1-task-map-drag-edit-frontend，未提交改动 8 文件）：核验通过补登记完成——map_edit_service 拆 _map_edit_trip_core 共用 diff 内核 + map_edit_trip_by_token（POST /trips/edit/{token}/map-edit 受邀拖拽，凭 edit_token 免登录，令牌收回 404）+ 前端接线（TripDetailView/ShareView draggable + onMapMove、自驾 4xx toast、ShareView consensus 徽标、i18n mapEditDrivingWarn/consensus/consensusTip）。原 by_token 端点无测试 → 补 2 测试（免登录拖拽落库 / 令牌收回 404），全套 302 绿（57.8s）+ 前端 build 通过；3 commits 入分支（0c44648/0aaa873/c207fe4），未 push。",
+    "checkpoint todo 校正：night-start 初始化剔除未生效——collab-vote验收/screenshot-import验收 已在 10-04 完成并入 main 且 todo 文件已勾选 [x]，本次从 todo 移除并补登 completed；current_index 归位 0 指向首个真实待办 task-mobile-views（原 current_index=1 指向已完成的 screenshot-import验收，不校正会误导后续 worker 重做）。"
   ],
   "branches": [
-    "nightly/2026-10-05/0-competitive-analysis"
+    "nightly/2026-10-05/0-competitive-analysis",
+    "nightly/2026-10-05/1-task-map-drag-edit-frontend"
   ],
   "claims": {}
 }
