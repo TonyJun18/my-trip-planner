@@ -82,7 +82,7 @@
 
 ## 2026-10-02 竞品分析追加（存量空洞审计①，来自 docs/nightly/competitive-analysis/2026-10-02.md）
 
-- [ ] task-map-drag-edit: 地图拖拽修订——拖动 marker 改 lat/lng → 生成 ReorderDiff → 复用 revise 原子应用（docs/articles/05-map-edit-paradigms.md §4/§5 已论证「统一 diff 内核」工程基础；Wandercrafted/AiGo 地图交互为竞品亮点而 TripMap.vue 目前只读）（验收：拖动 marker 改坐标 → diff 原子应用 + DrivingGate 约束前置提示 + 移动端隐藏拖拽 + 测试覆盖）（2026-10-05 worker-1 更新：**后端主体已入 main 51602c4**——map_edit_service.py（op=replace 最小 diff 复用 revise 内核）+ POST /trips/{id}/map-edit + 8 测试全套 300 绿 + TripMap.vue draggable prop（移动端自动隐藏）；**剩余工作=前端接线**：TripDetailView/ShareView 未传 draggable、未接 dragend→mapEditTrip（api/index.js 已有封装）——本节验收更新为「TripDetailView/ShareView 接入 draggable + onMapMove 调 POST /map-edit + 失败提示 + build 通过」，顺带 ShareView consensus 徽标）
+- [x] task-map-drag-edit: 地图拖拽修订——拖动 marker 改 lat/lng → 生成 ReorderDiff → 复用 revise 原子应用（docs/articles/05-map-edit-paradigms.md §4/§5 已论证「统一 diff 内核」工程基础；Wandercrafted/AiGo 地图交互为竞品亮点而 TripMap.vue 目前只读）（验收：拖动 marker 改坐标 → diff 原子应用 + DrivingGate 约束前置提示 + 移动端隐藏拖拽 + 测试覆盖）（2026-10-05 worker-2 更新：**前端接线完成**——TripDetailView（登录态 owner 视图）与 ShareView（受邀编辑 editMode）均已传 draggable + onMapMove → POST /map-edit → 成功/失败均整体刷新（markers 引用替换触发 TripMap watch 重绘回正）；自驾约束门 4xx 拦截器 toast + 刷新回弹；ShareView 同时补 consensus 徽标（list_stop_votes/cast_vote 返回的 consensus 字段 >0 时显示「小组一致」，zh/en 键）；i18n 补 mapEditDrivingWarn/consensus/consensusTip；build 通过。验收「拖动 marker 改坐标 → diff 原子应用 + DrivingGate 约束前置提示 + 移动端隐藏拖拽 + 测试覆盖」中后端部分（map_edit_service + 8 测试）已由 10-04 入 main 51602c4；2026-10-05 worker-3 补登记：**share/edit 受邀拖拽端点 POST /trips/edit/{token}/map-edit 完成**（map_edit_service 拆 _map_edit_trip_core 共用 diff 内核 + map_edit_trip_by_token 凭 edit_token 免登录，与受邀编辑 stop 更新同信任语义），+2 测试（免登录拖拽落库 / 令牌收回 404）全套 302 绿）
 
 ## 用户白天下达任务（2026-10-03 追加·移动端 A→B 路线）
 
