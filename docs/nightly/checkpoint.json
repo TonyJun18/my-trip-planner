@@ -1,52 +1,31 @@
 {
-  "night": "2026-10-04",
-  "status": "completed_with_issues",
+  "night": "2026-10-05",
+  "status": "in_progress",
   "todo": [
-    "competitive-analysis",
-    "task-email-import",
-    "content-agentic-booking-endgame",
     "task-trip-collab-vote（验收升级）",
     "task-screenshot-import（验收升级）",
     "task-map-drag-edit",
-    "task-mobile-shell",
     "task-mobile-views",
     "task-mobile-install",
     "task-pwa-cache-deep",
     "task-capacitor-shell",
     "task-capacitor-stores",
-    "task-trip-type-profile-memory"
+    "task-trip-type-profile-memory",
+    "task-import-ui-wiring"
   ],
   "completed": [
-    "competitive-analysis",
-    "task-email-import",
-    "content-agentic-booking-endgame",
-    "task-trip-collab-vote（验收升级）",
-    "task-screenshot-import（验收升级）",
-    "task-map-drag-edit",
-    "task-mobile-shell"
+    "competitive-analysis"
   ],
-  "current_index": 7,
+  "current_index": 1,
   "issues": [
-    "网络受限（web_search 双后端 SSL EOF / 海外 curl 000 / 国内反爬壳）-> competitive-analysis 降级为存量空洞审计3（10-02/10-03 同环境），输出 docs/nightly/competitive-analysis/2026-10-04.md；未抓取新竞品页面、未编造。",
-    "工作区存在并发会话未提交改动（frontend PlanWizard/TripDetailView/TripListView 的 departure+trip_type 创建表单方案 A + backend agents/models/schemas/checkin/planning 配套 + migration d0e1f2a3b4c5 + docs/night-build-todo.md 追加区块 task-trip-type-profile-memory），mtimes 00:18-00:21；非本 worker 所为，按铁律 10 不接管、不 stash、不 checkout，仅做 docs 区登记。",
-    "遗留 task-email-import 半成品（backend/tests/test_email_import.py 引用不存在的 app.services.email_import.parse_email），按重试协议留给后续 worker 接管核验或补实现。",
-    "10-03 晚间接力轮分支（nightly/2026-10-03/6/7/8）与早间轮分支（1/2/3/4/5）均未合并 main；本夜登记校正基于分支/工作区实现证据，实际合并由用户 review 决定",
-    "本 worker 从当前 HEAD（nightly/2026-10-04/0-competitive-analysis）创建分支 nightly/2026-10-04/0-competitive-analysis 并仅提交 docs 文件（checkpoint + 竞品分析）。工作区并发会话的未提交改动（方案 A 创建表单 + backend 配套）未纳入 commit、未触碰，留在工作区待其自行提交；未 push、未合并 main。",
-    "worker-1 完成 task-email-import：新分支 nightly/2026-10-04/1-task-email-import 从 worker-0 的 HEAD（eb7a8ff，含 main 全历史）拉出（checkout main 因并发会话未提交改动被 abort，按既有先例从当前 HEAD 拉分支，内容不丢失）；接管遗留测试文件补实现 service/schema/API（纯新增，不触碰并发会话改动）；后端 264 测试全绿（含 email-import 10 用例）；提交 5a9d894，本地 commit 未 push 未合并。分支从 eb7a8ff 而非 main 拉出，待用户 review 合入。",
-    "worker-3 完成 content-agentic-booking-endgame（doc 区，无代码改动）：新分支 nightly/2026-10-04/2-content-agentic-booking-endgame 从 worker-1 的 HEAD（bac66a6）拉出（checkout main 因并发会话未提交改动被 abort，按既有先例从当前 HEAD 拉分支）；提交 90e6ed0（docs/articles/10-endgame-booking-agentic.md 全文 + publish-list.md 文章⑩卡片与速查表，180 行新增）；代码引用逐条核验与仓库实际一致（revise_service._apply_diff/_recompute_budget、agents.py ReviseCriticAgent/_revise_qa_loop、budget_service.estimate_hotel_cost、collab_service._belongs_to_trip、note_import.parse_note、email_import.parse_email 已由 worker-1 落地）；纯 docs 任务无 pytest/build 需求；本地 commit 未 push 未合并，待用户 review。",
-    "worker-4 完成 task-trip-collab-vote（验收升级，backend 区）：渐进式推进 consensus 纯计算型实现——VoteOut 加 consensus 字段（默认 False）、collab_service 加 _consensus_threshold（ceil(规模/2)）与 _trip_group_size（max(travelers, 实际投票访客数)）、list_stop_votes/cast_vote 输出 consensus（过半表态且赞成多数才标记）；顺带修复 GET /votes 无 voter_key 时缺 my_value 的潜在 422；新增 3 个测试，后端全量 267 测试通过；提交 89341ba。分支从 worker-3 HEAD（e767135）拉出（checkout main 因并发会话未提交改动 abort，按既有先例）；未 push 未合并。前端 ShareView 展示 consensus 徽标未做——ShareView.vue 为并发会话脏文件，不触碰，等待用户合并后补（已记录）。docs/night-build-todo.md 中 task-trip-collab-vote（验收升级）一行因该文件为并发会话脏文件未勾选。",
-    "worker-5 完成 task-screenshot-import（验收升级，backend 区）：新增社交分享链接提取分支——纯服务层 app/services/link_import.py（stdlib urllib 抓取，注入式 fetch 测试零网络；平台识别小红书/马蜂窝/携程/去哪儿/大众点评/Tripadvisor/微博/B站；og:title/og:description 提取喂给 note_import.parse_note 复用敌意剥离；URL 安全边界：仅 http/https + 拒绝内网/回环主机 SSRF 最小防护）+ schema（字段强长度校验）+ API POST /trips/link/import（登录必需；非法 URL 422；抓取失败/无 meta → 200 + extracted=false 静默降级为链接收藏）；21 个新测试（URL 校验/平台识别/成功提取/敌意剥离/降级路径/API 鉴权与 422）；后端全量 288 测试全绿。分支 nightly/2026-10-04/4-task-screenshot-import commit 82f7281，从 worker-4 HEAD（7779038）拉出（checkout main 因并发会话未提交改动 abort，按既有先例）；未 push 未合并。docs/night-build-todo.md 中 task-screenshot-import（验收升级）一行因该文件为并发会话脏文件未勾选；前端链接导入入口 UI 未做（前端视图均为并发会话脏文件，不触碰，等待用户合并后补）。",
-    "worker-6 完成 task-map-drag-edit（backend+frontend 区）：新增 app/services/map_edit_service.py（拖拽→op=replace 最小 diff，复用 revise_service._apply_diff/_enforce_driving_constraints/_recompute_budget 原子内核；坐标 Pydantic 强校验+服务层兜底；宽松定位 name 全行程，找不到 404；坐标未变 no-op；DrivingGate 约束门前置 400 拒绝超距并返回 detail.issues）+ schemas/map_edit.py + api/v1/map_edit.py（POST /trips/{id}/map-edit，登录必需、owner 隔离）+ api/v1/__init__.py 注册 + frontend TripMap.vue 增加 draggable（桌面端，移动端≤768px 自动隐藏拖拽，dragend 只发事件由父组件调 API）+ api/index.js 增加 mapEditTrip；新增 8 测试（拖拽改坐标/no-op/404/422/DrivingGate 拒绝不落库/单站点/鉴权/仅 owner），后端全量 296 测试全绿 + 前端 build 通过；分支 nightly/2026-10-04/5-task-map-drag-edit commits d0efc9f/e501128/bc8f69c，从 worker-5 HEAD（fdb4ed2）拉出（checkout main 因并发会话未提交改动 abort，按既有先例）；未 push 未合并。接线遗留：TripDetailView/ShareView（并发会话脏文件）未接 draggable 事件与 onMove 回调，等待用户合并后补（已记录）。",
-    "worker-7 完成 task-mobile-shell（frontend 区，纯前端无 pytest 需求）：App.vue 增加移动端底部 Tab（登录态 我的行程/新建规划，复用现有 i18n 键 app.myTrips/app.planTrip，Van+MagicStick 图标；≤720px 固定底部、safe-area、active 高亮）+ 顶栏窄屏压缩（隐藏 nav-link 文字导航、收紧新建按钮，品牌+语言+用户不换行不溢出）+ 移动端隐藏 footer + app-main 底部 padding 预留 Tab 高度；locales 为并发会话脏文件未触碰（未新增键）。验收：npm run build 通过（3.81s）+ Playwright 无头验证 12/12（375px 无水平滚动 scrollW=375、Tab 可见可切换 /plan、active 高亮正确、footer 隐藏；1280px 桌面 Tab 隐藏、footer 可见、无破坏）+ 未登录态无 Tab。分支 nightly/2026-10-04/6-task-mobile-shell commit e39a971，从 worker-6 HEAD（bc8f69c）拉出（checkout main 因并发会话未提交改动 abort，按既有先例）；未 push 未合并。"
+    "night-start 初始化 2026-10-05：HEAD checkpoint 显示 10-04 已完成 7 项（competitive-analysis/email-import/content-agentic-booking-endgame/collab-vote验收升级/screenshot-import验收升级/map-drag-edit/mobile-shell），且均已并入 main（51602c4，含全部 service/API/前端夹具），todo 文件中对应行均已完成。故重建 todo 时剔除已完成项，仅保留真实待办（map-drag-edit 前端接线 + 移动端 A→B 剩余 + 登记注册的 trip-type-profile-memory）。",
+    "工作区发现 10-04 worker-7 遗留改动（stash@{0}，分支 nightly/2026-10-04/7-fix-p0-p1-flaws）：P0/P1 修复（planning_service 并行 worker 数+恢复扫描、link_import SSRF 重定向防护、JWT fail-fast、config PLANNING_WORKER_COUNT、test_planning_recovery.py）。全套 pytest 挂起（kevent 空转 + 3 个 PG 连接；杀掉 uvicorn 40911 后仍复现）。根因：executor.start() 无条件起 _recover_queued_pending 后台任务 + _worker_supervisor while True 常驻，conftest plan_executor fixture 的 stop() 只停旧 _worker_task/_recovery_task，新任务未跟踪 → 事件循环永不退出。按重试协议核验不通过 → stash 隔离（备份 /tmp/p0p1_worktree_backup.diff），待用户 review 修复。注：其中 SSRF 重定向防护与 JWT fail-fast 方向正确、价值明确，值得修复后合入。",
+    "10-04 worker-7 P0/P1 遗留改动单独测试 test_planning_recovery.py 2 failed（基线下直接失败：db_session 未 commit，恢复扫描新连接看不到插入，断言 running==failed）。",
+    "竞品分析完成（网络降级版·存量审计④）：web_search 四后端 SSL EOF / 海外 curl 000 / 百度 CAPTCHA / web_extract Blocked，与 10-02/03/04 环境一致；输出 docs/nightly/competitive-analysis/2026-10-05.md，登记校正 6 项（email-import/文章10/collab-vote共识/screenshot-link/map-drag 后端/mobile-shell 全部并入 main 51602c4），新增 1 行动项 task-import-ui-wiring（三导入 API 前端零入口空洞）。",
+    "本 worker 未做任何代码改动（纯 docs 区登记校正），后端未改无需 pytest；已跑 main 基线 300 测试全绿（58.9s）确认环境健康。"
   ],
   "branches": [
-    "nightly/2026-10-04/0-competitive-analysis",
-    "nightly/2026-10-04/1-task-email-import",
-    "nightly/2026-10-04/2-content-agentic-booking-endgame",
-    "nightly/2026-10-04/3-task-trip-collab-vote",
-    "nightly/2026-10-04/4-task-screenshot-import",
-    "nightly/2026-10-04/5-task-map-drag-edit",
-    "nightly/2026-10-04/6-task-mobile-shell"
+    "nightly/2026-10-05/0-competitive-analysis"
   ],
   "claims": {}
 }
