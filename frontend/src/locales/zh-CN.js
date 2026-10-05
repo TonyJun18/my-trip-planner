@@ -514,4 +514,11 @@ export default {
     daysUnit: '天',
     coverShareTag: '我的旅行计划',
   },
+  // ── PWA 安装引导（task-mobile-install） ──────────────
+  install: {
+    title: '安装「随行」到主屏幕',
+    desc: '离线也能看行程，打开更快',
+    install: '安装',
+    later: '以后',
+  },
 }

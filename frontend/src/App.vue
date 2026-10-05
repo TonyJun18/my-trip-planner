@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import en from 'element-plus/es/locale/lang/en'
 import LangSwitcher from '@/components/LangSwitcher.vue'
+import InstallPrompt from '@/components/InstallPrompt.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -112,6 +113,8 @@ function goHome() {
           <span class="tab-label">{{ t('app.planTrip') }}</span>
         </button>
       </nav>
+      <!-- PWA 安装引导（仅登录用户、可关闭、本地标记） -->
+      <InstallPrompt />
     </el-container>
   </el-config-provider>
 </template>

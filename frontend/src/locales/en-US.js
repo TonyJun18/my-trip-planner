@@ -514,4 +514,11 @@ export default {
     daysUnit: 'd',
     coverShareTag: 'My travel plan',
   },
+  // ── PWA install prompt (task-mobile-install) ─────────
+  install: {
+    title: 'Install SuiXing to your home screen',
+    desc: 'View trips offline and launch faster',
+    install: 'Install',
+    later: 'Later',
+  },
 }
