@@ -4,9 +4,19 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import * as api from '@/api'
+import ImportDialog from '@/components/ImportDialog.vue'
 
 const router = useRouter()
 const { t } = useI18n()
+
+// ── 内容导入（四通道：笔记/截图/链接/邮件 → 候选并入行程） ──
+const importVisible = ref(false)
+function openImport() {
+  importVisible.value = true
+}
+function onImported() {
+  load()
+}
 
 const loading = ref(false)
 const trips = ref([])
@@ -138,6 +148,9 @@ onMounted(load)
       <button class="btn-ghost" @click="openCreate">
         <el-icon style="margin-right: 6px"><Plus /></el-icon>{{ t('tripList.manualCreate') }}
       </button>
+      <button class="btn-ghost" @click="openImport">
+        <el-icon style="margin-right: 6px"><Upload /></el-icon>{{ t('tripList.importContent') }}
+      </button>
     </div>
 
     <!-- 空状态 -->
@@ -261,6 +274,9 @@ onMounted(load)
         <el-button type="primary" :loading="creating" @click="submitCreate">{{ t('common.create') }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- 内容导入对话框（笔记/截图/链接/邮件 → 候选并入行程） -->
+    <ImportDialog v-model="importVisible" @imported="onImported" />
   </div>
 </template>
 
