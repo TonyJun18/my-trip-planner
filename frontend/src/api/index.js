@@ -1,8 +1,13 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
+// API 地址支持构建期注入（Capacitor/移动端打包时 WebView 无法用相对路径 /api/v1）：
+// - VITE_API_BASE_URL：完整后端地址（如 https://api.example.com/api/v1）
+// - 未设置时回退 `/api/v1`（Web 端 Nginx 反代 / vite dev proxy）
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+
 const http = axios.create({
-  baseURL: '/api/v1',
+  baseURL: API_BASE,
   timeout: 300000, // 规划任务轮询超时（轮询本身很快）
 })
 
@@ -69,6 +74,9 @@ export const generateXhsNote = (tripId) => http.post(`/trips/${tripId}/xhs-note`
 
 // ── 规划任务实时推送（WebSocket；断线由轮询兜底） ─────────
 const WS_BASE = () => {
+  // WebSocket 地址同样支持构建期注入（移动端壳场景）
+  const injected = import.meta.env.VITE_WS_BASE_URL
+  if (injected) return injected
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${window.location.host}/ws`
 }
