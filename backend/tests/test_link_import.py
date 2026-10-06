@@ -11,6 +11,8 @@
 """
 from __future__ import annotations
 
+import urllib.request
+
 import pytest
 
 from app.services import link_import as li
@@ -169,3 +171,72 @@ def test_extract_meta_unescapes_entities(fake_fetch):
     fake_fetch('<html><head><meta property="og:title" content="西湖 &amp; 灵隐"/></head></html>')
     result = parse_link("https://example.com/x")
     assert result.title == "西湖 & 灵隐"
+
+# ── SSRF 重定向防护（自定义 _SafeRedirectHandler） ────────────────
+
+def test_safe_redirect_handler_blocks_internal_redirect():
+    """公网 URL 302 到内网 → 拒绝跟随（validate_url 在内网 hostname 抛 blocked_host）。"""
+    handler = li._SafeRedirectHandler()
+    import io
+    import urllib.request as _ur
+
+    with pytest.raises(LinkImportError) as ei:
+        handler.redirect_request(
+            _ur.Request("https://public.example.com/"),
+            io.BytesIO(b""),
+            302,
+            "Found",
+            {"Location": "http://169.254.169.254/latest/meta-data/"},
+            "http://169.254.169.254/latest/meta-data/",
+        )
+    assert ei.value.code == "blocked_host"
+
+
+def test_safe_redirect_handler_allows_public_redirect():
+    """公网 URL 302 到另一个公网地址 → 跟随（返回新 Request）。"""
+    handler = li._SafeRedirectHandler()
+    import io
+    import urllib.request as _ur
+
+    req = handler.redirect_request(
+        _ur.Request("https://public.example.com/"),
+        io.BytesIO(b""),
+        302,
+        "Found",
+        {"Location": "https://other-public.example.com/page"},
+        "https://other-public.example.com/page",
+    )
+    assert req is not None and req.full_url == "https://other-public.example.com/page"
+
+
+def test_fetch_page_uses_safe_redirect_handler(monkeypatch):
+    """fetch_page 必须使用带校验的 opener（而不是裸 urlopen）。"""
+    # 打桩 build_opener 捕获传入 handler，验证包含 _SafeRedirectHandler
+    captured = {}
+
+    def fake_build_opener(*handlers):
+        captured["handlers"] = handlers
+        # 返回一个假的 opener，其 open 直接返回一个假 response
+        class _FakeResp:
+            def read(self, n=-1):
+                return b"<html></html>"
+
+            def __init__(self):
+                self.status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        class _FakeOpener:
+            def open(self, req, timeout=None):
+                return _FakeResp()
+
+        return _FakeOpener()
+
+    monkeypatch.setattr(urllib.request, "build_opener", fake_build_opener)
+    body = li.fetch_page("https://public.example.com/")
+    assert body == "<html></html>"
+    assert any(isinstance(h, li._SafeRedirectHandler) for h in captured["handlers"])

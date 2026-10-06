@@ -149,6 +149,11 @@ def fetch_page(url: str, timeout: int = FETCH_TIMEOUT_SECONDS) -> str:
 
     失败（DNS/连接/超时/HTTP 错误/响应超限）→ 抛 LinkImportError("fetch_failed")，
     由上层降级为链接收藏。注意：真实抓取依赖网络，测试一律注入假 fetch。
+
+    SSRF 重定向防御：http(s) 服务端默认跟随 3xx 重定向。初始 URL 已通过
+    ``validate_url`` 的 hostname 白名单，但**重定向目标不可信**——恶意目标可以
+    301 到内网/metadata 地址（169.254.169.254 等）。这里用自定义
+    ``_SafeRedirectHandler`` 对**每一次**跳转目标递归执行同样的安全校验。
     """
     req = urllib.request.Request(
         url,
@@ -161,7 +166,8 @@ def fetch_page(url: str, timeout: int = FETCH_TIMEOUT_SECONDS) -> str:
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        opener = urllib.request.build_opener(_SafeRedirectHandler())
+        with opener.open(req, timeout=timeout) as resp:
             body = resp.read(MAX_RESPONSE_BYTES + 1)
             if len(body) > MAX_RESPONSE_BYTES:
                 raise LinkImportError("fetch_failed", "页面响应超过大小上限")
@@ -170,6 +176,20 @@ def fetch_page(url: str, timeout: int = FETCH_TIMEOUT_SECONDS) -> str:
         raise
     except Exception as exc:  # noqa: BLE001 - 抓取失败统一降级
         raise LinkImportError("fetch_failed", f"抓取失败：{exc}") from exc
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """重定向处理器：对每个跳转目标递归执行 validate_url（同一套 SSRF 防护）。
+
+    防御场景：攻击者提供一个公网 URL，其 301/302 指向内网（http://169.254.169.254/...）
+    或 metadata 服务。urllib 默认跟随重定向且不会再次校验 hostname → 服务端被
+    变成内网探测跳板。本处理器在每次跳转前调用 validate_url，非法目标直接抛
+    LinkImportError（由 fetch_page 转成 fetch_failed 降级）。
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        validate_url(newurl)  # 抛 LinkImportError 即拒绝跟随
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def _extract_meta(html_text: str) -> tuple[str, str]:

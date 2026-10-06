@@ -11,6 +11,7 @@ from app.api.v1 import api_router
 from app.common.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import get_logger, setup_logging
+from app.core.security import assert_secure_jwt_secret
 
 logger = get_logger(__name__)
 
@@ -18,6 +19,9 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     setup_logging()
+    # 启动前配置校验：非 dev 环境缺 JWT_SECRET 直接拒绝启动（fail fast），
+    # 避免「重启后全员被登出」的生产事故被误判为登录过期。
+    assert_secure_jwt_secret()
     logger.info("启动 %s env=%s debug=%s", settings.APP_NAME, settings.ENV, settings.DEBUG)
     if settings.ENV == "dev":
         from app.core.database import init_db

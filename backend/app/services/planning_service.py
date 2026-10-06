@@ -17,7 +17,7 @@ import asyncio
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agent.agents import run_planning_agents, set_plan_event_callback
@@ -125,29 +125,44 @@ class PlanningExecutor:
                 self._queue.task_done()
 
     async def _recover_stale_tasks(self) -> None:
-        """启动恢复：把 running 超过阈值（进程崩溃遗留）的任务标记为失败。
+        """启动恢复：把崩溃遗留的 running / pending 任务标记为失败。
 
-        进程重启后，内存队列清空——上次未完成的任务永远处于 running、
+        进程重启后，内存队列清空——上次未完成的任务永远处于 running/pending、
         轮询接口无法收敛；这里给它们一个确定的失败终态。
+
+        - ``running`` 超过 ``TASK_STALE_RUNNING_SECONDS`` → 进程崩溃遗留（执行中丢失）
+        - ``pending`` 超过 ``TASK_PENDING_STALE_SECONDS`` → 队列未消费 / 提交后进程崩溃
+          （提交发生在 db.commit() 之后，两者之间崩溃会让任务永远停在 pending）
         """
         try:
+            now = datetime.now(UTC)
             async with self._session_factory() as db:
                 stale = (
                     await db.execute(
                         select(PlanTask).where(
-                            PlanTask.status == "running",
-                            PlanTask.started_at.is_not(None),
-                            PlanTask.started_at
-                            < datetime.now(UTC)
-                            - timedelta(seconds=settings.TASK_STALE_RUNNING_SECONDS),
+                            or_(
+                                and_(
+                                    PlanTask.status == "running",
+                                    PlanTask.started_at.is_not(None),
+                                    PlanTask.started_at
+                                    < now - timedelta(seconds=settings.TASK_STALE_RUNNING_SECONDS),
+                                ),
+                                and_(
+                                    PlanTask.status == "pending",
+                                    PlanTask.created_at.is_not(None),
+                                    PlanTask.created_at
+                                    < now - timedelta(seconds=settings.TASK_PENDING_STALE_SECONDS),
+                                ),
+                            )
                         )
                     )
                 ).scalars().all()
                 for task in stale:
+                    state = task.status
                     task.status = "failed"
-                    task.error_message = "进程重启，任务未完成（running 超时，标记为失败）"
-                    task.finished_at = datetime.now(UTC)
-                    logger.warning("恢复扫描：任务 %s 标记为失败（崩溃遗留）", task.id)
+                    task.error_message = "进程重启，任务未完成（running/pending 超时，标记为失败）"
+                    task.finished_at = now
+                    logger.warning("恢复扫描：任务 %s 标记为失败（状态=%s 超时遗留）", task.id, state)
                 if stale:
                     await db.commit()
         except Exception:

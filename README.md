@@ -15,7 +15,7 @@
 >   校验失败把错误摘要喂回 LLM 最多自纠正 3 次——LLM 输出不可信，schema 才可信
 > - **系统级容错**：LLM 调用统一指数退避重试 + 进程内熔断器（滑动窗口），保护下游 LLM 不被打爆
 > - **真实数据，不造假**：高德 POI/天气（未配置自动降级 Tavily + wttr.in），没有硬编码假数据
-> - **可测试性当一等公民**：FakeLLM 测试替身让 95 个测试不耗 token、不依赖网络
+> - **可测试性当一等公民**：FakeLLM 测试替身让 **314 个测试**不耗 token、不依赖网络
 > - **全链路可观测**：异步规划任务 + 前端实时 T-A-O（Thought-Action-Observation）轨迹
 
 ## 核心功能
@@ -46,6 +46,11 @@
 15. **手动细粒度编辑**：站点行内编辑（PATCH）+ 整日站点顺序重排（PUT，幂等），与 AI 对话式修订并存、互不覆盖。
 16. **主动提问 + 用户画像记忆**：规划请求可携带 Questions Q&A（人群/节奏/避峰/备选方案），答案并入规划上下文；跨会话用户画像（GET/PUT `/profile`）自动注入规划上下文。
 17. **Google 登录 + 多语言壳层**：Google ID Token 登录（`POST /auth/google`，前端 `VITE_GOOGLE_CLIENT_ID` 留空则隐藏按钮）；vue-i18n 9 + zh-CN/en-US + 顶栏切换器 + Element Plus locale 联动（三大业务视图文案迁移进行中）。
+18. **攻略/截图/链接/邮件导入（OCR + 分享链接）**：上传小红书截图 → macOS Vision OCR → 站点候选；粘贴社交分享链接（小红书/马蜂窝/携程/大众点评等）→ 提取结构化信息（失败静默降级为链接收藏）；邮件转发导入；统一走 `note-import` 管线（敌意输入剥离、类型/价格/时长推断）。
+19. **确定性 Plan B 备选方案**：`GET /trips/{id}/plan-b` 基于规则引擎生成另一套行程（无 LLM 成本、毫秒返回），与 AI 方案对照选择。
+20. **地图拖拽修订**：`POST /trips/{id}/map-edit` 拖动地图 marker 改坐标 → 最小 diff 原子应用（复用 revise 原子内核，受 DrivingGate 约束）。
+21. **分享令牌生命周期管理**：分享/编辑令牌支持 TTL（`/share/ttl`）、吊销（`/share/revoke`）、使用审计（`/share/lifecycle`），过期令牌返回 410、吊销返回 403。
+22. **收藏灵感夹**：登录用户可将他人分享的行程收藏进自己的灵感夹（`/trips/favorites`）。
 
 ## 技术栈
 
@@ -75,7 +80,7 @@ backend/
 │   ├── agent/               # 多 Agent（agents.py 编排 / tools.py 高德·Tavily·天气 / providers.py LLM / graph.py LangGraph 原型）
 │   └── api/v1/              # 路由（health / auth / trips / planner / profile）
 ├── alembic/                 # 数据库迁移
-├── tests/                   # pytest 测试（95 个：FakeLLM 替身，覆盖协作/自驾/画像/编辑等）
+├── tests/                   # pytest 测试（314 个：FakeLLM 替身，覆盖协作/自驾/画像/编辑/恢复等）
 ├── pyproject.toml           # uv 工程配置
 ├── .env / .env.example      # 环境变量
 └── uv.lock
@@ -170,10 +175,10 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 | `LLM_MAX_RETRIES` / `LLM_RETRY_BASE_DELAY` / `LLM_RETRY_MAX_DELAY` | LLM 指数退避重试（次数/初始/上限秒） | `3` / `0.5` / `8.0` |
 | `LLM_BREAKER_FAILURE_THRESHOLD` / `LLM_BREAKER_RECOVERY_TIMEOUT` | LLM 熔断阈值与冷却秒数 | `3` / `30.0` |
 | `LLM_INPUT_PRICE_PER_1K` / `LLM_OUTPUT_PRICE_PER_1K` | 每次调用成本估算（USD/1K tokens），配置后写入 trace | 空 |
-| `TASK_EXECUTION_TIMEOUT` / `TASK_STALE_RUNNING_SECONDS` | 任务执行超时秒数 / 启动恢复扫描（进程崩溃遗留标记失败） | `180` / `300` |
+| `TASK_EXECUTION_TIMEOUT` / `TASK_STALE_RUNNING_SECONDS` / `TASK_PENDING_STALE_SECONDS` | 任务执行超时秒数 / 启动恢复扫描（running 崩溃遗留 / pending 卡死标记失败） | `180` / `300` / `300` |
 | `ENABLE_PROVIDER_FALLBACK` | 主 LLM provider 失败后自动切换兜底（deepseek → openai → ollama） | `true` |
 | `LOG_LEVEL` | 日志级别 | `DEBUG` |
-| `JWT_SECRET` | JWT 签名密钥（生产必配） | 进程级随机 |
+| `JWT_SECRET` | JWT 签名密钥（**生产必配**；缺失时非 dev 环境启动直接失败，避免重启后全员登出） | 进程级随机（仅 dev） |
 | `JWT_EXPIRE_MINUTES` | token 有效期（分钟） | `10080`（7 天） |
 | `CORS_ORIGINS` | 允许的跨域来源 | `*` |
 
