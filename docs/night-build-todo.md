@@ -7,7 +7,7 @@
 ## 首夜种子任务（源自 2026-09-19 OPC 复盘决策 + 项目现状）
 
 - [ ] competitive-analysis: 竞品分析（AI 旅行规划产品 3-5 个），输出差距→行动项（首夜必做，输出 docs/nightly/competitive-analysis/<date>.md）
-- [ ] oss-license: 补 LICENSE（MIT）+ 开源说明段落加入 README（验收：LICENSE 文件存在，README 有 LICENSE 小节）
+- [x] oss-license: 补 LICENSE（MIT）+ 开源说明段落加入 README（验收：LICENSE 文件存在，README 有 LICENSE 小节）（2026-10-09 worker-8 补登记：主体已由 commit 90dc87a（MIT LICENSE，Copyright (c) 2026 TonyJun18）+ README「开源许可」小节完成，并已并入 main（merge-base 验证通过）；todo 漏勾导致本夜重跑；worker-8 核验 LICENSE 内容规范（MIT 全文 20 行）+ README L484-488 小节在案 + 后端全套回归测试全绿（314 passed），仅补登记，无新代码改动）
 - [x] oss-gitignore: 审查 .gitignore（backend/.gitignore、frontend/.gitignore、根目录），确保 .env、.venv、dist、__pycache__ 不被提交（验收：git status 干净度 + .gitignore 覆盖）
 - [x] content-readme: README 增加「夜间开发流水线」说明 + 已知局限表格同步（验收：README 内容与仓库实际一致）
 - [x] content-article-publish-list: 为 docs/articles/ 3 篇文章各写一份「发布清单」（标题变体 3 个 / 平台适配要点 / 首图建议），不自动发布（验收：docs/nightly/publish-list.md 存在）
@@ -109,3 +109,11 @@
 > 用户确认「先方案 A，再方案 C；方案 C 先不支持，但记录待办方便后期迭代」。方案 A = 创建 AI 旅行计划时添加出发地 + 出行性质；方案 C = 出行性质进用户画像记忆（本次不实现，仅登记）。
 
 - [ ] task-trip-type-profile-memory: 出行性质进用户画像（方案 C，登记待办，本期不实现）——把本次行程选择的出行性质（休闲/商务/亲子/蜜月/探亲）写入用户画像/行为记忆（复用现有 user_profiles.behavior_memory_json 与 profile_service 行为事件链路）：本次选了商务出差 → 下次创建默认「商务出差」、规划时结合历史出行性质做个性化（同程记忆关联性、历史 destination 去重）；与 task-travel-memory-feedback 的「系统观察画像」打通（验收：创建/规划时出行性质写入行为画像 + 下次创建默认带上次出行性质 + 规划注入历史性质偏好 + 测试覆盖；未实现，仅登记，待用户确认后评估）
+
+## 2026-10-09 竞品分析追加（网络恢复·真实抓取，来自 docs/nightly/competitive-analysis/2026-10-09.md）
+
+- [ ] task-inspiration-mode: 灵感优先起点——「还没想好去哪」入口（补功能，frontend+backend）。Mindtrip Start Anywhere / Layla 五问「Let me inspire you」验证的起点摩擦拆解；创建规划页加灵感入口：填预算档/兴趣标签/季节/同行人数 → 推荐 3-5 个目的地卡片（一句话理由+参考玩法+预估日均预算）→ 选点预填创建表单（验收：前端灵感入口 + 目的地推荐卡片 + 选定预填 + 后端推荐接口 + 测试覆盖）
+- [ ] task-open-hours-check: 营业时间/游玩时长真实度（补功能，backend）。iPlan.ai 商店差评「推荐到达即闭馆 25 分钟的景点」为反面教材；价格诚实哲学扩展到时间维度：POI 类目基准营业时段表 + 建议游玩时长表（规则库，先不接外部营业时间 API）→ 规划/修订排程校验闭馆到达/单日过饱和，产出 warning + 调整建议（复用质检与 ReviseCritic feedback 通道）（验收：排程校验 warning + 建议 + 测试覆盖（闭馆/过饱和/正常三路径）+ 前端质检卡透出）
+- [ ] task-map-pin-cards: 地图 pin 信息卡片与当日路线视觉化（补功能，frontend）。Mindtrip 地图第一视图亮点；TripMap 已有拖拽修订，marker 点击弹信息卡（名称/一句话理由/评分/预算标注/图片占位）+ 按日连线当日站点（验收：marker 点击卡片 + 当日连线 + 移动端可用 + build 通过）
+- [ ] task-guest-trial: 免登录试用规划（补功能，候选评估）。Wonderplan 免费无门槛 / Mindtrip 免 signup 30 秒出行程；我们创建需登录、分享页 token 免登录仅消费端。先评估 guest 数据安全/成本滥用/与 share_token 语义边界，评估不过则仅记录降级（验收：评估记录 +（若通过）guest 建行程/注册接管/提示文案/测试覆盖）
+- [ ] content-inspiration-first: 文章《灵感优先：AI 行程工具的入口之争》（内容沉淀，docs）。三家头部抢低摩擦起点（Start Anywhere / 五问 / 免注册）；对比三种入口范式（目的地优先表单 / checklist 五问 / 灵感流）体验与工程代价，落到我们「问答表单 + 四通道导入 + questions 追问」入口策略与 task-inspiration-mode 铺垫（验收：docs/articles/11-*.md 存在且内容完整，代码引用与仓库实际一致，发布清单补卡片）
