@@ -1,23 +1,30 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import en from 'element-plus/es/locale/lang/en'
 import LangSwitcher from '@/components/LangSwitcher.vue'
+import { useInstallPrompt } from '@/composables/useInstallPrompt'
 
 const router = useRouter()
 const auth = useAuthStore()
 const { t, locale } = useI18n()
+const install = useInstallPrompt()
 
 // Element Plus locale 与 vue-i18n 语言联动（el-config-provider 响应式）
 const elLocale = computed(() => (locale.value === 'en-US' ? en : zhCn))
 
+// 安装引导仅对登录用户展示（非侵入、可关闭、本地标记）
+const showInstallPrompt = computed(() => auth.isLoggedIn && install.shouldShow.value)
+
 // 刷新后用 /auth/me 校验本地 token 并恢复用户信息；token 失效时 store 会自动登出
 onMounted(() => {
   auth.fetchMe()
+  install.bind()
 })
+onBeforeUnmount(() => install.unbind())
 
 function logout() {
   auth.logout()
@@ -112,6 +119,19 @@ function goHome() {
           <span class="tab-label">{{ t('app.planTrip') }}</span>
         </button>
       </nav>
+
+      <!-- PWA 安装引导（仅登录用户、可关闭、本地标记不再打扰） -->
+      <div v-if="showInstallPrompt" class="install-prompt" role="dialog" aria-label="install prompt">
+        <span class="ip-icon"><el-icon :size="18"><Download /></el-icon></span>
+        <div class="ip-body">
+          <div class="ip-title">{{ t('common.installPromptTitle') }}</div>
+          <div class="ip-desc">{{ t('common.installPromptDesc') }}</div>
+        </div>
+        <button class="ip-action" @click="install.install()">{{ t('common.installAction') }}</button>
+        <button class="ip-dismiss" aria-label="dismiss" @click="install.dismiss()">
+          <el-icon :size="14"><Close /></el-icon>
+        </button>
+      </div>
     </el-container>
   </el-config-provider>
 </template>
@@ -262,5 +282,68 @@ function goHome() {
   }
   .tab-item.active { color: var(--brand); }
   .tab-label { line-height: 1; }
+}
+
+/* ── PWA 安装引导（task-mobile-install）── */
+.install-prompt {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 72px; /* 让位底部 Tab（56px + safe-area） */
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(480px, calc(100vw - 24px));
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: saturate(180%) blur(12px);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+  animation: install-prompt-in 0.25s ease-out;
+}
+@keyframes install-prompt-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.ip-icon {
+  flex-shrink: 0;
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.ip-body { flex: 1; min-width: 0; }
+.ip-title { font-size: 14px; font-weight: 600; color: var(--ink); }
+.ip-desc {
+  font-size: 12px; color: var(--muted);
+  margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ip-action {
+  flex-shrink: 0;
+  background: var(--brand); color: #fff;
+  border: none; cursor: pointer;
+  font-size: 13px; font-weight: 500;
+  padding: 8px 14px;
+  border-radius: var(--radius-full);
+  transition: background 0.2s;
+}
+.ip-action:hover { background: var(--brand-dark); }
+.ip-dismiss {
+  flex-shrink: 0;
+  background: none; border: none; cursor: pointer;
+  color: var(--faint);
+  padding: 4px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  transition: color 0.2s, background 0.2s;
+}
+.ip-dismiss:hover { color: var(--ink-2); background: var(--fill); }
+@media (max-width: 480px) {
+  .install-prompt { bottom: 64px; }
+  .ip-desc { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
 </style>

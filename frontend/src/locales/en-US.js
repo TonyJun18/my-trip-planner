@@ -441,6 +441,12 @@ export default {
     // ── PWA offline mode ──
     offlineMode: 'Offline mode',
     offlineModeHint: 'Showing a local cached snapshot. Refresh when back online to see the latest changes.',
+    // ── PWA install prompt (task-mobile-install) ──
+    installPromptTitle: 'Install TripMate on your device',
+    installPromptDesc: 'One-tap install — open your trips anytime, even offline',
+    installAction: 'Install',
+    installLater: 'Not now',
+    installed: 'Installed',
   },
   servicing: {
     transportTitle: 'Transport Options',

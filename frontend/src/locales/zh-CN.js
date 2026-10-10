@@ -441,6 +441,12 @@ export default {
     // ── PWA 离线模式 ──
     offlineMode: '离线模式',
     offlineModeHint: '当前展示的是本地缓存的行程快照，最新修改请联网后刷新查看',
+    // ── PWA 安装引导（task-mobile-install） ──
+    installPromptTitle: '安装「随行」到桌面',
+    installPromptDesc: '一键安装，随时打开规划行程，弱网也能查看离线行程',
+    installAction: '安装',
+    installLater: '以后再说',
+    installed: '已安装',
   },
   servicing: {
     transportTitle: '大交通方案',
