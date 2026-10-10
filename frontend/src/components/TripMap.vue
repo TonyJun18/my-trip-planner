@@ -155,4 +155,8 @@ onBeforeUnmount(() => {
 .trip-map .leaflet-marker-icon[draggable='true']:active {
   cursor: grabbing;
 }
+/* 移动端地图高度压缩：height 由父组件内联传入，必须 !important 覆盖（task-mobile-views） */
+@media (max-width: 640px) {
+  .trip-map { height: 300px !important; }
+}
 </style>
