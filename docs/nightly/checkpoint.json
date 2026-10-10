@@ -25,9 +25,15 @@
     "task-packing-expense",
     "content-trust-gap"
   ],
-  "completed": [],
-  "current_index": 0,
-  "issues": [],
-  "branches": [],
+  "completed": [
+    "competitive-analysis"
+  ],
+  "current_index": 1,
+  "issues": [
+    "worker-1(10-11 competitive-analysis)：本夜为跨夜重建（night 10-10→10-11）。发现用户白天分支 fix/2026-10-10-three-gaps（未合并 main，commits a34ae17+c758ca6）已实现 TimeGate 营业时间/游玩时长校验 + 预算口径透出 + consensus 徽标——todo 中 task-open-hours-check 不得重复开发，待用户 review 合并后核销。竞品分析新增 3 任务（task-live-today-view/task-packing-expense/content-trust-gap）已追加 todo 并同步 checkpoint。"
+  ],
+  "branches": [
+    "nightly/2026-10-11/0-competitive-analysis"
+  ],
   "claims": {}
 }
