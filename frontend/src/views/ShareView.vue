@@ -1,9 +1,10 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import * as api from '@/api'
+import { readCachedJson, isOnline } from '@/utils/pwa'
 import TripMap from '@/components/TripMap.vue'
 
 const route = useRoute()
@@ -11,6 +12,12 @@ const { t } = useI18n()
 const loading = ref(false)
 const error = ref('')
 const trip = ref(null)
+// PWA 离线降级：网络失败时从 Cache API 读分享缓存（SW 的 api 缓存），仅展示缓存快照
+const offlineFallback = ref(false)
+// 离线恢复：online 事件回来且当前展示的是缓存快照 → 自动重新拉取并清除标识
+function handleOnline() {
+  if (offlineFallback.value) load()
+}
 
 // ── 受邀编辑模式：URL 带 ?edit=1（owner 生成的 edit_url）→ 用 edit_token 访问 ──
 const editMode = computed(() => route.query.edit === '1')
@@ -78,9 +85,32 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    trip.value = editMode.value
-      ? await api.getEditableTrip(route.params.token)
-      : await api.getSharedTrip(route.params.token)
+    try {
+      trip.value = editMode.value
+        ? await api.getEditableTrip(route.params.token)
+        : await api.getSharedTrip(route.params.token)
+      offlineFallback.value = false // 在线成功：清除离线标识
+    } catch (e) {
+      // 离线/网络失败：尝试从 Cache API 读分享缓存（SW 缓存 share/edit 读取），读不到再上抛
+      const key = editMode.value ? `/api/v1/trips/edit/${route.params.token}` : `/api/v1/trips/share/${route.params.token}`
+      const cached = await readCachedJson(key)
+      if (cached) {
+        trip.value = cached
+        offlineFallback.value = true
+      } else {
+        // 无缓存可降级：向用户明示（无缓存 ≠ 静默失败）
+        if (!isOnline()) {
+          ElMessage.warning(t('share.offlineNoCache'))
+        }
+        throw e
+      }
+    }
+    // 离线降级：跳过协作接口（评论/投票离线语义无意义，且避免连续弹错）
+    if (offlineFallback.value) {
+      comments.value = []
+      votes.value = {}
+      return
+    }
     await Promise.all([loadComments(), loadVotes()])
   } catch (e) {
     error.value = editMode.value ? t('share.editLinkInvalid') : t('share.linkInvalid')
@@ -201,7 +231,13 @@ async function moveStop(day, stop, dir) {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  window.addEventListener('online', handleOnline)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('online', handleOnline)
+})
 </script>
 
 <template>
@@ -220,6 +256,19 @@ onMounted(load)
         </template>
       </el-result>
     </div>
+
+    <!-- 离线模式标识（PWA：网络失败时读缓存展示，联网自动恢复） -->
+    <el-alert
+      v-if="offlineFallback"
+      class="offline-banner"
+      type="warning"
+      :closable="false"
+      show-icon
+    >
+      <template #title>
+        {{ $t('share.offlineMode') }} · {{ $t('share.offlineModeHint') }}
+      </template>
+    </el-alert>
 
     <template v-else-if="trip">
       <!-- 头图 + 概览 -->
@@ -421,6 +470,9 @@ onMounted(load)
 </template>
 <style scoped>
 .share-page { max-width: 1080px; margin: 0 auto; padding-top: 8px; }
+
+/* PWA 离线模式标识（task-pwa-cache-deep） */
+.offline-banner { margin-bottom: 16px; }
 
 .share-banner {
   display: flex; align-items: center;
