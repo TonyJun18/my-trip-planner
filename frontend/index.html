@@ -4,9 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#ff385c" />
+    <!-- iOS PWA 支持（task-mobile-install）：添加到主屏幕后全屏独立运行 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="随行" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23ff385c'/><text x='50' y='66' font-size='48' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>旅</text></svg>" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="/icon.svg" />
+    <!-- iOS apple-touch-icon 必须是 PNG（不支持 SVG），透明底会被渲染成黑底 → 用品牌色不透明底 180x180 -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>随行 · AI 旅行规划</title>
   </head>
   <body>

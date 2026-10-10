@@ -12,7 +12,16 @@ const VERSION = 'v1'
 const SHELL_CACHE = `shell-${VERSION}`
 const API_CACHE = `api-${VERSION}`
 
-const SHELL_URLS = ['/', '/index.html', '/offline.html', '/manifest.webmanifest', '/icon.svg']
+const SHELL_URLS = [
+  '/',
+  '/index.html',
+  '/offline.html',
+  '/manifest.webmanifest',
+  '/icon.svg',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/apple-touch-icon.png',
+]
 
 // 允许离线回退的行程 API GET 白名单（Trip.id 为 UUID 字符串，token 为 64 位字符串）：
 //   /api/v1/trips/{id}                行程详情
@@ -89,7 +98,9 @@ self.addEventListener('fetch', (event) => {
   if (
     url.pathname.startsWith('/assets/') ||
     url.pathname === '/manifest.webmanifest' ||
-    url.pathname === '/icon.svg'
+    url.pathname === '/icon.svg' ||
+    url.pathname === '/apple-touch-icon.png' ||
+    url.pathname.startsWith('/icons/')
   ) {
     event.respondWith(
       caches.match(req).then(
