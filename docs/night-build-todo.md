@@ -82,7 +82,7 @@
 
 ## 2026-10-02 竞品分析追加（存量空洞审计①，来自 docs/nightly/competitive-analysis/2026-10-02.md）
 
-- [ ] task-map-drag-edit: 地图拖拽修订——拖动 marker 改 lat/lng → 生成 ReorderDiff → 复用 revise 原子应用（docs/articles/05-map-edit-paradigms.md §4/§5 已论证「统一 diff 内核」工程基础；Wandercrafted/AiGo 地图交互为竞品亮点而 TripMap.vue 目前只读）（验收：拖动 marker 改坐标 → diff 原子应用 + DrivingGate 约束前置提示 + 移动端隐藏拖拽 + 测试覆盖；2026-10-03 worker-1 复核仍为真空洞，保持排队）
+- [x] task-map-drag-edit: 地图拖拽修订——拖动 marker 改 lat/lng → 生成 ReorderDiff → 复用 revise 原子应用（docs/articles/05-map-edit-paradigms.md §4/§5 已论证「统一 diff 内核」工程基础；Wandercrafted/AiGo 地图交互为竞品亮点而 TripMap.vue 目前只读）（验收：拖动 marker 改坐标 → diff 原子应用 + DrivingGate 约束前置提示 + 移动端隐藏拖拽 + 测试覆盖；2026-10-03 worker-1 复核仍为真空洞，保持排队）（2026-10-11 worker-4 实施：后端内核（map_edit_service 最小 diff 原子应用 + POST /map-edit + DrivingGate 前置 + 8 例测试）与 TripMap 拖拽组件此前已入 main（e501128/bc8f69c），本夜补 TripDetailView 前端闭环——markers 带 day_number/stop_id、onMove 调 mapEditTrip、自驾 400 内联提示 + 失败回弹 load、i18n 5 键 zh/en；核验后端 314 测试全绿 + 前端 build 通过；唯一遗留：ShareView 受邀编辑模式（?edit=1）未接拖拽（后端 token 端点 0c44648 在未合并分支，待用户 review 后处理））
 
 ## 用户白天下达任务（2026-10-03 追加·移动端 A→B 路线）
 
