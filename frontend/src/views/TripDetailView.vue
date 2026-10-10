@@ -1440,4 +1440,41 @@ onMounted(load)
   .hero-overlay { padding: 24px; }
   .hero-title { font-size: 24px; }
 }
+
+/* ── 移动端（≤640px）断点适配（task-mobile-views）：375px 可用、可滚动、无水平滚动 ── */
+@media (max-width: 640px) {
+  .detail-page { padding: 0 12px; }
+  /* 顶栏：返回按钮与操作区分行，操作按钮换行不溢出；触控目标 ≥40px */
+  .topbar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .topbar-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .topbar-actions :deep(.el-button) { margin-left: 0; min-height: 40px; }
+  /* 头图：垂直堆叠（标题区 + 底部状态区），状态不再绝对定位重叠标题 */
+  .hero-cover { height: auto; min-height: 150px; flex-direction: column; align-items: stretch; }
+  .hero-city { font-size: 110px; bottom: -20px; }
+  .hero-overlay { padding: 20px 16px 12px; }
+  .hero-title { font-size: 20px; margin-bottom: 10px; }
+  .hero-pill { font-size: 11.5px; padding: 5px 10px; }
+  .status-group { position: static; order: 2; display: flex; justify-content: flex-end; gap: 6px; padding: 8px 12px 12px; }
+  /* 卡片内边距收窄 */
+  .map-card, .budget-card { padding: 14px; }
+  .map-hint { font-size: 11px; }
+  /* AI 调整区：输入与按钮纵向堆叠，按钮全宽 + 44px 触控 */
+  .revise-card { padding: 14px; }
+  .revise-row { flex-direction: column; gap: 8px; }
+  .revise-row :deep(.el-button) { width: 100%; margin-left: 0; min-height: 44px; }
+  /* 每日行程：日期头纵向 + 操作右对齐换行；徽章缩小 */
+  .day-head { flex-direction: column; align-items: stretch; gap: 8px; }
+  .day-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; }
+  .day-actions :deep(.el-button) { margin-left: 0; min-height: 40px; }
+  .day-badge { width: 44px; height: 44px; font-size: 12px; }
+  .day-headline { gap: 10px; }
+  .stop-body { padding: 12px 14px; }
+  .stop-actions { flex-wrap: wrap; }
+  .stop-actions :deep(.el-button) { min-height: 40px; }
+  /* 底部操作：2 列网格 + 44px 触控目标 */
+  .bottom-bar { gap: 8px; }
+  .bottom-bar :deep(.el-button) { flex: 1 1 calc(50% - 4px); margin-left: 0; min-height: 44px; }
+  /* 编辑对话框：经纬度输入纵向（对话框已由全局断点收窄） */
+  .latlng { flex-direction: column; }
+}
 </style>

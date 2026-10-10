@@ -598,4 +598,28 @@ onMounted(load)
   .hero-overlay { padding: 24px; }
   .hero-title { font-size: 24px; }
 }
+
+/* ── 移动端（≤640px）断点适配（task-mobile-views）：分享/受邀编辑 375px 可用、无水平滚动 ── */
+@media (max-width: 640px) {
+  .share-page { padding: 6px 12px 0; }
+  /* 头图：垂直堆叠，状态徽标落到内容底部（不再绝对定位重叠标题） */
+  .hero-cover { height: auto; min-height: 150px; flex-direction: column; align-items: stretch; }
+  .hero-city { font-size: 110px; bottom: -20px; }
+  .hero-overlay { padding: 20px 16px 12px; }
+  .hero-title { font-size: 20px; margin-bottom: 10px; }
+  .hero-pill { font-size: 11.5px; padding: 5px 10px; }
+  .status-badge { position: static; align-self: flex-end; margin: 0 12px 12px; }
+  .map-card, .budget-card { padding: 14px; }
+  .map-hint { font-size: 11px; }
+  .day-badge { width: 44px; height: 44px; font-size: 12px; }
+  .stop-body { padding: 12px 14px; }
+  /* 站点 meta：允许换行（钱/时长 + 投票/编辑操作不再挤一行溢出） */
+  .stop-meta { flex-wrap: wrap; gap: 8px; }
+  .vote-group { margin-left: 0; }
+  .vote-btn { min-height: 40px; padding: 5px 12px; }
+  .edit-group { margin-left: 0; flex-wrap: wrap; }
+  .edit-group :deep(.el-button) { min-height: 40px; margin-left: 0; }
+  .inline-edit-name { width: 100%; max-width: 100%; }
+  .comment-name-input { max-width: 100%; }
+}
 </style>
