@@ -318,6 +318,9 @@ export default {
     diffReorder: 'Reorder',
     diffReorderText: '{day}Reorder stops (move to position {n})',
     diffActionText: '{day}{op} "{target}"{fields}',
+    timeGateTitle: 'Time Check',
+    timeGateBasis: 'Rule-based estimate',
+    timeGateWarn: 'Hint',
     addStop: 'Add Stop',
     removeDay: 'Delete Day',
     moveUp: 'Move Up',
@@ -481,6 +484,13 @@ export default {
     notePh: 'Note (optional)',
     wantGo: 'Want to go 👍',
     notGo: "Don't want to go 👎",
+    consensus: 'Consensus',
+    consensusTip: 'Majority has voted and favors it — good to proceed',
+    basisLabel: 'How we estimated',
+    basisHotel: 'Hotel ¥{avg}/night × {n} (city base-rate estimate)',
+    basisHotelShort: 'Hotel estimated from city base rate',
+    basisTransport: 'Transport: reference fare ×2 (cheapest one-way × round trip)',
+    basisTransportShort: 'Transport estimated from reference fare',
   },
   // ── XHS note (Plan A: content factory) ──────────────────
   xhsNote: {

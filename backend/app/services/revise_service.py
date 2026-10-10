@@ -549,6 +549,11 @@ async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
     new_days = _plan_snapshot(trip)["days"]
     driving = await check_plan_driving_async({"days": new_days})
 
+    # 时间校验（TimeGate）随修订重算：闭馆到达/单日过满提示同步刷新
+    from app.services.time_validation import check_plan_time_gate
+
+    time_gate = check_plan_time_gate({"days": new_days})
+
     # 更新最新 TripPlan 快照（若无则跳过；前端详情页主数据来自 trip 本身）
     stmt = select(TripPlan).where(TripPlan.trip_id == trip.id).order_by(TripPlan.created_at.desc())
     plan = (await db.execute(stmt)).scalars().first()
@@ -558,4 +563,9 @@ async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
             "budget": budget,
             "days": new_days,
             "driving": driving,
+            "time_gate": {
+                **{k: v for k, v in time_gate.items() if k != "issues"},
+                "issues": time_gate.get("issues") or [],
+                "basis": "rule_based",
+            },
         }

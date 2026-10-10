@@ -287,6 +287,9 @@ export default {
     deleteTrip: '删除行程',
     fromDeparture: '{dep}出发',
     tripTypeLabel: '出行性质',
+    timeGateTitle: '时间校验提示',
+    timeGateBasis: '规则库估算',
+    timeGateWarn: '提示',
     reviseTitle: '让 AI 调整行程',
     reviseHint: '用一句话告诉它你想怎么改',
     revisePlaceholder: '例如：第三天太赶了，西湖只留半天，晚上加个知味观',
@@ -481,6 +484,13 @@ export default {
     notePh: '备注（可选）',
     wantGo: '想去 👍',
     notGo: '不想去 👎',
+    consensus: '小组一致',
+    consensusTip: '过半成员表态且赞成多于反对，可推进',
+    basisLabel: '预算口径',
+    basisHotel: '住宿约 ¥{avg}/晚×{n}晚（城市基准价估算）',
+    basisHotelShort: '住宿按城市基准价估算',
+    basisTransport: '大交通按参考价×2（单程最低×往返）',
+    basisTransportShort: '大交通按参考价估算',
   },
   // ── 小红书笔记（方案 A：内容工厂） ──────────────────────
   xhsNote: {

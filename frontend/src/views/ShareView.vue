@@ -148,6 +148,35 @@ function myVote(stopId) {
   return votes.value?.[stopId]?.my_value || 0
 }
 
+// ── 预算估算口径：estimate_basis（hotel: 城市基准价静态估算 / transport: 采集参考价×2）──
+const basisText = computed(() => {
+  const b = budget.value?.estimate_basis
+  if (!b) return ''
+  const parts = []
+  if (b.hotel) {
+    const n = b.hotel.estimated_count ?? 0
+    const avg = b.hotel.avg_estimate ?? b.hotel.average_estimate ?? null
+    parts.push(
+      avg != null && n > 0
+        ? t('share.basisHotel', { avg, n })
+        : t('share.basisHotelShort')
+    )
+  }
+  if (b.transport) {
+    parts.push(
+      b.transport.estimated_count
+        ? t('share.basisTransport')
+        : t('share.basisTransportShort')
+    )
+  }
+  return parts.join(' · ')
+})
+
+// 渐进式共识：后端 list_stop_votes 已计算 consensus（过半成员表态且赞成多于反对）
+function hasConsensus(stopId) {
+  return !!votes.value?.[stopId]?.consensus
+}
+
 // ── 受邀编辑（editMode）：勾选 / 行内改名备注 / 上移下移顺序 ──
 async function toggleChecked(stop) {
   try {
@@ -286,6 +315,12 @@ onMounted(load)
                 · {{ $t('common.perPersonDaily', { amount: budget.per_person_daily }) }}
               </span>
             </div>
+            <!-- 预算估算口径（诚实估算：来源 + 基准说明，对齐「预算必须可审计」哲学） -->
+            <div v-if="basisText" class="budget-basis">
+              <el-icon><InfoFilled /></el-icon>
+              <span class="budget-basis-label">{{ $t('share.basisLabel') }}</span>
+              <span class="budget-basis-text">{{ basisText }}</span>
+            </div>
           </template>
           <el-empty v-else :description="$t('common.noBudget')" :image-size="60" />
         </div>
@@ -347,6 +382,10 @@ onMounted(load)
                     @click="castVote(stop.id, -1)"
                     :title="$t('share.notGo')"
                   >👎 {{ voteCount(stop.id, 'down') }}</button>
+                  <!-- 渐进式共识徽标：过半成员表态且赞成多于反对 →「小组一致」 -->
+                  <span v-if="hasConsensus(stop.id)" class="consensus-badge" :title="$t('share.consensusTip')">
+                    <el-icon style="margin-right: 2px"><CircleCheck /></el-icon>{{ $t('share.consensus') }}
+                  </span>
                 </span>
                 <!-- 受邀编辑：行内编辑 + 上移下移 -->
                 <span v-else class="edit-group">
@@ -566,6 +605,25 @@ onMounted(load)
 .vote-btn:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
 .vote-btn.active { background: var(--brand-soft); border-color: var(--brand); color: var(--brand); font-weight: 600; }
 .vote-btn:disabled { opacity: .55; cursor: default; }
+/* 渐进式共识徽标：过半成员表态且赞成多于反对 */
+.consensus-badge {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: 12px; font-weight: 600;
+  color: var(--success, #16a34a);
+  background: color-mix(in srgb, var(--success, #16a34a) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success, #16a34a) 35%, transparent);
+  border-radius: 10px; padding: 1px 8px;
+  line-height: 1.6; white-space: nowrap;
+}
+/* 预算估算口径（诚实估算标注） */
+.budget-basis {
+  display: flex; align-items: flex-start; gap: 6px;
+  margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border, #e5e7eb);
+  font-size: 12px; color: var(--ink-2, #6b7280); line-height: 1.6;
+}
+.budget-basis .el-icon { margin-top: 2px; flex-shrink: 0; }
+.budget-basis-label { font-weight: 600; white-space: nowrap; color: var(--ink-3, #9ca3af); }
+.budget-basis-text { word-break: break-all; }
 
 /* ── 分享页协作评论 ── */
 .comments-card {
