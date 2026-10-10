@@ -182,12 +182,51 @@ const markers = computed(() => {
   for (const day of trip.value?.days || []) {
     for (const stop of day.stops || []) {
       if (stop.lat != null && stop.lng != null) {
-        list.push({ lat: stop.lat, lng: stop.lng, name: stop.name, stop_type: stop.stop_type, description: stop.description })
+        list.push({ lat: stop.lat, lng: stop.lng, name: stop.name, stop_type: stop.stop_type, description: stop.description, day_number: day.day_number, stop_id: stop.id })
       }
     }
   }
   return list
 })
+
+// 拖拽仅对 owner 开放（受邀编辑走分享页 editMode，本视图为 owner 主入口）：
+// 详情页路由是登录态 owner 视角，无 isOwner 标志 → 直接允许（后端 /map-edit 只认 owner 鉴权）。
+// 移动端由 TripMap 内部 isMobileViewport() 自动隐藏拖拽（验收「移动端隐藏拖拽」）。
+const canMapDrag = computed(() => !offlineFallback.value)
+
+// ── 地图拖拽修订（task-map-drag-edit）：拖动 marker 改坐标 ──────
+// 后端内核（POST /trips/{id}/map-edit 最小 diff 原子应用 + DrivingGate 约束门）已在 main，
+// 这里完成 TripDetailView 接线：拖拽结束 → 调 mapEditTrip → 成功刷新（marker 落到新位置 +
+// 预算/自驾重算），失败（如自驾约束 400）→ 重新 load 让 marker 弹回原位 + 内联提示。
+const mapDragBusy = ref(false)
+const mapDragError = ref('')
+async function onMapMove({ name, lat, lng, day_number }) {
+  if (mapDragBusy.value || !trip.value?.id) return
+  mapDragBusy.value = true
+  mapDragError.value = ''
+  try {
+    const r = await api.mapEditTrip(trip.value.id, { name, lat, lng, day_number })
+    if (r.applied) {
+      ElMessage.success(t('tripDetail.mapDragMoved'))
+      budget.value = null
+      await load()
+    } else {
+      mapDragError.value = t('tripDetail.mapDragNoop')
+      await load()
+    }
+  } catch (e) {
+    // DrivingGate 拒绝 → 内联展示后端 detail.issues（避免抬手即被全局 toast 淹没）；
+    // 其余错误走拦截器 toast。无论如何重新 load，让 marker 弹回原位（组件只发事件不改数据）。
+    const detail = e?.response?.data?.error?.detail
+    const issues = Array.isArray(detail?.issues) ? detail.issues : []
+    mapDragError.value = issues.length
+      ? t('tripDetail.mapDragRejected', { msg: issues[0] })
+      : t('tripDetail.mapDragFail')
+    await load()
+  } finally {
+    mapDragBusy.value = false
+  }
+}
 
 // 行程状态：展示 + 切换（label 走 i18n）
 const statusMap = computed(() => ({
@@ -741,9 +780,24 @@ onMounted(load)
           <div class="map-card">
             <div class="card-head">
               <span class="card-title">{{ $t('common.mapTitle') }}</span>
-              <span class="map-hint">{{ $t('common.mapHint') }}</span>
+              <span class="map-hint">
+                {{ canMapDrag ? $t('tripDetail.mapDragHint') : $t('common.mapHint') }}
+              </span>
             </div>
-            <TripMap :markers="markers" height="420px" />
+            <el-alert
+              v-if="mapDragError"
+              class="map-drag-error"
+              type="warning"
+              :closable="false"
+              show-icon
+              :title="mapDragError"
+            />
+            <TripMap
+              :markers="markers"
+              height="420px"
+              :draggable="canMapDrag"
+              :on-move="onMapMove"
+            />
           </div>
           <div class="budget-card">
             <div class="card-head"><span class="card-title">{{ $t('common.budgetTitle') }}</span></div>
@@ -1174,6 +1228,7 @@ onMounted(load)
 .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .card-title { font-size: 15px; font-weight: 600; color: var(--ink); }
 .map-hint { font-size: 12px; color: var(--faint); }
+.map-drag-error { margin-bottom: 10px; }
 
 .budget-ring-wrap { text-align: center; padding: 8px 0 4px; }
 .budget-ring {
@@ -1384,5 +1439,42 @@ onMounted(load)
   .hero-cover { height: 160px; }
   .hero-overlay { padding: 24px; }
   .hero-title { font-size: 24px; }
+}
+
+/* ── 移动端（≤640px）断点适配（task-mobile-views）：375px 可用、可滚动、无水平滚动 ── */
+@media (max-width: 640px) {
+  .detail-page { padding: 0 12px; }
+  /* 顶栏：返回按钮与操作区分行，操作按钮换行不溢出；触控目标 ≥40px */
+  .topbar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .topbar-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .topbar-actions :deep(.el-button) { margin-left: 0; min-height: 40px; }
+  /* 头图：垂直堆叠（标题区 + 底部状态区），状态不再绝对定位重叠标题 */
+  .hero-cover { height: auto; min-height: 150px; flex-direction: column; align-items: stretch; }
+  .hero-city { font-size: 110px; bottom: -20px; }
+  .hero-overlay { padding: 20px 16px 12px; }
+  .hero-title { font-size: 20px; margin-bottom: 10px; }
+  .hero-pill { font-size: 11.5px; padding: 5px 10px; }
+  .status-group { position: static; order: 2; display: flex; justify-content: flex-end; gap: 6px; padding: 8px 12px 12px; }
+  /* 卡片内边距收窄 */
+  .map-card, .budget-card { padding: 14px; }
+  .map-hint { font-size: 11px; }
+  /* AI 调整区：输入与按钮纵向堆叠，按钮全宽 + 44px 触控 */
+  .revise-card { padding: 14px; }
+  .revise-row { flex-direction: column; gap: 8px; }
+  .revise-row :deep(.el-button) { width: 100%; margin-left: 0; min-height: 44px; }
+  /* 每日行程：日期头纵向 + 操作右对齐换行；徽章缩小 */
+  .day-head { flex-direction: column; align-items: stretch; gap: 8px; }
+  .day-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; }
+  .day-actions :deep(.el-button) { margin-left: 0; min-height: 40px; }
+  .day-badge { width: 44px; height: 44px; font-size: 12px; }
+  .day-headline { gap: 10px; }
+  .stop-body { padding: 12px 14px; }
+  .stop-actions { flex-wrap: wrap; }
+  .stop-actions :deep(.el-button) { min-height: 40px; }
+  /* 底部操作：2 列网格 + 44px 触控目标 */
+  .bottom-bar { gap: 8px; }
+  .bottom-bar :deep(.el-button) { flex: 1 1 calc(50% - 4px); margin-left: 0; min-height: 44px; }
+  /* 编辑对话框：经纬度输入纵向（对话框已由全局断点收窄） */
+  .latlng { flex-direction: column; }
 }
 </style>

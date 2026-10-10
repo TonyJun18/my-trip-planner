@@ -1179,4 +1179,31 @@ function goDetail() {
   .day-card { flex-direction: column; }
   .success-actions { margin-left: 0; width: 100%; }
 }
+
+/* ── 移动端（≤640px）断点适配（task-mobile-views）：375px 表单/规划/结果三流程可用、无水平滚动 ── */
+@media (max-width: 640px) {
+  .wizard { padding: 0 12px; }
+  .wizard-head { margin-bottom: 16px; }
+  .page-title { font-size: 22px; }
+  .ai-badge { position: static; display: inline-flex; margin-top: 8px; }
+  .panel { padding: 16px 14px; }
+  .form-section { padding: 14px; }
+  /* 日期双选：纵向堆叠（两个 date-picker 并排必然溢出 375px），箭头旋转分隔 */
+  .date-row { flex-direction: column; align-items: stretch; gap: 4px; }
+  .date-sep { align-self: center; transform: rotate(90deg); }
+  .date-row :deep(.el-date-editor) { width: 100% !important; }
+  /* 触控目标：chips ≥40px（目的地快捷/出行性质/偏好/预算档/澄清问题） */
+  .chip { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
+  .step-num { width: 26px; height: 26px; }
+  .step-label { font-size: 11px; }
+  /* 结果：摘要卡单列（2 列在 375px 过窄挤爆） */
+  .summary-grid { grid-template-columns: 1fr; }
+  .success-banner { padding: 18px 16px; }
+  .success-actions :deep(.btn-primary) { min-height: 44px; }
+  .day-card { padding: 16px; gap: 12px; }
+  .qa-field { padding: 12px; }
+  /* 规划中：阶段头允许换行（summary 独占一行，避免挤压状态文案） */
+  .phase-head { flex-wrap: wrap; }
+  .phase-summary { margin-left: 0; width: 100%; }
+}
 </style>

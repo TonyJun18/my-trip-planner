@@ -1,9 +1,10 @@
 <script setup>
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, onBeforeUnmount, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import * as api from '@/api'
+import { readCachedJson, isOnline } from '@/utils/pwa'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -13,6 +14,12 @@ const trips = ref([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(9)
+// PWA 离线降级：网络失败时从 Cache API 读列表缓存（SW 的 api 缓存），仅展示缓存快照
+const offlineFallback = ref(false)
+// 离线恢复：online 事件回来且当前展示的是缓存快照 → 自动重新拉取并清除标识
+function handleOnline() {
+  if (offlineFallback.value) load()
+}
 
 // ── 手动创建行程（PATCH/POST /trips 后端已支持，前端补入口） ──
 const createVisible = ref(false)
@@ -80,9 +87,27 @@ const tripCountLabel = computed(() => (total.value ? t('tripList.totalTrips', { 
 async function load() {
   loading.value = true
   try {
-    const data = await api.listTrips({ offset: (page.value - 1) * pageSize.value, limit: pageSize.value })
-    trips.value = data.items
-    total.value = data.total
+    try {
+      const data = await api.listTrips({ offset: (page.value - 1) * pageSize.value, limit: pageSize.value })
+      trips.value = data.items
+      total.value = data.total
+      offlineFallback.value = false // 在线成功：清除离线标识
+    } catch (e) {
+      // 离线/网络失败：尝试从 Cache API 读列表缓存（SW 静默缓存当前页），读不到再上抛
+      const key = `/api/v1/trips`
+      const cached = await readCachedJson(key)
+      if (cached && Array.isArray(cached.items)) {
+        trips.value = cached.items
+        total.value = cached.total ?? cached.items.length
+        offlineFallback.value = true
+      } else {
+        // 无缓存可降级：向用户明示（无缓存 ≠ 静默失败）
+        if (!isOnline()) {
+          ElMessage.warning(t('tripList.offlineNoCache'))
+        }
+        throw e
+      }
+    }
   } finally {
     loading.value = false
   }
@@ -118,7 +143,13 @@ async function removeTrip(trip) {
   load()
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  window.addEventListener('online', handleOnline)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('online', handleOnline)
+})
 </script>
 
 <template>
@@ -139,6 +170,19 @@ onMounted(load)
         <el-icon style="margin-right: 6px"><Plus /></el-icon>{{ t('tripList.manualCreate') }}
       </button>
     </div>
+
+    <!-- 离线模式标识（PWA：网络失败时读缓存展示，联网自动恢复） -->
+    <el-alert
+      v-if="offlineFallback"
+      class="offline-banner"
+      type="warning"
+      :closable="false"
+      show-icon
+    >
+      <template #title>
+        {{ t('tripList.offlineMode') }} · {{ t('tripList.offlineModeHint') }}
+      </template>
+    </el-alert>
 
     <!-- 空状态 -->
     <div v-if="!loading && !trips.length" class="empty">
@@ -269,6 +313,8 @@ onMounted(load)
   display: flex; align-items: flex-end; justify-content: space-between;
   margin-bottom: 24px; gap: 16px; flex-wrap: wrap;
 }
+/* PWA 离线模式标识（task-pwa-cache-deep） */
+.offline-banner { margin-bottom: 16px; }
 .page-title {
   margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink);
 }

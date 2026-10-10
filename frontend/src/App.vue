@@ -1,23 +1,48 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import en from 'element-plus/es/locale/lang/en'
 import LangSwitcher from '@/components/LangSwitcher.vue'
+import { useInstallPrompt } from '@/composables/useInstallPrompt'
+import { registerSW } from '@/utils/pwa'
 
 const router = useRouter()
 const auth = useAuthStore()
 const { t, locale } = useI18n()
+const install = useInstallPrompt()
+
+// PWA 更新提示：新版本 SW 就绪 → 非侵入提示引导刷新（task-pwa-cache-deep）
+const showUpdatePrompt = ref(false)
+let unregisterSW = () => {}
 
 // Element Plus locale 与 vue-i18n 语言联动（el-config-provider 响应式）
 const elLocale = computed(() => (locale.value === 'en-US' ? en : zhCn))
 
+// 安装引导仅对登录用户展示（非侵入、可关闭、本地标记）
+const showInstallPrompt = computed(() => auth.isLoggedIn && install.shouldShow.value)
+
 // 刷新后用 /auth/me 校验本地 token 并恢复用户信息；token 失效时 store 会自动登出
 onMounted(() => {
   auth.fetchMe()
+  install.bind()
+  // PWA 更新监听：新版本就绪时提示（updatefound + controllerchange 双通道，防时序丢失）
+  unregisterSW = registerSW(() => {
+    showUpdatePrompt.value = true
+  })
 })
+onBeforeUnmount(() => {
+  install.unbind()
+  unregisterSW()
+})
+
+// 刷新到最新版本（SW 已跳过等待并接管，location.reload 即加载新资源）
+function reloadForUpdate() {
+  showUpdatePrompt.value = false
+  window.location.reload()
+}
 
 function logout() {
   auth.logout()
@@ -112,6 +137,32 @@ function goHome() {
           <span class="tab-label">{{ t('app.planTrip') }}</span>
         </button>
       </nav>
+
+      <!-- PWA 更新提示（task-pwa-cache-deep）：新版本已就绪 → 引导刷新 -->
+      <div v-if="showUpdatePrompt" class="update-prompt" role="alert" aria-label="update prompt">
+        <span class="up-icon"><el-icon :size="18"><RefreshRight /></el-icon></span>
+        <div class="up-body">
+          <div class="up-title">{{ t('common.updatePromptTitle') }}</div>
+          <div class="up-desc">{{ t('common.updatePromptDesc') }}</div>
+        </div>
+        <button class="up-action" @click="reloadForUpdate">{{ t('common.updateAction') }}</button>
+        <button class="up-dismiss" aria-label="dismiss" @click="showUpdatePrompt = false">
+          <el-icon :size="14"><Close /></el-icon>
+        </button>
+      </div>
+
+      <!-- PWA 安装引导（仅登录用户、可关闭、本地标记不再打扰） -->
+      <div v-if="showInstallPrompt" class="install-prompt" role="dialog" aria-label="install prompt">
+        <span class="ip-icon"><el-icon :size="18"><Download /></el-icon></span>
+        <div class="ip-body">
+          <div class="ip-title">{{ t('common.installPromptTitle') }}</div>
+          <div class="ip-desc">{{ t('common.installPromptDesc') }}</div>
+        </div>
+        <button class="ip-action" @click="install.install()">{{ t('common.installAction') }}</button>
+        <button class="ip-dismiss" aria-label="dismiss" @click="install.dismiss()">
+          <el-icon :size="14"><Close /></el-icon>
+        </button>
+      </div>
     </el-container>
   </el-config-provider>
 </template>
@@ -262,5 +313,131 @@ function goHome() {
   }
   .tab-item.active { color: var(--brand); }
   .tab-label { line-height: 1; }
+}
+
+/* ── PWA 更新提示（task-pwa-cache-deep）：新版本就绪 → 非侵入引导刷新 ── */
+.update-prompt {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 80px; /* 让位顶栏（64px） */
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(480px, calc(100vw - 24px));
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: saturate(180%) blur(12px);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+  animation: update-prompt-in 0.25s ease-out;
+}
+@keyframes update-prompt-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.up-icon {
+  flex-shrink: 0;
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.up-body { flex: 1; min-width: 0; }
+.up-title { font-size: 14px; font-weight: 600; color: var(--ink); }
+.up-desc {
+  font-size: 12px; color: var(--muted);
+  margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.up-action {
+  flex-shrink: 0;
+  background: var(--brand); color: #fff;
+  border: none; cursor: pointer;
+  font-size: 13px; font-weight: 500;
+  padding: 8px 14px;
+  border-radius: var(--radius-full);
+  transition: background 0.2s;
+}
+.up-action:hover { background: var(--brand-dark); }
+.up-dismiss {
+  flex-shrink: 0;
+  background: none; border: none; cursor: pointer;
+  color: var(--faint);
+  padding: 4px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  transition: color 0.2s, background 0.2s;
+}
+.up-dismiss:hover { color: var(--ink-2); background: var(--fill); }
+@media (max-width: 480px) {
+  .update-prompt { top: 68px; }
+  .up-desc { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+}
+
+/* ── PWA 安装引导（task-mobile-install）── */
+.install-prompt {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 72px; /* 让位底部 Tab（56px + safe-area） */
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(480px, calc(100vw - 24px));
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: saturate(180%) blur(12px);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+  animation: install-prompt-in 0.25s ease-out;
+}
+@keyframes install-prompt-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.ip-icon {
+  flex-shrink: 0;
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.ip-body { flex: 1; min-width: 0; }
+.ip-title { font-size: 14px; font-weight: 600; color: var(--ink); }
+.ip-desc {
+  font-size: 12px; color: var(--muted);
+  margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ip-action {
+  flex-shrink: 0;
+  background: var(--brand); color: #fff;
+  border: none; cursor: pointer;
+  font-size: 13px; font-weight: 500;
+  padding: 8px 14px;
+  border-radius: var(--radius-full);
+  transition: background 0.2s;
+}
+.ip-action:hover { background: var(--brand-dark); }
+.ip-dismiss {
+  flex-shrink: 0;
+  background: none; border: none; cursor: pointer;
+  color: var(--faint);
+  padding: 4px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  transition: color 0.2s, background 0.2s;
+}
+.ip-dismiss:hover { color: var(--ink-2); background: var(--fill); }
+@media (max-width: 480px) {
+  .install-prompt { bottom: 64px; }
+  .ip-desc { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
 </style>

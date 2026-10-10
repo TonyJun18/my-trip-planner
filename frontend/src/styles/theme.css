@@ -123,3 +123,23 @@ body {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ── 移动端（≤640px）系统级适配（task-mobile-views） ──
+   Element Plus 弹层 teleport 到 body，scoped 样式够不到，必须在全局收窄：
+   480/680px 固定宽度对话框在 375px 视口会产生水平滚动，验收要求无溢出。 */
+@media (max-width: 640px) {
+  .el-dialog {
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px) !important;
+  }
+  .el-message-box {
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px) !important;
+  }
+  /* 日期范围弹层（批量生成日程 daterange）面板默认 ~646px，375px 下压缩并允许面板内横向滚动，
+     避免撑破页面产生水平滚动（内容仍可操作） */
+  .el-picker-panel {
+    max-width: 94vw !important;
+    overflow-x: auto;
+  }
+}

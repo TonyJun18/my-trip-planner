@@ -49,6 +49,10 @@ export default {
     perPersonTotal: '~¥{amount} per person',
     perPersonDaily: '~¥{amount} per person per day',
     perPersonLabel: 'Per person',
+    // ── PWA update prompt (task-pwa-cache-deep) ──
+    updatePromptTitle: 'New version available',
+    updatePromptDesc: 'A new version is ready. Refresh to use it.',
+    updateAction: 'Refresh now',
   },
   auth: {
     welcomeBack: 'Welcome back',
@@ -178,6 +182,10 @@ export default {
     deleteConfirmTitle: 'Delete Trip',
     deleteConfirmMsg: 'Delete "{title}"? This cannot be undone.',
     deleted: 'Deleted',
+    // ── PWA offline fallback (task-pwa-cache-deep) ──
+    offlineMode: 'Offline mode',
+    offlineModeHint: 'Showing a locally cached trip list. Auto-refreshes when you are back online.',
+    offlineNoCache: 'You are offline with no local cache. Connect and try again.',
   },
   planWizard: {
     pageTitle: 'Start your next journey',
@@ -362,6 +370,11 @@ export default {
     movedUp: 'Moved up',
     movedDown: 'Moved down',
     stopUpdated: 'Stop updated',
+    mapDragHint: 'Drag markers to adjust positions (desktop)',
+    mapDragMoved: 'Position updated',
+    mapDragNoop: 'Position unchanged',
+    mapDragFail: 'Failed to update position',
+    mapDragRejected: 'Driving constraint rejected: {msg}',
     statusChanged: 'Switched to "{label}"',
     imageExported: 'Image exported',
     exportFail: 'Export failed: {msg}',
@@ -436,6 +449,12 @@ export default {
     // ── PWA offline mode ──
     offlineMode: 'Offline mode',
     offlineModeHint: 'Showing a local cached snapshot. Refresh when back online to see the latest changes.',
+    // ── PWA install prompt (task-mobile-install) ──
+    installPromptTitle: 'Install TripMate on your device',
+    installPromptDesc: 'One-tap install — open your trips anytime, even offline',
+    installAction: 'Install',
+    installLater: 'Not now',
+    installed: 'Installed',
   },
   servicing: {
     transportTitle: 'Transport Options',
@@ -481,6 +500,10 @@ export default {
     notePh: 'Note (optional)',
     wantGo: 'Want to go 👍',
     notGo: "Don't want to go 👎",
+    // ── PWA offline fallback (task-pwa-cache-deep) ──
+    offlineMode: 'Offline mode',
+    offlineModeHint: 'Showing a locally cached snapshot. Auto-refreshes when you are back online.',
+    offlineNoCache: 'You are offline with no local cache. Connect and try again.',
   },
   // ── XHS note (Plan A: content factory) ──────────────────
   xhsNote: {
