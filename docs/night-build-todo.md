@@ -75,7 +75,7 @@
 
 ## 2026-09-29 竞品分析追加（终局信号：agentic 预订成交 + 巨头整合 + post-booking 范式复活，来自 docs/nightly/competitive-analysis/2026-09-29.md）
 
-- [ ] task-email-import: 预订后整理最小版——「粘贴预订确认邮件文本」→ 复用 note-import 结构化提取管线识别航班/酒店/活动条目（日期时间/名称/地址/确认码/金额）→ 候选勾选并入行程（iGo 邮件自动提取/TripNoted booking email 为 post-booking 范式；我们不接 Gmail OAuth 凭证级集成，做零凭证的粘贴文本版，与 note-import 敌意输入处理同构）（验收：粘贴典型航司/酒店确认邮件生成结构化条目 + 金额进预算视图 + 恶意注入文本按敌意输入处理 + 测试覆盖；排在 task-screenshot-import 之后）
+- [x] task-email-import: 预订后整理最小版——「粘贴预订确认邮件文本」→ 复用 note-import 结构化提取管线识别航班/酒店/活动条目（日期时间/名称/地址/确认码/金额）→ 候选勾选并入行程（iGo 邮件自动提取/TripNoted booking email 为 post-booking 范式；我们不接 Gmail OAuth 凭证级集成，做零凭证的粘贴文本版，与 note-import 敌意输入处理同构）（验收：粘贴典型航司/酒店确认邮件生成结构化条目 + 金额进预算视图 + 恶意注入文本按敌意输入处理 + 测试覆盖；排在 task-screenshot-import 之后）（2026-10-10 worker-6 补登记：主体已由 2026-10-04 commit 5a9d894 完成并合入 main——service app/services/email_import.py（纯规则解析零凭证零依赖，复用 note_import 敌意剥离 _INJECTION_RE 与 NoteStopCandidate 候选结构，待归属字段池处理前置行字段，活动/酒店条目生成可勾选站点候选）+ schemas/email_import.py（amount+currency 进预算视图）+ API POST /trips/email/import（登录必需、超长 422）+ 路由注册；tests/test_email_import.py 10 用例专项全绿，全套 314 测试绿；worker-6 核验后端通过，仅补登记。前端四通道 ImportDialog（含预订邮件 Tab）已在 nightly/2026-10-06/2-task-import-ui-wiring 分支实现（importEmail 封装 + 邮件 Tab + 预订条目展示 + build 通过）但未合入 main，todo 未勾选；待用户 review 合并该分支后前端即闭环）
 - [ ] content-agentic-booking-endgame: 写一篇发布就绪文章《终局剧本：当 agentic 预订已经成交、独立工具已被收购——规划层还剩什么》（Mindtrip Flights 2026-05 Sabre+PayPal 对话内机票成交 / Expedia×Layla 2026-07 官宣 / Tripnotes 2023-12 关停 / Troupe 2026-06 倒闭为四信号，论证规划层「小而锋利」生存策略=可修订 diff+质检 trace+协作+诚实预算+输入自由，07/08 文姊妹篇收官）（验收：docs/articles/10-*.md 存在且内容完整，发布清单补卡片）
 - [ ] task-trip-collab-vote（验收升级）: 追加「渐进式推进」验收项——投票/确认达到 ≥50% 受邀成员即可标记「小组一致」，未响应成员不阻塞后续（TRIPTI.ai vs Troupe 教训：群组规划多数 commit 即锁定日期，不要求全员同意；JetBlue 旗下 Troupe 2026-06 确认倒闭）（验收：原验收 + 多数即推进、不响应不阻塞语义 + 测试覆盖）
 - [ ] task-screenshot-import（验收升级）: 追加「社交分享链接提取」可选分支——粘贴公开可读分享链接 → 尝试提取结构化信息，失败静默降级为链接收藏（TripNoted 1.0.20 social link→Idea→start trips 启发；截图 OCR 为主路径）（验收：原验收 + 公开链接提取成功/降级两路径 + schema 校验防注入）
@@ -109,3 +109,17 @@
 > 用户确认「先方案 A，再方案 C；方案 C 先不支持，但记录待办方便后期迭代」。方案 A = 创建 AI 旅行计划时添加出发地 + 出行性质；方案 C = 出行性质进用户画像记忆（本次不实现，仅登记）。
 
 - [ ] task-trip-type-profile-memory: 出行性质进用户画像（方案 C，登记待办，本期不实现）——把本次行程选择的出行性质（休闲/商务/亲子/蜜月/探亲）写入用户画像/行为记忆（复用现有 user_profiles.behavior_memory_json 与 profile_service 行为事件链路）：本次选了商务出差 → 下次创建默认「商务出差」、规划时结合历史出行性质做个性化（同程记忆关联性、历史 destination 去重）；与 task-travel-memory-feedback 的「系统观察画像」打通（验收：创建/规划时出行性质写入行为画像 + 下次创建默认带上次出行性质 + 规划注入历史性质偏好 + 测试覆盖；未实现，仅登记，待用户确认后评估）
+
+## 2026-10-09 竞品分析追加（网络恢复·真实抓取，来自 docs/nightly/competitive-analysis/2026-10-09.md）
+
+- [ ] task-inspiration-mode: 灵感优先起点——「还没想好去哪」入口（补功能，frontend+backend）。Mindtrip Start Anywhere / Layla 五问「Let me inspire you」验证的起点摩擦拆解；创建规划页加灵感入口：填预算档/兴趣标签/季节/同行人数 → 推荐 3-5 个目的地卡片（一句话理由+参考玩法+预估日均预算）→ 选点预填创建表单（验收：前端灵感入口 + 目的地推荐卡片 + 选定预填 + 后端推荐接口 + 测试覆盖）
+- [ ] task-open-hours-check: 营业时间/游玩时长真实度（补功能，backend）。iPlan.ai 商店差评「推荐到达即闭馆 25 分钟的景点」为反面教材；价格诚实哲学扩展到时间维度：POI 类目基准营业时段表 + 建议游玩时长表（规则库，先不接外部营业时间 API）→ 规划/修订排程校验闭馆到达/单日过饱和，产出 warning + 调整建议（复用质检与 ReviseCritic feedback 通道）（验收：排程校验 warning + 建议 + 测试覆盖（闭馆/过饱和/正常三路径）+ 前端质检卡透出）
+- [ ] task-map-pin-cards: 地图 pin 信息卡片与当日路线视觉化（补功能，frontend）。Mindtrip 地图第一视图亮点；TripMap 已有拖拽修订，marker 点击弹信息卡（名称/一句话理由/评分/预算标注/图片占位）+ 按日连线当日站点（验收：marker 点击卡片 + 当日连线 + 移动端可用 + build 通过）
+- [ ] task-guest-trial: 免登录试用规划（补功能，候选评估）。Wonderplan 免费无门槛 / Mindtrip 免 signup 30 秒出行程；我们创建需登录、分享页 token 免登录仅消费端。先评估 guest 数据安全/成本滥用/与 share_token 语义边界，评估不过则仅记录降级（验收：评估记录 +（若通过）guest 建行程/注册接管/提示文案/测试覆盖）
+- [ ] content-inspiration-first: 文章《灵感优先：AI 行程工具的入口之争》（内容沉淀，docs）。三家头部抢低摩擦起点（Start Anywhere / 五问 / 免注册）；对比三种入口范式（目的地优先表单 / checklist 五问 / 灵感流）体验与工程代价，落到我们「问答表单 + 四通道导入 + questions 追问」入口策略与 task-inspiration-mode 铺垫（验收：docs/articles/11-*.md 存在且内容完整，代码引用与仓库实际一致，发布清单补卡片）
+
+## 2026-10-10 竞品分析追加（巨头进场·搜索/OTA 把规划吞进主流程，来自 docs/nightly/competitive-analysis/2026-10-10.md）
+
+- [ ] task-price-alert-eval: 主动值提醒（候选评估）——Mindtrip Personal Travel Assistant（2026-09-30 官方稿）核心差异「knows the traveler + 主动带回」beta 转化 3x 实证；我们画像+行为记忆已具备「knows traveler」一半，缺「主动提醒」一半。先评估数据源（免费价格提醒 API 基本不存在：Google Flights 需生态登录、高德无价格提醒、Amadeus 付费）→ 不可行则降级为「行程内事件主动通知」（修订/协作事件推送 owner，复用 share 链路，零新凭证）（验收：评估记录（数据源矩阵+降级取舍）+（若可行）最小版实现 + 测试覆盖；不可行则仅记录降级并关单）
+- [ ] task-pacing-leisure: 行程节奏档位控制（候选评估）——Business Insider 实测「AI 规划吸走所有乐趣」= 过度安排无留白的用户反感实证；questions 追问有节奏选项但未结构化为排程约束。规划请求/画像增加节奏档（紧凑/均衡/松弛），松弛档单日站点上限+强制留白时段，与 task-open-hours-check 时间真实度联动（验收：后端节奏档字段 + 松弛档排程留白约束 + 测试覆盖（三档路径）；前端透出视窗口而定，不足则记录）
+- [ ] content-ai-travel-crashes: 文章《AI 旅行翻车实录：从闭馆景点到悬崖救援——规划工具的质检底线》（内容沉淀，docs）。本夜新闻流实证：16 岁少年 AI 规划徒步被困悬崖救援（Times of India）/ Futurism Google AI 灾难性徒步 / NY Post「AI 规划灾难催生高价真人代理复兴」；用翻车案例群做引，讲「事实校验（时间/闭馆/路线）+ 质检 trace + 修订闭环」是规划工具质检底线，落到 T-A-O 轨迹/四维质检/DrivingGate/排队中 open-hours 校验（验收：docs/articles/12-*.md 存在且内容完整，代码引用与仓库实际一致，发布清单补卡片）
