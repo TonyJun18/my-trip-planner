@@ -1,14 +1,16 @@
-/* my-trip-planner Service Worker — PWA 离线支持（task-pwa-offline）
+/* my-trip-planner Service Worker — PWA 离线支持（task-pwa-offline / task-pwa-cache-deep）
  *
  * 缓存策略（按可验证性排序）：
  * - 导航请求（HTML）：network-first → 回退 /index.html → 最后回退 /offline.html
  * - 静态资源（/assets/、/icon.svg、/manifest.webmanifest）：cache-first
- * - 行程 API GET（白名单：详情/预算/方案/分享读取）：network-first，成功写缓存，失败回退 stale 缓存
- * - 其他请求（写操作、列表、非白名单）：仅走网络，不缓存
+ * - 行程 API GET（白名单：列表/详情/预算/方案/分享读取）：network-first，成功写缓存，失败回退 stale 缓存
+ * - 其他请求（写操作、非白名单）：仅走网络，不缓存
  *
  * 注意：写操作（POST/PATCH/PUT/DELETE）一律不拦截，避免离线时产生「成功」假象。
+ * 更新协议：install 时若已有旧 SW 激活则标记升级；activate 后向所有 window clients
+ * 广播 { type: 'SW_UPDATED' }，页面据此提示「新版本已就绪」引导刷新。
  */
-const VERSION = 'v1'
+const VERSION = 'v2'
 const SHELL_CACHE = `shell-${VERSION}`
 const API_CACHE = `api-${VERSION}`
 
@@ -24,17 +26,23 @@ const SHELL_URLS = [
 ]
 
 // 允许离线回退的行程 API GET 白名单（Trip.id 为 UUID 字符串，token 为 64 位字符串）：
-//   /api/v1/trips/{id}                行程详情
-//   /api/v1/trips/{id}/budget         预算
-//   /api/v1/trips/{id}/plan           规划方案
-//   /api/v1/trips/{id}/plan-b         备选方案
-//   /api/v1/trips/share/{token}       分享只读行程
-//   /api/v1/trips/edit/{token}        受邀编辑行程（读取）
-// 排除 /api/v1/trips/favorites 列表（列表语义离线无意义，维持走网络）
+//   /api/v1/trips                      行程列表（登录态首页，静默缓存当前页）
+//   /api/v1/trips/{id}                 行程详情
+//   /api/v1/trips/{id}/budget          预算
+//   /api/v1/trips/{id}/plan            规划方案
+//   /api/v1/trips/{id}/plan-b          备选方案
+//   /api/v1/trips/share/{token}        分享只读行程
+//   /api/v1/trips/edit/{token}         受邀编辑行程（读取）
+// 排除 /api/v1/trips/favorites 列表、/share/{token}/comments、/share/{token}/votes（协作接口语义离线无意义，维持走网络）
 const API_WHITELIST =
-  /^\/api\/v1\/trips\/(?!favorites)([^/]+(\/(budget|plan|plan-b))?|(share|edit)\/[^/]+)$/
+  /^\/api\/v1\/trips(\/(?!favorites)([^/]+(\/(budget|plan|plan-b))?|(share|edit)\/[^/]+))?$/
+
+// 本次 install 是否有旧版 SW 正在激活（用于区分「首装」与「升级」）
+let isUpgrade = false
 
 self.addEventListener('install', (event) => {
+  // 升级检测：已有激活的旧 SW → 本次为升级，activate 后通知页面
+  isUpgrade = self.registration.active !== null
   // allSettled：个别资源失败不阻塞 SW 激活（如未部署的路径）
   event.waitUntil(
     caches
@@ -53,6 +61,18 @@ self.addEventListener('activate', (event) => {
         return Promise.all(keys.filter((k) => !keep.has(k)).map((k) => caches.delete(k)))
       })
       .then(() => self.clients.claim())
+      .then(() => {
+        // 仅升级时通知页面（首装无需刷新提示）
+        if (isUpgrade) {
+          return self.clients
+            .matchAll({ type: 'window', includeUncontrolled: true })
+            .then((clients) =>
+              clients.forEach((client) =>
+                client.postMessage({ type: 'SW_UPDATED', version: VERSION })
+              )
+            )
+        }
+      })
   )
 })
 
