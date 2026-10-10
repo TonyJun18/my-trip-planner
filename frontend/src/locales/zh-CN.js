@@ -49,6 +49,10 @@ export default {
     perPersonTotal: '人均约 ¥{amount}',
     perPersonDaily: '人均日均约 ¥{amount}',
     perPersonLabel: '人均',
+    // ── PWA 更新提示（task-pwa-cache-deep） ──
+    updatePromptTitle: '发现新版本',
+    updatePromptDesc: '新版本已准备好，刷新后即可使用',
+    updateAction: '立即刷新',
   },
   auth: {
     welcomeBack: '欢迎回来',
@@ -178,6 +182,10 @@ export default {
     deleteConfirmTitle: '删除行程',
     deleteConfirmMsg: '确定删除「{title}」吗？此操作不可撤销。',
     deleted: '已删除',
+    // ── PWA 离线兜底（task-pwa-cache-deep） ──
+    offlineMode: '离线模式',
+    offlineModeHint: '当前展示的是本地缓存的行程列表，联网后将自动恢复',
+    offlineNoCache: '当前离线且无本地缓存，请联网后查看',
   },
   planWizard: {
     pageTitle: '开启你的下一段旅程',
@@ -492,6 +500,10 @@ export default {
     notePh: '备注（可选）',
     wantGo: '想去 👍',
     notGo: '不想去 👎',
+    // ── PWA 离线兜底（task-pwa-cache-deep） ──
+    offlineMode: '离线模式',
+    offlineModeHint: '当前展示的是本地缓存的行程快照，联网后将自动恢复',
+    offlineNoCache: '当前离线且无本地缓存，请联网后查看',
   },
   // ── 小红书笔记（方案 A：内容工厂） ──────────────────────
   xhsNote: {
