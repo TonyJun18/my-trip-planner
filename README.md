@@ -15,7 +15,7 @@
 >   校验失败把错误摘要喂回 LLM 最多自纠正 3 次——LLM 输出不可信，schema 才可信
 > - **系统级容错**：LLM 调用统一指数退避重试 + 进程内熔断器（滑动窗口），保护下游 LLM 不被打爆
 > - **真实数据，不造假**：高德 POI/天气（未配置自动降级 Tavily + wttr.in），没有硬编码假数据
-> - **可测试性当一等公民**：FakeLLM 测试替身让 **314 个测试**不耗 token、不依赖网络
+> - **可测试性当一等公民**：FakeLLM 测试替身让 **325 个测试**不耗 token、不依赖网络
 > - **全链路可观测**：异步规划任务 + 前端实时 T-A-O（Thought-Action-Observation）轨迹
 
 ## 核心功能
@@ -54,6 +54,7 @@
 23. **实时候车 WebSocket**：规划任务 T-A-O 轨迹流式推送（`/ws/planner/tasks/{task_id}`，断线由轮询兜底）+ 行程协作实时同步（`/ws/trips/{trip_id}/collab`，评论/投票/受邀编辑增量事件广播，免登录令牌鉴权）。
 24. **定稿后服务（servicing 阶段）**：行程定稿后可兑现的服务层产物——市内通勤视图（相邻站点公共交通/步行/驾车建议）、酒店入住办理指引（模板基座 + LLM 润色，不收集证件号）、折扣规则（确定性本地规则库，零幻觉可审计）；三个子任务相互独立，任一失败不影响其他，全程失败降级不阻断主流程。
 25. **小红书笔记生成**：`POST /trips/{id}/xhs-note` 为行程生成适配小红书发布的种草笔记（标题/正文/话题），LLM 主路径 + 规则模板兜底（`source` 标注 llm/template），发布由用户复制到小红书 App 完成，接口无自动发布副作用。
+26. **营业时间/游玩时长校验（TimeGate）**：POI 类目基准营业时段 + 建议游玩时长规则库（零外部依赖、无 LLM），排程校验「闭馆到达（<30min 缓冲）」「单日过饱和（>5 站或 >480 分钟游玩）」，产出 warning + 调整建议，注入 `plan.time_gate` 供前端质检卡展示；对话式修订后同步重算；真实营业时间以 POI 现场为准（`basis=rule_based` 诚实标注）。
 
 ## 技术栈
 
@@ -83,7 +84,7 @@ backend/
 │   ├── agent/               # 多 Agent（agents.py 编排 / tools.py 高德·Tavily·天气 / providers.py LLM / graph.py LangGraph 原型）
 │   └── api/v1/              # 路由（health / auth / trips / planner / profile）
 ├── alembic/                 # 数据库迁移
-├── tests/                   # pytest 测试（314 个：FakeLLM 替身，覆盖协作/自驾/画像/编辑/恢复等）
+├── tests/                   # pytest 测试（325 个：FakeLLM 替身，覆盖协作/自驾/画像/编辑/恢复/时间校验等）
 ├── pyproject.toml           # uv 工程配置
 ├── .env / .env.example      # 环境变量
 └── uv.lock
@@ -479,6 +480,7 @@ uv run alembic downgrade -1                        # 回滚
 | 行程是静态快照，旅游中不可交互 | 用户无法实时改路线 | ✅ **方案 B 缓解**：详情页"让 AI 调整行程"对话式修订（AI 出 diff，代码原子执行）+ 手动细粒度编辑（行内编辑/拖拽排序）+ 受邀编辑权 |
 | 分享/协作基于匿名令牌，无实名账号体系 | 评论/投票/受邀编辑以 token + 设备指纹匿名身份，无法识别真实用户；token 泄露即等同授信 | 可选改进：令牌绑定登录用户、过期策略、操作审计 |
 | 自驾校验基于球面距离估算，不使用导航 API | 实际道路/拥堵/过路费与估算有偏差（默认均速 50km/h） | 可选改进：接高德路径规划 API（需 key 配额） |
+| 营业时间/游玩时长是规则库基准，非真实 POI 营业时间 | 「闭馆到达」提示基于类目基准（如景区 09:00-18:00），与个别 POI 实际营业时间可能有出入 | ✅ **已缓解（TimeGate）**：显式 `open_hours` 字段优先于规则库；规则库只对已知类目推断，未知类目保持沉默（绝不编造）；真实营业时间以 POI 现场为准 |
 | 移动端体验未专门优化 | 前端面向桌面 Web 设计，小屏适配一般 | 可选改进：响应式布局打磨 |
 | 多语言覆盖尚在进行 | 三大业务视图文案迁移未完成，en-US 下部分硬编码中文 | ✅ 进行中：task-i18n-views（PlanWizard / TripDetailView / ShareView） |
 | Google 登录需要用户自备 OAuth Client ID | `VITE_GOOGLE_CLIENT_ID` 未配置时隐藏按钮；ID Token 校验依赖 Google 公钥 | 部署方需在 Google Cloud Console 创建 Web OAuth 凭据 |
