@@ -26,14 +26,17 @@
     "content-trust-gap"
   ],
   "completed": [
-    "competitive-analysis"
+    "competitive-analysis",
+    "oss-license"
   ],
-  "current_index": 1,
+  "current_index": 2,
   "issues": [
-    "worker-1(10-11 competitive-analysis)：本夜为跨夜重建（night 10-10→10-11）。发现用户白天分支 fix/2026-10-10-three-gaps（未合并 main，commits a34ae17+c758ca6）已实现 TimeGate 营业时间/游玩时长校验 + 预算口径透出 + consensus 徽标——todo 中 task-open-hours-check 不得重复开发，待用户 review 合并后核销。竞品分析新增 3 任务（task-live-today-view/task-packing-expense/content-trust-gap）已追加 todo 并同步 checkpoint。"
+    "worker-1(10-11 competitive-analysis)：本夜为跨夜重建（night 10-10→10-11）。发现用户白天分支 fix/2026-10-10-three-gaps（未合并 main，commits a34ae17+c758ca6）已实现 TimeGate 营业时间/游玩时长校验 + 预算口径透出 + consensus 徽标——todo 中 task-open-hours-check 不得重复开发，待用户 review 合并后核销。竞品分析新增 3 任务（task-live-today-view/task-packing-expense/content-trust-gap）已追加 todo 并同步 checkpoint。",
+    "worker-2(10-11 oss-license 补登记)：主体已由 2026-09-21 commit 90dc87a 完成并入 main（LICENSE MIT + README 开源许可小节），todo 漏勾致本夜重跑；worker-2 核验 main 上 LICENSE/README 487-491 行规范 + 后端 314 测试全绿，仅勾选登记无新代码改动。注意：worker-2 曾误从 main 拉分支拿到 10-10 旧版 checkpoint，已按先例改用 git checkout -B 从 nightly/2026-10-11/0-competitive-analysis 重建分支——10-11 检查点仅存在于该未合并分支，后续 worker 务必从 10-11 worker-1 HEAD 拉分支，勿直接 checkout main。"
   ],
   "branches": [
-    "nightly/2026-10-11/0-competitive-analysis"
+    "nightly/2026-10-11/0-competitive-analysis",
+    "nightly/2026-10-11/1-oss-license"
   ],
   "claims": {}
 }
