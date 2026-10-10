@@ -25,14 +25,17 @@
     "content-ai-travel-crashes"
   ],
   "completed": [
-    "competitive-analysis"
+    "competitive-analysis",
+    "task-email-import"
   ],
-  "current_index": 1,
+  "current_index": 2,
   "issues": [
-    "night-start(10-10) 备注：main 上 todo/checkpoint 为 10-04 旧版（10-09 竞品分析 5 任务未合入 main），已从 nightly/2026-10-09/0-competitive-analysis 分支恢复权威 todo + 2026-10-09.md 到工作区，随本夜分支提交，无内容丢失。"
+    "night-start(10-10) 备注：main 上 todo/checkpoint 为 10-04 旧版（10-09 竞品分析 5 任务未合入 main），已从 nightly/2026-10-09/0-competitive-analysis 分支恢复权威 todo + 2026-10-09.md 到工作区，随本夜分支提交，无内容丢失。",
+    "worker-6(10-10 task-email-import 补登记)：后端主体已由 2026-10-04 commit 5a9d894 合入 main（service+schema+API+测试 10 例），worker-6 核验专项 10 绿 + 全套 314 绿，todo 补勾选。前端四通道 ImportDialog（含预订邮件 Tab，importEmail 封装）在 nightly/2026-10-06/2-task-import-ui-wiring 分支实现但未合入 main、todo 未勾选——待用户 review 该分支后前端闭环（task-email-import 前端部分暂挂在未合并分支）。"
   ],
   "branches": [
-    "nightly/2026-10-10/0-competitive-analysis"
+    "nightly/2026-10-10/0-competitive-analysis",
+    "nightly/2026-10-10/1-task-email-import"
   ],
   "claims": {}
 }
