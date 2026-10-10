@@ -1,6 +1,6 @@
 {
   "night": "2026-10-11",
-  "status": "in_progress",
+  "status": "completed_with_issues",
   "todo": [
     "competitive-analysis",
     "oss-license",
@@ -32,9 +32,10 @@
     "task-map-drag-edit",
     "task-mobile-shell",
     "task-mobile-views",
-    "task-mobile-install"
+    "task-mobile-install",
+    "task-pwa-cache-deep"
   ],
-  "current_index": 7,
+  "current_index": 8,
   "issues": [
     "worker-1(10-11 competitive-analysis)：本夜为跨夜重建（night 10-10→10-11）。发现用户白天分支 fix/2026-10-10-three-gaps（未合并 main，commits a34ae17+c758ca6）已实现 TimeGate 营业时间/游玩时长校验 + 预算口径透出 + consensus 徽标——todo 中 task-open-hours-check 不得重复开发，待用户 review 合并后核销。竞品分析新增 3 任务（task-live-today-view/task-packing-expense/content-trust-gap）已追加 todo 并同步 checkpoint。",
     "worker-2(10-11 oss-license 补登记)：主体已由 2026-09-21 commit 90dc87a 完成并入 main（LICENSE MIT + README 开源许可小节），todo 漏勾致本夜重跑；worker-2 核验 main 上 LICENSE/README 487-491 行规范 + 后端 314 测试全绿，仅勾选登记无新代码改动。注意：worker-2 曾误从 main 拉分支拿到 10-10 旧版 checkpoint，已按先例改用 git checkout -B 从 nightly/2026-10-11/0-competitive-analysis 重建分支——10-11 检查点仅存在于该未合并分支，后续 worker 务必从 10-11 worker-1 HEAD 拉分支，勿直接 checkout main。",
@@ -42,7 +43,9 @@
     "worker-4(10-11 task-map-drag-edit)：后端内核（map_edit_service 最小 diff 原子应用 + POST /map-edit + DrivingGate 前置 + 8 例测试）与 TripMap 拖拽组件、api.mapEditTrip 封装均已入 main（2026-10-04 e501128/bc8f69c），但 TripDetailView 从未接线——本 worker 补前端闭环：markers 带 day_number/stop_id、onMove 调 mapEditTrip、自驾约束 400 内联提示 + 失败重新 load 回弹、i18n 5 键 zh/en。核验后端 314 测试全绿 + 前端 build 3.39s 通过。遗留：ShareView 受邀编辑模式（?edit=1）TripMap 未接拖拽——后端 edit_token 版 /map-edit（0c44648）在 nightly/2026-10-05/1-task-map-drag-edit-frontend 分支未合 main，待用户 review 合并后再接 ShareView 拖拽。",
     "worker-5(10-11 task-mobile-shell 补登记)：主体已由 2026-10-04 commit e39a971 完成并入 main（App.vue 底部 Tab 仅登录态 2 入口 + 顶栏窄屏压缩 + 移动端隐藏 footer），todo 漏勾致本夜重跑；worker-5 核验 main 与当前分支 App.vue 逐字节一致（git diff main HEAD 空）+ i18n app.myTrips/app.planTrip zh/en 在案 + 前端 build 3.26s 通过 + 后端 314 测试回归全绿，仅勾选登记无新代码改动。",
     "worker-6(10-11 task-mobile-views)：纯 CSS 三视图 ≤640px 断点 + 全局弹层收窄（el-dialog/el-message-box calc(100vw-32px)、el-picker-panel 压缩内滚）+ TripMap 移动端 300px 高度。验收无法自动化验证 375px 无水平滚动（无浏览器环境），改以结构等价核对：桌面 ≥860px 样式零改动、所有新增规则均在 @media (max-width:640px) 内。遗留：ShareView 受邀编辑 TripMap 拖拽仍待合（同 worker-4 遗留）；375px 真机/DevTools 视觉回归建议用户清晨 review 时抽查。",
-    "worker-7(10-11 task-mobile-install)：完成——branch nightly/2026-10-11/6-task-mobile-install，2 commits（0f36c0a PWA 安装资产 + bc60864 安装引导 UI）。①manifest 补 192/512 PNG（SVG 经 qlmanage→sips 生成，含 maskable 512）；②iOS meta 补全（apple-mobile-web-app-capable/status-bar/title）+ apple-touch-icon.png 180x180 品牌色不透明底（iOS 不支持 SVG apple-touch-icon，透明底会渲染黑底——原 index.html 的 apple-touch-icon 指向 icon.svg 已修正）；③useInstallPrompt composable（beforeinstallprompt 拦截 + standalone（display-mode 或 navigator.standalone）检测 + localStorage pwa_install_dismissed 关闭标记 + appinstalled 清理）+ App.vue 底部非侵入卡片（仅登录态、可关闭、i18n 5 键 zh/en）；④sw.js SHELL_URLS/cache-first 覆盖新图标。前端 build 3.23s 通过 + 后端 314 测试全绿。说明：beforeinstallprompt 需 Chrome/Edge 真实触发无法无头验证，Chrome 安装提示/Safari 添加到主屏幕需用户真机确认（manifest icons 192/512 PNG 已在 dist 就位）。"
+    "worker-7(10-11 task-mobile-install)：完成——branch nightly/2026-10-11/6-task-mobile-install，2 commits（0f36c0a PWA 安装资产 + bc60864 安装引导 UI）。①manifest 补 192/512 PNG（SVG 经 qlmanage→sips 生成，含 maskable 512）；②iOS meta 补全（apple-mobile-web-app-capable/status-bar/title）+ apple-touch-icon.png 180x180 品牌色不透明底（iOS 不支持 SVG apple-touch-icon，透明底会渲染黑底——原 index.html 的 apple-touch-icon 指向 icon.svg 已修正）；③useInstallPrompt composable（beforeinstallprompt 拦截 + standalone（display-mode 或 navigator.standalone）检测 + localStorage pwa_install_dismissed 关闭标记 + appinstalled 清理）+ App.vue 底部非侵入卡片（仅登录态、可关闭、i18n 5 键 zh/en）；④sw.js SHELL_URLS/cache-first 覆盖新图标。前端 build 3.23s 通过 + 后端 314 测试全绿。说明：beforeinstallprompt 需 Chrome/Edge 真实触发无法无头验证，Chrome 安装提示/Safari 添加到主屏幕需用户真机确认（manifest icons 192/512 PNG 已在 dist 就位）。",
+    "worker-8(10-11 task-pwa-cache-deep)：完成——branch nightly/2026-10-11/7-task-pwa-cache-deep，3 commits（03701cf SW 白名单扩展（列表/分享缓存）+ 更新协议 v2；a2a99b8 列表/分享页离线兜底 + SW 更新提示条；c5fcb56 i18n zh/en 离线兜底与更新提示键）。①sw.js VERSION v1→v2，API 白名单正则扩展 /api/v1/trips 列表（静默缓存当前页，排除 favorites/comments/votes 协作接口），更新协议 v2：install 检测旧 SW 激活 → activate 后向 window clients 广播 SW_UPDATED；②TripListView 网络失败读 Cache API 展示缓存快照 + offline 标识 + online 事件自动恢复并清除标识（无缓存时明示 offlineNoCache 不静默失败），ShareView 同构离线兜底；③pwa.js 新增 registerSW（updatefound/controllerchange/message 三通道去重）供更新提示条；④写请求仍不拦截（离线不产生成功假象）。核验前端 build 3.25s 通过 + 后端 314 测试全绿。遗留：DevTools offline 三路径（列表缓存/分享页缓存/恢复自动清除）需人工抽查；SW 更新提示需真实部署版本升级触发（本地 build 无法模拟旧 SW 激活）。",
+    "night-report(10-11) 收尾：checkpoint status 置 completed_with_issues（本夜 8 项 todo 全部处理完：7 项完成 + task-pwa-cache-deep 由 report 补登记；issues 含多条待用户 review 合并分支与真机验证项，故非全绿）。剩余 todo 自 current_index=8 起（task-capacitor-shell/stores B 阶段需用户授权 Android 环境；10-11 竞品新增 3 任务排队）。"
   ],
   "branches": [
     "nightly/2026-10-11/0-competitive-analysis",
@@ -51,7 +54,8 @@
     "nightly/2026-10-11/3-task-map-drag-edit",
     "nightly/2026-10-11/4-task-mobile-shell",
     "nightly/2026-10-11/5-task-mobile-views",
-    "nightly/2026-10-11/6-task-mobile-install"
+    "nightly/2026-10-11/6-task-mobile-install",
+    "nightly/2026-10-11/7-task-pwa-cache-deep"
   ],
   "claims": {}
 }
