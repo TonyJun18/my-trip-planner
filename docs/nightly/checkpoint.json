@@ -26,16 +26,19 @@
   ],
   "completed": [
     "competitive-analysis",
-    "task-email-import"
+    "task-email-import",
+    "content-agentic-booking-endgame"
   ],
-  "current_index": 2,
+  "current_index": 3,
   "issues": [
     "night-start(10-10) 备注：main 上 todo/checkpoint 为 10-04 旧版（10-09 竞品分析 5 任务未合入 main），已从 nightly/2026-10-09/0-competitive-analysis 分支恢复权威 todo + 2026-10-09.md 到工作区，随本夜分支提交，无内容丢失。",
-    "worker-6(10-10 task-email-import 补登记)：后端主体已由 2026-10-04 commit 5a9d894 合入 main（service+schema+API+测试 10 例），worker-6 核验专项 10 绿 + 全套 314 绿，todo 补勾选。前端四通道 ImportDialog（含预订邮件 Tab，importEmail 封装）在 nightly/2026-10-06/2-task-import-ui-wiring 分支实现但未合入 main、todo 未勾选——待用户 review 该分支后前端闭环（task-email-import 前端部分暂挂在未合并分支）。"
+    "worker-6(10-10 task-email-import 补登记)：后端主体已由 2026-10-04 commit 5a9d894 合入 main（service+schema+API+测试 10 例），worker-6 核验专项 10 绿 + 全套 314 绿，todo 补勾选。前端四通道 ImportDialog（含预订邮件 Tab，importEmail 封装）在 nightly/2026-10-06/2-task-import-ui-wiring 分支实现但未合入 main、todo 未勾选——待用户 review 该分支后前端闭环（task-email-import 前端部分暂挂在未合并分支）。",
+    "worker-7(10-10 content-agentic-booking-endgame 补登记)：文章⑩主体已由 2026-10-04 commit 90e6ed0 完成并经后续 merge 入 main（git branch --contains 含 main）——docs/articles/10-endgame-booking-agentic.md 全文（161 行）+ publish-list.md 文章⑩卡片与速查表；代码引用逐条核验与仓库实际一致（revise_service/agents.py/budget_service/collab_service/note_import/email_import 六处引用全部在案）；main todo 漏勾导致本夜重跑。worker-7 核验完整性后仅勾选登记，纯 docs 无 pytest/build 需求，无新代码改动。分支 nightly/2026-10-10/2-content-agentic-booking-endgame 从 worker-6 HEAD（1d8c824）拉出（main 的 todo/checkpoint 为 10-04 旧版缺 10-09/10-10 竞品分析段，按 10-04 夜既有先例从当前 HEAD 拉分支保内容）；未 push 未合并。"
   ],
   "branches": [
     "nightly/2026-10-10/0-competitive-analysis",
-    "nightly/2026-10-10/1-task-email-import"
+    "nightly/2026-10-10/1-task-email-import",
+    "nightly/2026-10-10/2-content-agentic-booking-endgame"
   ],
   "claims": {}
 }
