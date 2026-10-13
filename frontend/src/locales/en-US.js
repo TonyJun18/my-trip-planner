@@ -326,6 +326,9 @@ export default {
     diffReorder: 'Reorder',
     diffReorderText: '{day}Reorder stops (move to position {n})',
     diffActionText: '{day}{op} "{target}"{fields}',
+    timeGateTitle: 'Time Check',
+    timeGateBasis: 'Rule-based estimate',
+    timeGateWarn: 'Hint',
     addStop: 'Add Stop',
     removeDay: 'Delete Day',
     moveUp: 'Move Up',
@@ -500,10 +503,17 @@ export default {
     notePh: 'Note (optional)',
     wantGo: 'Want to go 👍',
     notGo: "Don't want to go 👎",
-    // ── PWA offline fallback (task-pwa-cache-deep) ──
+// ── PWA offline fallback (task-pwa-cache-deep) ──
     offlineMode: 'Offline mode',
     offlineModeHint: 'Showing a locally cached snapshot. Auto-refreshes when you are back online.',
     offlineNoCache: 'You are offline with no local cache. Connect and try again.',
+    consensus: 'Consensus',
+    consensusTip: 'Majority has voted and favors it — good to proceed',
+    basisLabel: 'How we estimated',
+    basisHotel: 'Hotel ¥{avg}/night × {n} (city base-rate estimate)',
+    basisHotelShort: 'Hotel estimated from city base rate',
+    basisTransport: 'Transport: reference fare ×2 (cheapest one-way × round trip)',
+    basisTransportShort: 'Transport estimated from reference fare',
   },
   // ── XHS note (Plan A: content factory) ──────────────────
   xhsNote: {

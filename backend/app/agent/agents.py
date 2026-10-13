@@ -1596,6 +1596,37 @@ async def run_planning_agents(
     _fire_phase("assembling", "completed", summary=f"定稿 {len(plan.get('days', []))} 天行程")
     _fire_phase("reviewing", "completed", summary="质检完成")
 
+    # ── TimeGate：营业时间/游玩时长确定性校验（规则库，零 LLM）──
+    # 与 DrivingGate 同风格：只报告，不阻断。所有 issue 为 warning（建议级），
+    # 注入 plan.time_gate 供前端质检卡展示；真实营业时间以 POI 现场为准。
+    from app.services.time_validation import check_plan_time_gate
+
+    time_gate = check_plan_time_gate(plan)
+    plan["time_gate"] = {
+        **{k: v for k, v in time_gate.items() if k != "issues"},
+        "issues": time_gate.get("issues") or [],
+        "basis": "rule_based",
+    }
+    for iss in time_gate.get("issues") or []:
+        plan.setdefault("warnings", []).append(
+            f"[时间校验] {iss.get('message') or ''}"
+            + (f"（{iss.get('suggestion') or ''}）" if iss.get("suggestion") else "")
+        )
+    _append_trace({
+        "agent": "TimeGate",
+        "action": "check_time",
+        "observation": (
+            "时间校验" + ("通过" if time_gate.get("passed") else f"发现 {time_gate.get('warning_count', 0)} 个提示")
+            + "（闭馆到达/单日过满，规则库估算）"
+        ),
+        "status": "completed" if time_gate.get("passed") else "warning",
+    })
+    _fire_artifact("time_gate", {
+        "passed": time_gate.get("passed"),
+        "warning_count": time_gate.get("warning_count", 0),
+        "issues": time_gate.get("issues") or [],
+    })
+
     # ── 第二段 servicing：定稿后的可执行服务（市内通勤 / 入住办理 / 折扣比价）──
     # 消费已定稿 plan，与采集/规划解耦；任一失败只记 warnings，绝不阻断主流程。
     _fire_phase("servicing", "running")

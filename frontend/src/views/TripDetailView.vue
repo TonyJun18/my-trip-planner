@@ -268,6 +268,30 @@ const budgetPercent = computed(() => {
   return Math.min(100, Math.round((budget.value.total_estimated / trip.value.budget) * 100))
 })
 
+// 预算估算口径（诚实估算标注：来源 + 基准说明，对齐「预算必须可审计」哲学）
+const basisText = computed(() => {
+  const b = budget.value?.estimate_basis
+  if (!b) return ''
+  const parts = []
+  if (b.hotel) {
+    const n = b.hotel.estimated_count ?? 0
+    const avg = b.hotel.avg_estimate ?? b.hotel.average_estimate ?? null
+    parts.push(
+      avg != null && n > 0
+        ? t('share.basisHotel', { avg, n })
+        : t('share.basisHotelShort')
+    )
+  }
+  if (b.transport) {
+    parts.push(
+      b.transport.estimated_count
+        ? t('share.basisTransport')
+        : t('share.basisTransportShort')
+    )
+  }
+  return parts.join(' · ')
+})
+
 async function load() {
   loading.value = true
   try {
@@ -835,6 +859,12 @@ onMounted(load)
                   · {{ $t('common.perPersonDaily', { amount: budget.per_person_daily }) }}
                 </span>
               </div>
+              <!-- 预算估算口径（诚实估算：来源 + 基准说明，对齐「预算必须可审计」哲学） -->
+              <div v-if="basisText" class="budget-basis">
+                <el-icon><InfoFilled /></el-icon>
+                <span class="budget-basis-label">{{ $t('share.basisLabel') }}</span>
+                <span class="budget-basis-text">{{ basisText }}</span>
+              </div>
             </template>
             <el-empty v-else :description="$t('common.noBudget')" :image-size="60" />
           </div>
@@ -950,6 +980,22 @@ onMounted(load)
 
         <!-- 生成时的 AI 质检报告 -->
         <QualityCard :quality="plan?.quality" class="detail-quality" />
+
+        <!-- 时间校验（TimeGate）：营业时间/游玩时长确定性提示（规则库，仅展示不阻断） -->
+        <div v-if="plan?.time_gate?.issues?.length" class="timegate-card">
+          <div class="timegate-head">
+            <span class="timegate-title"><el-icon style="margin-right: 6px"><Clock /></el-icon>{{ $t('tripDetail.timeGateTitle') }}</span>
+            <span class="timegate-badge">{{ $t('tripDetail.timeGateBasis') }}</span>
+          </div>
+          <ul class="timegate-list">
+            <li v-for="(iss, i) in plan.time_gate.issues.slice(0, 6)" :key="i" class="timegate-item">
+              <span class="timegate-sev">{{ $t('tripDetail.timeGateWarn') }}</span>
+              <span v-if="iss.day_number" class="timegate-day">Day {{ iss.day_number }}</span>
+              <span class="timegate-msg">{{ iss.message }}</span>
+              <span v-if="iss.suggestion" class="timegate-suggestion">→ {{ iss.suggestion }}</span>
+            </li>
+          </ul>
+        </div>
 
         <!-- 住宿推荐（来自 AI 规划方案的酒店候选） -->
         <HotelRecommend
@@ -1255,6 +1301,26 @@ onMounted(load)
 .budget-daily { margin-top: 10px; font-size: 12.5px; color: var(--success); display: inline-flex; align-items: center; gap: 4px; }
 .budget-per-person { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 12.5px; color: var(--ink-2); display: flex; align-items: center; gap: 4px; }
 .budget-pp-sub { color: var(--muted); }
+/* 预算估算口径（诚实估算标注） */
+.budget-basis { display: flex; align-items: flex-start; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12px; color: var(--ink-2); line-height: 1.6; }
+.budget-basis .el-icon { margin-top: 2px; flex-shrink: 0; }
+.budget-basis-label { font-weight: 600; white-space: nowrap; color: var(--muted); }
+.budget-basis-text { word-break: break-all; }
+
+/* ── 时间校验卡片（TimeGate：营业时间/游玩时长提示） ── */
+.timegate-card {
+  margin-top: 4px; border: 1px solid #fde68a; background: #fffbeb;
+  border-radius: var(--radius-lg); padding: 12px 14px;
+}
+.timegate-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.timegate-title { font-size: 14px; font-weight: 600; color: #92400e; display: inline-flex; align-items: center; }
+.timegate-badge { font-size: 11px; color: #92400e; background: #fef3c7; border-radius: 999px; padding: 1px 8px; }
+.timegate-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.timegate-item { display: flex; align-items: baseline; gap: 6px; font-size: 13px; color: #78350f; }
+.timegate-sev { flex-shrink: 0; font-size: 11px; color: #92400e; background: #fef3c7; border-radius: 4px; padding: 0 6px; }
+.timegate-day { flex-shrink: 0; font-weight: 600; }
+.timegate-msg { flex: 1; min-width: 0; }
+.timegate-suggestion { color: #a16207; font-size: 12px; }
 
 /* ── AI 调整行程（方案 B） ── */
 .revise-card {

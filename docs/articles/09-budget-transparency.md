@@ -78,7 +78,7 @@ def hotel_estimate_basis(estimated_count: int) -> dict:
     }
 ```
 
-前端预算卡（`frontend/src/views/TripDetailView.vue` 的 budget-card）展示总数时明确标「估算」（环形图内 `ring-label` 即 i18n `common.estimated`）；后端契约在含酒店站点时随预算返回 `estimate_basis`（来源/基准/置信度/估算数量）。要诚实到底：**`estimate_basis` 的完整口径透出到 UI 目前还是待办**——后端已返回，前端尚未逐字段渲染。承认它还没做完，比假装做完了更符合这篇文章的主题。酒店参考价的「参考价，以实际询价为准」标注约定，写在 `backend/app/agent/agents.py` 的 `_normalize_hotels` 注释中。**我们不会假装「帮你订到最便宜的酒店」——我们只说「这个数字怎么来的、别把它当最终账单」。**
+前端预算卡（`frontend/src/views/TripDetailView.vue` / `ShareView.vue` 的 budget-card）展示总数时明确标「估算」（环形图内 `ring-label` 即 i18n `common.estimated`）；后端契约在含酒店站点时随预算返回 `estimate_basis`（来源/基准/置信度/估算数量），**口径已全量透出到 UI**：预算卡底部「预算口径」行渲染 `住宿约 ¥xxx/晚×N（城市基准价估算）`与 `大交通按参考价×2`（i18n `share.basis*` 键，zh/en 双语）。酒店参考价的「参考价，以实际询价为准」标注约定，写在 `backend/app/agent/agents.py` 的 `_normalize_hotels` 注释中。**我们不会假装「帮你订到最便宜的酒店」——我们只说「这个数字怎么来的、别把它当最终账单」。**
 
 ### 原则三：修订必须联动重算——预算跟行程一起变
 
