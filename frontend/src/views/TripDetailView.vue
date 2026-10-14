@@ -1,3 +1,194 @@
+<script setup>
+import { ref, computed, onMounted, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import * as api from '@/api'
+import TripMap from '@/components/TripMap.vue'
+import HotelRecommend from '@/components/HotelRecommend.vue'
+import TripServicing from '@/components/TripServicing.vue'
+import QualityCard from '@/components/QualityCard.vue'
+import XhsNoteDialog from '@/components/XhsNoteDialog.vue'
+import { exportImage, exportPdf } from '@/utils/export'
+import { readCachedJson } from '@/utils/pwa'
+
+const route = useRoute()
+const router = useRouter()
+const { t } = useI18n()
+
+const trip = ref(null)
+const loading = ref(false)
+const budget = ref(null)
+const plan = ref(null)
+const exporting = ref(false)
+const exportEl = ref(null)
+// PWA 离线降级：网络失败时从缓存读取行程（仅骨架，只读展示）
+const offlineFallback = ref(false)
+
+// ── AI 调整行程（方案 B：对话式修订） ─────────────────────
+const reviseMsg = ref('')
+const revising = ref(false)
+const lastReviseSummary = ref('')
+const lastReviseDiff = ref([])
+const reviseError = ref('')
+const reviseDone = ref(false)
+// 修订质控闭环：后端返回的 quality 报告（score/passed/issues/summary/fix_applied）
+const lastReviseQuality = ref(null)
+
+// diff 预览折叠：超过 8 条默认收起，避免卡片过高
+const REVISE_DIFF_PREVIEW_MAX = 8
+const visibleReviseDiff = computed(() => lastReviseDiff.value.slice(0, REVISE_DIFF_PREVIEW_MAX))
+const reviseDiffMore = computed(() => Math.max(0, lastReviseDiff.value.length - REVISE_DIFF_PREVIEW_MAX))
+
+// diff 动作 → 人类可读文案（后端已给 op/target_name/day_number/fields）
+const diffOpKeys = {
+  replace: 'diffReplace',
+  add: 'diffAdd',
+  remove: 'diffRemove',
+  reorder: 'diffReorder',
+}
+// 变更字段 key → 可读标签（diff 预览打磨：不再裸显示英文字段名）
+const fieldLabelKeys = {
+  name: 'fieldName',
+  description: 'fieldDesc',
+  stop_type: 'fieldType',
+  estimated_cost: 'fieldCost',
+  estimated_duration_minutes: 'fieldDuration',
+  note: 'fieldNote',
+  date: 'fieldDate',
+  lat: 'fieldLat',
+  lng: 'fieldLng',
+}
+function fieldLabel(k) {
+  const key = fieldLabelKeys[k]
+  return key ? t(`tripDetail.${key}`) : k
+}
+function diffText(a) {
+  const day = a.day_number ? `Day${a.day_number} · ` : ''
+  const target = a.target_name || ''
+  if (a.op === 'reorder') {
+    // 后端 ReviseAction.index 是 1-based（移到第 N 位），直接显示即可
+    return t('tripDetail.diffReorderText', { day, n: a.index ?? '?' })
+  }
+  const fieldKeys = Object.keys(a.fields || {})
+  const fieldText = fieldKeys.length ? `（${fieldKeys.map(fieldLabel).join('、')}）` : ''
+  const opLabel = diffOpKeys[a.op] ? t(`tripDetail.${diffOpKeys[a.op]}`) : a.op
+  return t('tripDetail.diffActionText', { day, op: opLabel, target, fields: fieldText })
+}
+
+async function revise() {
+  const msg = reviseMsg.value.trim()
+  if (!msg) {
+    ElMessage.warning(t('tripDetail.reviseWarning'))
+    return
+  }
+  if (revising.value) return
+  revising.value = true
+  reviseError.value = ''
+  reviseDone.value = false
+  lastReviseSummary.value = ''
+  lastReviseDiff.value = []
+  lastReviseQuality.value = null
+  try {
+    const r = await api.reviseTrip(route.params.id, { message: msg, provider: 'auto' })
+    lastReviseSummary.value = r.summary || ''
+    lastReviseDiff.value = Array.isArray(r.diff) ? r.diff : []
+    lastReviseQuality.value = r.quality || null
+    reviseDone.value = true
+    ElMessage.success(r.summary || t('tripDetail.revised'))
+    reviseMsg.value = ''
+    budget.value = null
+    await load()
+  } catch (e) {
+    // 全局拦截器已 toast 具体错误；内联横幅展示后端 detail（若有）并提示保留输入（避免双 toast）
+    lastReviseSummary.value = ''
+    lastReviseDiff.value = []
+    lastReviseQuality.value = null
+    reviseError.value = e?.response?.data?.detail || e?.response?.data?.error?.message || t('tripDetail.reviseFailHint')
+  } finally {
+    revising.value = false
+  }
+}
+
+// ── 编辑对话框状态 ─────────────────────────
+const editType = ref(null)
+const editDayId = ref(null)
+const editStopId = ref(null)
+const stopForm = ref({ name: '', stop_type: 'attraction', lat: null, lng: null, description: '', estimated_cost: null, estimated_duration_minutes: null })
+const dayForm = ref({ day_number: 1 })
+const tripForm = ref({ title: '', destination: '', departure: '', trip_type: '', travelers: 1, budget: null })
+// 出行性质选项（与 AI 规划/手动创建同款契约值：稳定中文，后端按此约束）
+const tripTypeOptions = [
+  { key: 'tripTypeLeisure', value: '休闲旅游' },
+  { key: 'tripTypeBusiness', value: '商务出差' },
+  { key: 'tripTypeFamily', value: '亲子出游' },
+  { key: 'tripTypeHoneymoon', value: '蜜月度假' },
+  { key: 'tripTypeVisiting', value: '探亲访友' },
+]
+const dialogVisible = ref(false)
+const stopFormRef = ref(null)
+
+// 编辑/添加共用表单；编辑时把 stop 字段拷入（null 转空串便于输入框清空）
+function blankStopForm() {
+  return { name: '', stop_type: 'attraction', lat: null, lng: null, description: '', estimated_cost: null, estimated_duration_minutes: null }
+}
+function openEditStop(day, stop) {
+  editDayId.value = day.id
+  editStopId.value = stop.id
+  stopForm.value = {
+    name: stop.name,
+    stop_type: stop.stop_type || 'attraction',
+    lat: stop.lat ?? '',
+    lng: stop.lng ?? '',
+    description: stop.description ?? '',
+    estimated_cost: stop.estimated_cost ?? null,
+    estimated_duration_minutes: stop.estimated_duration_minutes ?? null,
+  }
+  editType.value = 'edit-stop'
+  dialogVisible.value = true
+}
+async function saveEditStop() {
+  await stopFormRef.value.validate()
+  const payload = { ...stopForm.value }
+  if (payload.lat === '' || payload.lat == null) payload.lat = null
+  if (payload.lng === '' || payload.lng == null) payload.lng = null
+  if (payload.estimated_cost === '' || payload.estimated_cost == null) payload.estimated_cost = null
+  if (payload.estimated_duration_minutes === '' || payload.estimated_duration_minutes == null) payload.estimated_duration_minutes = null
+  await api.updateStop(editDayId.value, editStopId.value, payload)
+  ElMessage.success(t('tripDetail.stopUpdated'))
+  dialogVisible.value = false
+  load()
+}
+
+// ── 上移 / 下移（整日顺序重排） ────────────
+async function moveStop(day, stop, dir) {
+  const stops = day.stops
+  const idx = stops.findIndex((s) => s.id === stop.id)
+  const target = idx + dir
+  if (idx < 0 || target < 0 || target >= stops.length) return
+  const order = stops.map((s) => s.id)
+  ;[order[idx], order[target]] = [order[target], order[idx]]
+  try {
+    await api.reorderStops(day.id, order)
+    ElMessage.success(dir < 0 ? t('tripDetail.movedUp') : t('tripDetail.movedDown'))
+    load()
+  } catch (e) {
+    // api 拦截器已 toast
+  }
+}
+
+const markers = computed(() => {
+  const list = []
+  for (const day of trip.value?.days || []) {
+    for (const stop of day.stops || []) {
+      if (stop.lat != null && stop.lng != null) {
+        list.push({ lat: stop.lat, lng: stop.lng, name: stop.name, stop_type: stop.stop_type, description: stop.description, day_number: day.day_number, stop_id: stop.id })
+      }
+    }
+  }
+  return list
+})
+
 // 拖拽仅对 owner 开放（受邀编辑走分享页 editMode，本视图为 owner 主入口）：
 // 详情页路由是登录态 owner 视角，无 isOwner 标志 → 直接允许（后端 /map-edit 只认 owner 鉴权）。
 // 移动端由 TripMap 内部 isMobileViewport() 自动隐藏拖拽（验收「移动端隐藏拖拽」）。
@@ -34,6 +225,589 @@ async function onMapMove({ name, lat, lng, day_number }) {
     await load()
   } finally {
     mapDragBusy.value = false
+  }
+}
+
+// 行程状态：展示 + 切换（label 走 i18n）
+const statusMap = computed(() => ({
+  draft: { label: t('tripList.statusDraft'), type: 'info' },
+  planning: { label: t('tripList.statusPlanning'), type: 'warning' },
+  confirmed: { label: t('tripList.statusConfirmed'), type: 'success' },
+  archived: { label: t('tripList.statusArchived'), type: 'info' },
+}))
+const statusOptions = computed(() => Object.entries(statusMap.value).map(([value, s]) => ({ value, label: s.label })))
+
+// ── 状态切换（PATCH /trips/{id} status 字段，后端已支持） ──
+const statusUpdating = ref(false)
+async function changeStatus() {
+  const newStatus = trip.value.status
+  statusUpdating.value = true
+  try {
+    await api.updateTrip(route.params.id, { status: newStatus })
+    ElMessage.success(t('tripDetail.statusChanged', { label: (statusMap.value[newStatus] || {}).label || newStatus }))
+  } catch {
+    // 失败时回滚为当前真实状态
+    await load()
+  } finally {
+    statusUpdating.value = false
+  }
+}
+
+const typeLabel = computed(() => ({
+  attraction: t('common.typeAttraction'),
+  food: t('common.typeFood'),
+  hotel: t('common.typeHotel'),
+  transport: t('common.typeTransport'),
+}))
+const typeColor = { attraction: 'var(--brand)', food: '#c2410c', hotel: '#0d8a5f', transport: '#5b6ee1' }
+const typeEmoji = { attraction: '🏞️', food: '🍜', hotel: '🏨', transport: '🚄' }
+
+// 预算环形
+const budgetPercent = computed(() => {
+  if (!budget.value?.total_estimated || !trip.value?.budget) return null
+  return Math.min(100, Math.round((budget.value.total_estimated / trip.value.budget) * 100))
+})
+
+// 预算估算口径（诚实估算标注：来源 + 基准说明，对齐「预算必须可审计」哲学）
+const basisText = computed(() => {
+  const b = budget.value?.estimate_basis
+  if (!b) return ''
+  const parts = []
+  if (b.hotel) {
+    const n = b.hotel.estimated_count ?? 0
+    const avg = b.hotel.avg_estimate ?? b.hotel.average_estimate ?? null
+    parts.push(
+      avg != null && n > 0
+        ? t('share.basisHotel', { avg, n })
+        : t('share.basisHotelShort')
+    )
+  }
+  if (b.transport) {
+    parts.push(
+      b.transport.estimated_count
+        ? t('share.basisTransport')
+        : t('share.basisTransportShort')
+    )
+  }
+  return parts.join(' · ')
+})
+
+async function load() {
+  loading.value = true
+  try {
+    try {
+      trip.value = await api.getTrip(route.params.id)
+      offlineFallback.value = false // 在线成功：清除离线标识
+    } catch (e) {
+      // 离线/网络失败：尝试从 Cache API 读缓存行程详情（SW 的 api 缓存），读不到再上抛
+      const cached = await readCachedJson(`/api/v1/trips/${route.params.id}`)
+      if (cached) {
+        trip.value = cached
+        offlineFallback.value = true
+      } else {
+        throw e
+      }
+    }
+    // 离线降级：只展示缓存的行程骨架，预算/规划等可选数据不再请求
+    if (offlineFallback.value) {
+      budget.value = null
+      plan.value = null
+      planB.value = null
+      isFavorite.value = false
+      return
+    }
+    budget.value = await api.getBudget(route.params.id)
+    // 尽力加载 AI 规划方案（含酒店推荐候选）；404/报错不阻断详情页
+    try {
+      plan.value = await api.getTripPlan(route.params.id)
+    } catch {
+      plan.value = null
+    }
+    // Plan B 备选方案：确定性规则生成（无 LLM 成本）；仅主案模式加载
+    if (activePlan.value === 'main') {
+      try {
+        const pb = await api.getPlanB(route.params.id)
+        planB.value = pb?.variant || null
+      } catch {
+        planB.value = null // 404/无站点 → 无备选，静默降级（不展示入口）
+      }
+    }
+    // 收藏状态（分享后才有收藏入口，非分享行程跳过）
+    if (trip.value?.share_token) {
+      await checkFavorite()
+    } else {
+      isFavorite.value = false
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+// ── 行程备选方案（Plan B：确定性规则生成，无 LLM 成本） ────
+const planB = ref(null) // { label, description, deltas, days, budget } | null
+const activePlan = ref('main') // 'main' | 'plan_b'
+
+// 主案 / 备选 切换选项（el-segmented）
+const planOptions = computed(() => [
+  { label: t('tripDetail.planMain'), value: 'main' },
+  { label: t('tripDetail.planB'), value: 'plan_b' },
+])
+
+// 备选骨架的天数（与主案同构：day_number/date/theme/stops）
+const planBDays = computed(() => ((planB.value?.days) || []).map((d) => ({
+  day_number: d.day_number,
+  date: d.date,
+  note: d.theme, // 语义对齐主案 DayOut.note（后端 day.theme ↔ note）
+  stops: (d.stops || []).map((s) => ({
+    id: `pb-${d.day_number}-${s.name}`,
+    name: s.name,
+    stop_type: s.stop_type,
+    lat: s.lat,
+    lng: s.lng,
+    description: s.description,
+    estimated_cost: s.estimated_cost,
+    estimated_duration_minutes: s.estimated_duration_minutes,
+  })),
+})))
+
+// 备选方案预算（服务端已按站点汇总，与 backend budget_service 同构）
+const planBBudget = computed(() => planB.value?.budget || null)
+const planBTotal = computed(() => planBBudget.value?.total_estimated || 0)
+
+function onPlanChange(p) {
+  if (p === 'main' && activePlan.value !== 'main') load() // 切回主案时重新加载（刷新权威数据）
+}
+
+// ── 酒店推荐（公共组件 HotelRecommend 接收 plan.hotels + trip.days） ──
+const hotelCandidates = computed(() => plan.value?.hotels || [])
+
+// ── 行程服务层（方案 B 第二段 servicing 产物：交通/通勤/入住/折扣） ──
+const servicingProps = computed(() => ({
+  transport: plan.value?.transport || null,
+  transit: plan.value?.transit || null,
+  checkin: plan.value?.checkin || null,
+  discountRules: plan.value?.discount_rules || [],
+  discounts: plan.value?.discounts || null,
+}))
+
+// ── 导出 ───────────────────────────────────
+async function doExportImage() {
+  exporting.value = true
+  try {
+    await nextTick()
+    await exportImage(exportEl.value, `${trip.value.destination}-${t('tripDetail.exportImage')}`)
+    ElMessage.success(t('tripDetail.imageExported'))
+  } catch (e) {
+    ElMessage.error(t('tripDetail.exportFail', { msg: e.message }))
+  } finally {
+    exporting.value = false
+  }
+}
+async function doExportPdf() {
+  exporting.value = true
+  try {
+    await nextTick()
+    await exportPdf(exportEl.value, `${trip.value.destination}-${t('tripDetail.exportPdf')}`)
+    ElMessage.success(t('tripDetail.pdfExported'))
+  } catch (e) {
+    ElMessage.error(t('tripDetail.exportFail', { msg: e.message }))
+  } finally {
+    exporting.value = false
+  }
+}
+
+// ── 分享（只读链接） ─────────────────────────────────────
+const sharing = ref(false)
+const xhsNoteVisible = ref(false)
+async function doShare() {
+  sharing.value = true
+  try {
+    const r = await api.createShare(trip.value.id)
+    const url = r.share_url
+    try {
+      await navigator.clipboard.writeText(url)
+      ElMessage.success(t('tripDetail.shareLinkCopied'))
+    } catch {
+      ElMessage.success(t('tripDetail.shareLink', { url }))
+    }
+  } catch (e) {
+    ElMessage.error(t('tripDetail.shareFail'))
+  } finally {
+    sharing.value = false
+  }
+}
+
+// ── 受邀编辑权（owner 开放/收回；与只读分享分离） ──────────
+const editSharing = ref(false)
+const editRevoking = ref(false)
+async function doShareEdit() {
+  editSharing.value = true
+  try {
+    const r = await api.createShareEdit(trip.value.id)
+    const url = r.edit_url
+    try {
+      await navigator.clipboard.writeText(url)
+      ElMessage.success(t('tripDetail.editLinkCopied'))
+    } catch {
+      ElMessage.success(t('tripDetail.editLink', { url }))
+    }
+    await load()
+  } catch (e) {
+    ElMessage.error(t('tripDetail.openEditFail'))
+  } finally {
+    editSharing.value = false
+  }
+}
+async function doRevokeShareEdit() {
+  try {
+    await ElMessageBox.confirm(t('tripDetail.revokeConfirmMsg'), t('tripDetail.revokeConfirmTitle'), { type: 'warning' })
+  } catch { return }
+  editRevoking.value = true
+  try {
+    await api.revokeShareEdit(trip.value.id)
+    ElMessage.success(t('tripDetail.revoked'))
+    await load()
+  } catch (e) {
+    ElMessage.error(t('tripDetail.revokeFail'))
+  } finally {
+    editRevoking.value = false
+  }
+}
+
+// ── 分享设置（生命周期：TTL / 吊销 / 审计） ──────────────
+const shareSettingsVisible = ref(false)
+const lifecycleItems = ref([])
+const lifecycleLoading = ref(false)
+const ttlUpdating = ref(false)
+const revokingKind = ref('')
+
+async function openShareSettings() {
+  shareSettingsVisible.value = true
+  await loadShareLifecycle()
+}
+
+// 重新拉取生命周期状态（打开弹窗 / TTL / 吊销成功后）
+async function loadShareLifecycle() {
+  lifecycleLoading.value = true
+  try {
+    lifecycleItems.value = await api.getShareLifecycle(trip.value.id)
+  } catch (e) {
+    lifecycleItems.value = []
+    ElMessage.error(t('tripDetail.shareLinkFetchFail'))
+  } finally {
+    lifecycleLoading.value = false
+  }
+}
+
+// 状态计算：active/expired/revoked（revoked 优先展示）
+const lifecycleStatus = (item) => {
+  if (item.revoked_at) return 'revoked'
+  if (item.expires_at && new Date(item.expires_at).getTime() <= Date.now()) return 'expired'
+  return 'active'
+}
+
+// 复制某个链接（share_url / 编辑链接）
+function copyShareUrl(item) {
+  const url = item.kind === 'edit' ? `${window.location.origin}/share/${item.token}?edit=1` : item.share_url
+  if (!url) return
+  navigator.clipboard.writeText(url).then(() => ElMessage.success(t('tripDetail.linkCopied')))
+}
+
+// 设置 TTL（0 永久 / 1 / 7 / 30 天）
+async function setTtl(kind, days) {
+  ttlUpdating.value = true
+  try {
+    await api.setShareTokenTtl(trip.value.id, kind, days)
+    ElMessage.success(t('tripDetail.shareTtlUpdated'))
+    await loadShareLifecycle()
+  } catch (e) {
+    ElMessage.error(t('tripDetail.shareTtlFail'))
+  } finally {
+    ttlUpdating.value = false
+  }
+}
+
+// 吊销某个令牌（确认后）
+async function revokeShareLink(item) {
+  if (revokingKind.value) return
+  try {
+    await ElMessageBox.confirm(t('tripDetail.shareRevokeConfirmMsg'), t('tripDetail.shareRevokeConfirmTitle'), { type: 'warning' })
+  } catch { return }
+  revokingKind.value = item.kind
+  try {
+    await api.revokeShareToken(trip.value.id, item.kind)
+    ElMessage.success(t('tripDetail.shareRevoked'))
+    await loadShareLifecycle()
+  } catch (e) {
+    ElMessage.error(t('tripDetail.shareRevokeFail'))
+  } finally {
+    revokingKind.value = ''
+  }
+}
+
+// TTL 选项文案（0/1/7/30）
+const ttlOptions = computed(() => [
+  { label: t('tripDetail.ttlPermanent'), value: 0 },
+  { label: t('tripDetail.ttl1d'), value: 1 },
+  { label: t('tripDetail.ttl7d'), value: 7 },
+  { label: t('tripDetail.ttl30d'), value: 30 },
+])
+// 弹窗内展示完整链接用（编辑链接由前端拼 origin + share path）
+const windowOrigin = window.location.origin
+
+// ── 收藏灵感夹（当前行程是否已收藏） ──────────────────────
+const isFavorite = ref(false)
+const favoriting = ref(false)
+const hasSharedToken = computed(() => !!trip.value?.share_token)
+
+async function checkFavorite() {
+  if (!trip.value?.id) return
+  try {
+    const favs = await api.listFavorites({ limit: 200 })
+    isFavorite.value = favs.items?.some((f) => f.trip_id === trip.value.id) || false
+  } catch {
+    isFavorite.value = false
+  }
+}
+async function toggleFavorite() {
+  if (!trip.value?.id) return
+  favoriting.value = true
+  try {
+    if (isFavorite.value) {
+      await api.removeFavorite(trip.value.id)
+      ElMessage.success(t('tripDetail.favoriteRemoved'))
+      isFavorite.value = false
+    } else {
+      await api.addFavorite(trip.value.id)
+      ElMessage.success(t('tripDetail.favoriteAdded'))
+      isFavorite.value = true
+    }
+  } catch (e) {
+    ElMessage.error(t('tripDetail.favoriteFail'))
+  } finally {
+    favoriting.value = false
+  }
+}
+
+// ── 批量生成日程（按日期范围） ──────────────
+const genDaysVisible = ref(false)
+const genRange = ref([])
+const genDaysLoading = ref(false)
+async function genDays() {
+  if (!genRange.value?.length) {
+    ElMessage.warning(t('tripDetail.selectRange'))
+    return
+  }
+  genDaysLoading.value = true
+  try {
+    const [start, end] = genRange.value
+    const days = await api.generateDays(route.params.id, start, end)
+    ElMessage.success(t('tripDetail.daysGenerated', { n: days.length }))
+    genDaysVisible.value = false
+    genRange.value = []
+    await load()
+  } finally {
+    genDaysLoading.value = false
+  }
+}
+
+// ── 编辑行程基本信息 ───────────────────────
+function openEditTrip() {
+  tripForm.value = {
+    title: trip.value.title,
+    destination: trip.value.destination,
+    departure: trip.value.departure || '',
+    trip_type: trip.value.trip_type || '休闲旅游',
+    travelers: trip.value.travelers,
+    budget: trip.value.budget,
+  }
+  editType.value = 'edit-trip'
+  dialogVisible.value = true
+}
+async function saveTrip() {
+  const data = {}
+  if (tripForm.value.title !== trip.value.title) data.title = tripForm.value.title
+  if (tripForm.value.destination !== trip.value.destination) data.destination = tripForm.value.destination
+  if ((tripForm.value.departure || '') !== (trip.value.departure || '')) data.departure = tripForm.value.departure || null
+  if (tripForm.value.trip_type !== (trip.value.trip_type || '休闲旅游')) data.trip_type = tripForm.value.trip_type
+  if (tripForm.value.travelers !== trip.value.travelers) data.travelers = tripForm.value.travelers
+  if (tripForm.value.budget !== trip.value.budget) data.budget = tripForm.value.budget
+  await api.updateTrip(trip.value.id, data)
+  ElMessage.success(t('tripDetail.saved'))
+  dialogVisible.value = false
+  load()
+}
+
+// ── 添加日程 ───────────────────────────────
+function openAddDay() {
+  const maxDay = trip.value.days.reduce((m, d) => Math.max(m, d.day_number), 0)
+  dayForm.value = { day_number: maxDay + 1 }
+  editType.value = 'add-day'
+  dialogVisible.value = true
+}
+async function saveDay() {
+  await api.addDay(trip.value.id, dayForm.value)
+  ElMessage.success(t('tripDetail.dayAdded'))
+  dialogVisible.value = false
+  load()
+}
+
+// ── 添加站点 ───────────────────────────────
+function openAddStop(dayId) {
+  editDayId.value = dayId
+  editStopId.value = null
+  stopForm.value = blankStopForm()
+  editType.value = 'add-stop'
+  dialogVisible.value = true
+}
+async function saveStop() {
+  await stopFormRef.value.validate()
+  const payload = { ...stopForm.value }
+  if (payload.lat === '' || payload.lat == null) payload.lat = null
+  if (payload.lng === '' || payload.lng == null) payload.lng = null
+  if (payload.estimated_cost === '' || payload.estimated_cost == null) payload.estimated_cost = null
+  if (payload.estimated_duration_minutes === '' || payload.estimated_duration_minutes == null) payload.estimated_duration_minutes = null
+  await api.addStop(editDayId.value, payload)
+  ElMessage.success(t('tripDetail.stopAdded'))
+  dialogVisible.value = false
+  load()
+}
+
+// ── 删除 ───────────────────────────────────
+async function removeStop(day, stop) {
+  try {
+    await ElMessageBox.confirm(t('tripDetail.deleteStopConfirm', { name: stop.name }), t('common.confirm'), { type: 'warning' })
+  } catch { return }
+  await api.deleteStop(day.id, stop.id)
+  ElMessage.success(t('tripDetail.deleted'))
+  load()
+}
+async function removeDay(day) {
+  try {
+    await ElMessageBox.confirm(t('tripDetail.deleteDayConfirm', { n: day.day_number }), t('common.confirm'), { type: 'warning' })
+  } catch { return }
+  await api.deleteDay(day.id)
+  ElMessage.success(t('tripDetail.deleted'))
+  load()
+}
+async function removeTrip() {
+  try {
+    await ElMessageBox.confirm(t('tripDetail.deleteTripConfirm', { title: trip.value.title }), t('common.confirm'), { type: 'warning' })
+  } catch { return }
+  await api.deleteTrip(trip.value.id)
+  ElMessage.success(t('tripDetail.deleted'))
+  router.push('/trips')
+}
+
+onMounted(load)
+</script>
+
+<template>
+  <div v-loading="loading" class="detail-page">
+    <!-- 返回 -->
+    <div class="topbar">
+      <button class="back-btn" @click="router.push('/trips')">
+        <el-icon><ArrowLeft /></el-icon> {{ $t('tripDetail.backToTrips') }}
+      </button>
+      <div class="topbar-actions">
+        <el-button
+          v-if="hasSharedToken"
+          type="info"
+          plain
+          :loading="favoriting"
+          @click="toggleFavorite"
+        >
+          <el-icon style="margin-right: 4px"><StarFilled v-if="isFavorite" /><Star v-else /></el-icon>{{ isFavorite ? $t('tripDetail.favorited') : $t('tripDetail.favorite') }}
+        </el-button>
+        <el-button type="success" plain :loading="sharing" @click="doShare">
+          <el-icon style="margin-right: 4px"><Share /></el-icon>{{ $t('tripDetail.shareTrip') }}
+        </el-button>
+        <el-button type="danger" plain @click="xhsNoteVisible = true">
+          <el-icon style="margin-right: 4px"><Promotion /></el-icon>{{ $t('tripDetail.shareToXhs') }}
+        </el-button>
+        <el-button plain @click="openShareSettings">
+          <el-icon style="margin-right: 4px"><Setting /></el-icon>{{ $t('tripDetail.shareSettings') }}
+        </el-button>
+        <el-button
+          v-if="!trip?.edit_token"
+          type="warning"
+          plain
+          :loading="editSharing"
+          @click="doShareEdit"
+        >
+          <el-icon style="margin-right: 4px"><EditPen /></el-icon>{{ $t('tripDetail.openEdit') }}
+        </el-button>
+        <el-button
+          v-else
+          type="warning"
+          plain
+          :loading="editRevoking"
+          @click="doRevokeShareEdit"
+        >
+          <el-icon style="margin-right: 4px"><Lock /></el-icon>{{ $t('tripDetail.revokeEdit') }}
+        </el-button>
+        <el-button @click="openEditTrip">{{ $t('tripDetail.editBasic') }}</el-button>
+        <el-button type="danger" plain @click="removeTrip">{{ $t('tripDetail.deleteTrip') }}</el-button>
+      </div>
+    </div>
+
+    <template v-if="trip">
+      <!-- 离线模式标识（PWA：网络失败时读缓存展示） -->
+      <el-alert
+        v-if="offlineFallback"
+        class="offline-banner"
+        type="warning"
+        :closable="false"
+        show-icon
+      >
+        <template #title>
+          {{ $t('tripDetail.offlineMode') }} · {{ $t('tripDetail.offlineModeHint') }}
+        </template>
+      </el-alert>
+
+      <!-- 导出区（截图/PDF 抓取范围） -->
+      <div ref="exportEl" class="export-area">
+        <!-- 头图 + 概览 -->
+        <div class="hero-card">
+          <div class="hero-cover">
+            <div class="hero-city">{{ (trip.destination || '?')[0] }}</div>
+            <div class="hero-overlay">
+              <h1 class="hero-title">{{ trip.title }}</h1>
+              <div class="hero-meta">
+                <span class="hero-pill"><el-icon><Location /></el-icon>{{ trip.destination }}</span>
+                <span class="hero-pill" v-if="trip.departure"><el-icon><Promotion /></el-icon>{{ $t('tripDetail.fromDeparture', { dep: trip.departure }) }}</span>
+                <span class="hero-pill" v-if="trip.trip_type"><el-icon><Briefcase /></el-icon>{{ $t('tripDetail.tripTypeLabel') }}：{{ trip.trip_type }}</span>
+                <span class="hero-pill"><el-icon><Calendar /></el-icon>{{ trip.start_date }} ~ {{ trip.end_date }}</span>
+                <span class="hero-pill"><el-icon><User /></el-icon>{{ trip.travelers }} {{ $t('common.peopleUnit') }}</span>
+                <span class="hero-pill" v-if="trip.budget != null"><el-icon><Wallet /></el-icon>{{ $t('common.budget') }} ¥{{ trip.budget }}</span>
+              </div>
+            </div>
+            <span class="status-group">
+              <span class="status-badge" :class="(statusMap[trip.status] || statusMap.draft).type">
+                {{ (statusMap[trip.status] || statusMap.draft).label }}
+              </span>
+              <el-select
+                v-model="trip.status"
+                class="status-switch"
+                size="small"
+                :loading="statusUpdating"
+                @change="changeStatus"
+              >
+                <el-option v-for="opt in statusOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
+              </el-select>
+            </span>
+          </div>
+        </div>
+
+        <!-- 地图 + 预算 -->
+        <div class="map-budget-row">
+          <div class="map-card">
+            <div class="card-head">
+              <span class="card-title">{{ $t('common.mapTitle') }}</span>
+              <span class="map-hint">
+                {{ canMapDrag ? $t('tripDetail.mapDragHint') : $t('common.mapHint') }}
+              </span>
+            </div>
             <el-alert
               v-if="mapDragError"
               class="map-drag-error"
@@ -48,3 +822,725 @@ async function onMapMove({ name, lat, lng, day_number }) {
               :draggable="canMapDrag"
               :on-move="onMapMove"
             />
+          </div>
+          <div class="budget-card">
+            <div class="card-head"><span class="card-title">{{ $t('common.budgetTitle') }}</span></div>
+            <template v-if="budget">
+              <div class="budget-ring-wrap">
+                <div class="budget-ring" :style="{ '--pct': budgetPercent != null ? budgetPercent : 0 }">
+                  <div class="budget-ring-inner">
+                    <div class="ring-total">¥{{ budget.total_estimated }}</div>
+                    <div class="ring-label">{{ $t('common.estimated') }}</div>
+                  </div>
+                </div>
+                <div class="ring-caption" v-if="budgetPercent != null">
+                  {{ $t('common.percentOfBudget', { pct: budgetPercent }) }}
+                </div>
+              </div>
+              <div class="budget-lines">
+                <div v-for="(label, k) in { attraction: $t('common.typeAttraction'), food: $t('common.typeFood'), hotel: $t('common.typeHotel'), transport: $t('common.typeTransport') }" :key="k" class="budget-line">
+                  <span class="budget-dot" :style="{ background: typeColor[k] }" />
+                  <span>{{ label }}</span>
+                  <span class="budget-line-val">¥{{ budget.by_type?.[k] || 0 }}</span>
+                </div>
+                <div class="budget-line total">
+                  <span>{{ $t('common.total') }}</span>
+                  <span class="total-val">¥{{ budget.total_estimated }}</span>
+                </div>
+              </div>
+              <div class="budget-daily" v-if="budget.daily_average">
+                <el-icon><TrendCharts /></el-icon> {{ $t('common.dailyAvg', { amount: budget.daily_average }) }}
+              </div>
+              <!-- 人均分摊（task-budget-split：多人出行按 travelers 分摊） -->
+              <div v-if="budget.per_person_total != null && trip.travelers > 1" class="budget-per-person">
+                <el-icon><User /></el-icon>
+                {{ $t('common.perPersonLabel') }} {{ $t('common.perPersonTotal', { amount: budget.per_person_total }) }}
+                <span v-if="budget.per_person_daily != null" class="budget-pp-sub">
+                  · {{ $t('common.perPersonDaily', { amount: budget.per_person_daily }) }}
+                </span>
+              </div>
+              <!-- 预算估算口径（诚实估算：来源 + 基准说明，对齐「预算必须可审计」哲学） -->
+              <div v-if="basisText" class="budget-basis">
+                <el-icon><InfoFilled /></el-icon>
+                <span class="budget-basis-label">{{ $t('share.basisLabel') }}</span>
+                <span class="budget-basis-text">{{ basisText }}</span>
+              </div>
+            </template>
+            <el-empty v-else :description="$t('common.noBudget')" :image-size="60" />
+          </div>
+        </div>
+
+        <!-- 备选方案对比（Plan B：主案 / 备选切换） -->
+        <div v-if="planB" class="planb-card">
+          <div class="planb-head">
+            <span class="planb-title"><el-icon style="margin-right: 6px"><Switch /></el-icon>{{ $t('tripDetail.planBTitle') }}</span>
+            <el-segmented v-model="activePlan" :options="planOptions" size="small" @change="onPlanChange" />
+          </div>
+          <div v-if="activePlan === 'plan_b'" class="planb-body">
+            <div class="planb-meta">
+              <span class="planb-label">{{ planB.label }}</span>
+              <span class="planb-desc">{{ planB.description }}</span>
+            </div>
+            <div class="planb-deltas">
+              <div v-for="(d, i) in planB.deltas" :key="i" class="planb-delta">
+                <el-icon style="margin-right: 6px; color: var(--brand)"><RefreshRight /></el-icon>{{ d }}
+              </div>
+            </div>
+            <div class="planb-budget" v-if="planBBudget">
+              <el-icon style="margin-right: 6px"><Wallet /></el-icon>
+              {{ $t('tripDetail.planBBudgetLabel') }} ¥{{ planBTotal }}
+              <span v-if="planBBudget.by_type?.hotel" class="planb-budget-sub">
+                {{ $t('common.typeHotel') }} ¥{{ planBBudget.by_type.hotel }}
+              </span>
+            </div>
+            <div class="planb-hint">{{ $t('tripDetail.planBHint') }}</div>
+          </div>
+        </div>
+
+        <!-- AI 调整行程（方案 B：对话式修订） -->
+        <div class="revise-card">
+          <div class="revise-head">
+            <span class="revise-title"><el-icon style="margin-right: 6px"><ChatDotRound /></el-icon>{{ $t('tripDetail.reviseTitle') }}</span>
+            <span class="revise-hint">{{ $t('tripDetail.reviseHint') }}</span>
+          </div>
+          <div class="revise-row">
+            <el-input
+              v-model="reviseMsg"
+              :placeholder="$t('tripDetail.revisePlaceholder')"
+              size="large"
+              clearable
+              :disabled="revising"
+              @keyup.enter="revise"
+            />
+            <el-button type="primary" size="large" :loading="revising" @click="revise">
+              <el-icon style="margin-right: 4px"><MagicStick /></el-icon>{{ $t('tripDetail.reviseBtn') }}
+            </el-button>
+          </div>
+          <!-- 加载态提示：修订进行中（AI 解析 + 原子应用） -->
+          <div v-if="revising" class="revise-loading">
+            <el-icon class="is-loading"><Loading /></el-icon>{{ $t('tripDetail.reviseLoading') }}
+          </div>
+          <!-- 错误态：内联横幅，保留用户输入便于修正后重试 -->
+          <transition name="el-fade-in">
+            <div v-if="reviseError" class="revise-error" role="alert">
+              <el-icon style="margin-right: 6px; flex-shrink: 0; margin-top: 2px"><WarningFilled /></el-icon>
+              <div class="revise-error-body">
+                <div>{{ reviseError }}</div>
+                <div class="revise-error-sub">{{ $t('tripDetail.reviseFailRetry') }}</div>
+              </div>
+            </div>
+          </transition>
+          <transition name="el-fade-in">
+            <div v-if="lastReviseSummary" class="revise-summary">
+              <el-icon style="margin-right: 4px; color: var(--success)"><CircleCheck /></el-icon>
+              {{ lastReviseSummary }}
+            </div>
+          </transition>
+          <!-- 变更动作预览（diff 列表） -->
+          <transition name="el-fade-in">
+            <div v-if="reviseDone" class="revise-diff">
+              <div class="revise-diff-head">
+                <span class="revise-diff-title"><el-icon style="margin-right: 5px"><List /></el-icon>{{ $t('tripDetail.diffTitle') }}</span>
+                <span class="revise-diff-count" v-if="lastReviseDiff.length">{{ $t('tripDetail.diffCount', { n: lastReviseDiff.length }) }}</span>
+              </div>
+              <template v-if="lastReviseDiff.length">
+                <div v-for="(a, i) in visibleReviseDiff" :key="i" class="revise-diff-item" :class="'op-' + (a.op || '')">
+                  <el-icon class="revise-diff-icon"><template v-if="a.op === 'add'"><Plus /></template><template v-else-if="a.op === 'remove'"><Minus /></template><template v-else><Edit /></template></el-icon>
+                  <span class="revise-diff-text">{{ diffText(a) }}</span>
+                </div>
+                <div v-if="reviseDiffMore" class="revise-diff-more">
+                  {{ $t('tripDetail.reviseDiffMore', { n: reviseDiffMore }) }}
+                </div>
+              </template>
+              <div v-else class="revise-diff-empty">{{ $t('tripDetail.diffEmpty') }}</div>
+            </div>
+          </transition>
+          <!-- 修订质控闭环：修订后的 AI 质检报告（task-revise-qa-loop） -->
+          <transition name="el-fade-in">
+            <div v-if="lastReviseQuality" class="revise-quality">
+              <div class="revise-quality-head">
+                <el-icon style="margin-right: 5px"><DataAnalysis /></el-icon>
+                <span class="revise-quality-title">{{ $t('tripDetail.reviseQualityTitle') }}</span>
+                <span class="revise-quality-score" :class="{ pass: lastReviseQuality.passed, warn: !lastReviseQuality.passed }">
+                  {{ lastReviseQuality.score }}/100
+                </span>
+                <span v-if="lastReviseQuality.fix_applied" class="revise-quality-badge">{{ $t('tripDetail.reviseQualityFixApplied') }}</span>
+                <span v-if="lastReviseQuality.degraded" class="revise-quality-badge degraded">{{ $t('tripDetail.reviseQualityDegraded') }}</span>
+              </div>
+              <div v-if="lastReviseQuality.summary" class="revise-quality-summary">{{ lastReviseQuality.summary }}</div>
+              <ul v-if="lastReviseQuality.issues && lastReviseQuality.issues.length" class="revise-quality-issues">
+                <li v-for="(issue, i) in lastReviseQuality.issues.slice(0, 3)" :key="i" class="revise-quality-issue">
+                  <span class="revise-quality-sev" :class="issue.severity">{{ issue.severity }}</span>
+                  {{ issue.message }}
+                </li>
+              </ul>
+            </div>
+          </transition>
+        </div>
+
+        <!-- 生成时的 AI 质检报告 -->
+        <QualityCard :quality="plan?.quality" class="detail-quality" />
+
+        <!-- 时间校验（TimeGate）：营业时间/游玩时长确定性提示（规则库，仅展示不阻断） -->
+        <div v-if="plan?.time_gate?.issues?.length" class="timegate-card">
+          <div class="timegate-head">
+            <span class="timegate-title"><el-icon style="margin-right: 6px"><Clock /></el-icon>{{ $t('tripDetail.timeGateTitle') }}</span>
+            <span class="timegate-badge">{{ $t('tripDetail.timeGateBasis') }}</span>
+          </div>
+          <ul class="timegate-list">
+            <li v-for="(iss, i) in plan.time_gate.issues.slice(0, 6)" :key="i" class="timegate-item">
+              <span class="timegate-sev">{{ $t('tripDetail.timeGateWarn') }}</span>
+              <span v-if="iss.day_number" class="timegate-day">Day {{ iss.day_number }}</span>
+              <span class="timegate-msg">{{ iss.message }}</span>
+              <span v-if="iss.suggestion" class="timegate-suggestion">→ {{ iss.suggestion }}</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- 住宿推荐（来自 AI 规划方案的酒店候选） -->
+        <HotelRecommend
+          :hotels="hotelCandidates"
+          :days="trip.days"
+          actionable
+          @arranged="load"
+        />
+
+        <!-- 行程服务层（大交通 / 市内通勤 / 入住办理 / 折扣） -->
+        <TripServicing
+          :transport="servicingProps.transport"
+          :transit="servicingProps.transit"
+          :checkin="servicingProps.checkin"
+          :discount-rules="servicingProps.discountRules"
+          :discounts="servicingProps.discounts"
+        />
+
+        <!-- 每日行程 -->
+        <div class="day-section" v-for="day in trip.days" :key="day.id">
+          <div class="day-head">
+            <div class="day-headline">
+              <span class="day-badge">Day {{ day.day_number }}</span>
+              <div>
+                <div class="day-title">{{ day.date || $t('common.dayN', { n: day.day_number }) }}</div>
+                <div class="day-note">{{ day.note || $t('common.freeExplore') }}</div>
+              </div>
+            </div>
+            <div class="day-actions">
+              <el-button size="small" type="primary" plain @click="openAddStop(day.id)">+ {{ $t('tripDetail.addStop') }}</el-button>
+              <el-button size="small" type="danger" plain @click="removeDay(day)">{{ $t('tripDetail.removeDay') }}</el-button>
+            </div>
+          </div>
+
+          <!-- 站点时间轴 -->
+          <div class="stops-list" v-if="day.stops.length">
+            <div v-for="(stop, idx) in day.stops" :key="stop.id" class="stop-item">
+              <div class="stop-rail">
+                <span class="stop-index" :style="{ background: typeColor[stop.stop_type] || 'var(--brand)' }">{{ idx + 1 }}</span>
+                <span class="rail-line" v-if="idx < day.stops.length - 1" />
+              </div>
+              <div class="stop-body">
+                <div class="stop-head">
+                  <span class="stop-name">{{ stop.name }}</span>
+                  <el-tag size="small" round :style="{ color: typeColor[stop.stop_type] || 'var(--brand)', background: (typeColor[stop.stop_type] || 'var(--brand)') + '1a', border: 'none' }">
+                    {{ typeEmoji[stop.stop_type] }} {{ typeLabel[stop.stop_type] || stop.stop_type }}
+                  </el-tag>
+                </div>
+                <div class="stop-meta">
+                  <span v-if="stop.estimated_cost != null"><el-icon><Wallet /></el-icon>¥{{ stop.estimated_cost }}</span>
+                  <span v-if="stop.estimated_duration_minutes"><el-icon><Clock /></el-icon>{{ stop.estimated_duration_minutes }} {{ $t('common.minutes') }}</span>
+                </div>
+                <div v-if="stop.description" class="stop-desc">{{ stop.description }}</div>
+                <div class="stop-actions">
+                  <el-button link size="small" @click="moveStop(day, stop, -1)" :disabled="idx === 0">{{ $t('tripDetail.moveUp') }}</el-button>
+                  <el-button link size="small" @click="moveStop(day, stop, 1)" :disabled="idx === day.stops.length - 1">{{ $t('tripDetail.moveDown') }}</el-button>
+                  <el-button link type="primary" @click="openEditStop(day, stop)">{{ $t('tripDetail.editStop') }}</el-button>
+                  <el-button link type="danger" @click="removeStop(day, stop)">{{ $t('tripDetail.deleteStop') }}</el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <el-empty v-else :description="$t('common.dayEmpty')" :image-size="60" />
+        </div>
+      </div>
+
+      <!-- 底部操作 -->
+      <div class="bottom-bar">
+        <el-button @click="openAddDay"><el-icon style="margin-right: 4px"><Plus /></el-icon>{{ $t('tripDetail.addDay') }}</el-button>
+        <el-button @click="genDaysVisible = true"><el-icon style="margin-right: 4px"><Calendar /></el-icon>{{ $t('tripDetail.genDays') }}</el-button>
+        <el-button type="success" plain :loading="exporting" @click="doExportImage">
+          <el-icon style="margin-right: 4px"><Picture /></el-icon>{{ $t('tripDetail.exportImage') }}
+        </el-button>
+        <el-button type="primary" plain :loading="exporting" @click="doExportPdf">
+          <el-icon style="margin-right: 4px"><Document /></el-icon>{{ $t('tripDetail.exportPdf') }}
+        </el-button>
+      </div>
+    </template>
+
+    <!-- 小红书笔记（生成文案/封面 → 复制 → App 发布） -->
+    <XhsNoteDialog v-model="xhsNoteVisible" :trip-id="trip?.id" :trip="trip" />
+
+    <!-- 批量生成日程对话框 -->
+    <el-dialog v-model="genDaysVisible" :title="$t('tripDetail.genDaysTitle')" width="440px">
+      <el-form label-width="80px">
+        <el-form-item :label="$t('tripDetail.genRange')">
+          <el-date-picker
+            v-model="genRange"
+            type="daterange"
+            :range-separator="$t('tripDetail.genRangeSep')"
+            :start-placeholder="$t('tripDetail.genStartPh')"
+            :end-placeholder="$t('tripDetail.genEndPh')"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <div class="gen-days-hint">{{ $t('tripDetail.genDaysHint') }}</div>
+      </el-form>
+      <template #footer>
+        <el-button @click="genDaysVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="genDaysLoading" @click="genDays">{{ $t('tripDetail.genBtn') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 分享设置（生命周期：TTL / 吊销 / 审计） -->
+    <el-dialog v-model="shareSettingsVisible" :title="$t('tripDetail.shareSettingsTitle')" width="680px" @open="loadShareLifecycle">
+      <div class="share-settings-hint">{{ $t('tripDetail.shareSettingsHint') }}</div>
+      <div v-loading="lifecycleLoading" class="share-settings-body">
+        <div v-if="!lifecycleLoading && !lifecycleItems.length" class="share-settings-empty">
+          {{ $t('tripDetail.shareLinkFetchFail') }}
+        </div>
+        <div v-for="item in lifecycleItems" :key="item.kind" class="share-setting-card" :class="lifecycleStatus(item)">
+          <div class="ss-head">
+            <span class="ss-kind">{{ item.kind === 'edit' ? $t('tripDetail.shareKindEdit') : $t('tripDetail.shareKindShare') }}</span>
+            <el-tag size="small" round :type="lifecycleStatus(item) === 'revoked' ? 'danger' : lifecycleStatus(item) === 'expired' ? 'warning' : 'success'">
+              {{ lifecycleStatus(item) === 'revoked' ? $t('tripDetail.shareStatusRevoked') : lifecycleStatus(item) === 'expired' ? $t('tripDetail.shareStatusExpired') : $t('tripDetail.shareStatusActive') }}
+            </el-tag>
+          </div>
+
+          <div class="ss-row">
+            <span class="ss-label">{{ $t('tripDetail.shareUrl') }}</span>
+            <span class="ss-value ss-url">
+              <template v-if="item.kind === 'edit'">{{ windowOrigin }}/share/{{ item.token }}?edit=1</template>
+              <template v-else>{{ item.share_url }}</template>
+            </span>
+            <el-button link type="primary" size="small" @click="copyShareUrl(item)">{{ $t('tripDetail.copyLink') }}</el-button>
+          </div>
+
+          <div class="ss-row">
+            <span class="ss-label">{{ $t('tripDetail.shareExpires') }}</span>
+            <span class="ss-value">{{ item.expires_at ? new Date(item.expires_at).toLocaleString() : $t('tripDetail.shareNever') }}</span>
+            <el-select
+              :model-value="0"
+              size="small"
+              style="width: 120px"
+              :disabled="lifecycleStatus(item) !== 'active'"
+              @change="(v) => setTtl(item.kind, v)"
+            >
+              <el-option v-for="opt in ttlOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
+            </el-select>
+          </div>
+
+          <div class="ss-row">
+            <span class="ss-label">{{ $t('tripDetail.shareLastUsed') }}</span>
+            <span class="ss-value">{{ item.last_used_at ? new Date(item.last_used_at).toLocaleString() : $t('tripDetail.shareNeverUsed') }}</span>
+          </div>
+
+          <div class="ss-actions" v-if="lifecycleStatus(item) === 'active'">
+            <el-button type="danger" plain size="small" :loading="revokingKind === item.kind" @click="revokeShareLink(item)">
+              {{ $t('tripDetail.shareStatusRevoked') }}
+            </el-button>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="shareSettingsVisible = false">{{ $t('common.cancel') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 编辑对话框（三合一） -->
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editType === 'edit-trip' ? $t('tripDetail.editTripTitle') : editType === 'add-day' ? $t('tripDetail.addDayTitle') : editType === 'edit-stop' ? $t('tripDetail.editStopTitle') : $t('tripDetail.addStopTitle')"
+      width="480px"
+    >
+      <el-form v-if="editType === 'edit-trip'" :model="tripForm" label-width="80px">
+        <el-form-item :label="$t('tripDetail.lblTitle')"><el-input v-model="tripForm.title" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblDestination')"><el-input v-model="tripForm.destination" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblDeparture')">
+          <el-input v-model="tripForm.departure" :placeholder="$t('tripDetail.departurePlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="$t('tripDetail.lblTripType')">
+          <el-select v-model="tripForm.trip_type" style="width: 100%">
+            <el-option v-for="opt in tripTypeOptions" :key="opt.key" :label="t('tripList.' + opt.key)" :value="opt.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="$t('tripDetail.lblTravelers')"><el-input-number v-model="tripForm.travelers" :min="1" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblBudget')"><el-input-number v-model="tripForm.budget" :min="0" :step="500" /></el-form-item>
+      </el-form>
+
+      <el-form v-else-if="editType === 'add-day'" :model="dayForm" label-width="80px">
+        <el-form-item :label="$t('tripDetail.lblDayNumber')"><el-input-number v-model="dayForm.day_number" :min="1" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblDate')"><el-date-picker v-model="dayForm.date" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblNote')"><el-input v-model="dayForm.note" type="textarea" :rows="2" /></el-form-item>
+      </el-form>
+
+      <el-form v-else ref="stopFormRef" :model="stopForm" label-width="90px">
+        <el-form-item :label="$t('tripDetail.lblName')" prop="name" :rules="[{ required: true, message: $t('tripDetail.stopNameRequired') }]">
+          <el-input v-model="stopForm.name" :placeholder="$t('tripDetail.stopNamePh')" />
+        </el-form-item>
+        <el-form-item :label="$t('tripDetail.lblType')">
+          <el-radio-group v-model="stopForm.stop_type">
+            <el-radio-button value="attraction">{{ $t('common.typeAttraction') }}</el-radio-button>
+            <el-radio-button value="food">{{ $t('common.typeFood') }}</el-radio-button>
+            <el-radio-button value="hotel">{{ $t('common.typeHotel') }}</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item :label="$t('tripDetail.lblLatLng')">
+          <div class="latlng">
+            <el-input v-model="stopForm.lat" :placeholder="$t('tripDetail.latPh')" />
+            <el-input v-model="stopForm.lng" :placeholder="$t('tripDetail.lngPh')" />
+          </div>
+        </el-form-item>
+        <el-form-item :label="$t('tripDetail.lblEstCost')"><el-input-number v-model="stopForm.estimated_cost" :min="0" :step="50" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblDuration')"><el-input-number v-model="stopForm.estimated_duration_minutes" :min="0" :step="30" /></el-form-item>
+        <el-form-item :label="$t('tripDetail.lblDesc')"><el-input v-model="stopForm.description" type="textarea" :rows="2" /></el-form-item>
+      </el-form>
+    </el-dialog>
+  </div>
+</template>
+
+<style scoped>
+.detail-page { max-width: 1080px; margin: 0 auto; }
+
+/* PWA 离线模式标识 */
+.offline-banner { margin-bottom: 16px; }
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 18px;
+}
+.back-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: none; border: none; cursor: pointer;
+  font-size: 14px; color: var(--ink-2); font-weight: 500;
+  padding: 8px 12px; border-radius: var(--radius-full);
+  transition: all .2s;
+}
+.back-btn:hover { background: var(--fill); color: var(--ink); }
+
+/* ── 头图 ── */
+.hero-card { margin-bottom: 20px; }
+.hero-cover {
+  position: relative;
+  height: 200px;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 55%, #a1c4fd 100%);
+  overflow: hidden;
+  display: flex; align-items: center;
+  box-shadow: var(--shadow-card);
+}
+.hero-city {
+  position: absolute; right: 6%; bottom: -36px;
+  font-size: 210px; font-weight: 800; color: rgba(255,255,255,0.35);
+  line-height: 1; user-select: none;
+}
+.hero-overlay { position: relative; z-index: 1; padding: 32px 36px; }
+.hero-title { margin: 0 0 14px; font-size: 30px; font-weight: 700; color: #fff; text-shadow: 0 2px 14px rgba(0,0,0,0.18); letter-spacing: -0.02em; }
+.hero-meta { display: flex; flex-wrap: wrap; gap: 8px; }
+.hero-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: rgba(255,255,255,0.88); color: var(--ink-2);
+  font-size: 12.5px; font-weight: 500;
+  padding: 6px 12px; border-radius: var(--radius-full);
+  backdrop-filter: blur(4px);
+}
+.status-group {
+  position: absolute; top: 16px; right: 16px; z-index: 2;
+  display: flex; align-items: center; gap: 8px;
+}
+.status-badge {
+  font-size: 12px; font-weight: 600; padding: 5px 12px;
+  border-radius: var(--radius-full); background: rgba(255,255,255,0.9);
+}
+.status-badge.success { color: var(--success); }
+.status-badge.warning { color: var(--warning); }
+.status-badge.info { color: var(--muted); }
+.status-switch { width: 108px; }
+
+/* ── 地图 + 预算 ── */
+.map-budget-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; margin-bottom: 28px; }
+.map-card, .budget-card {
+  background: #fff; border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 18px; box-shadow: var(--shadow-card);
+}
+.card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.card-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+.map-hint { font-size: 12px; color: var(--faint); }
+.map-drag-error { margin-bottom: 10px; }
+
+.budget-ring-wrap { text-align: center; padding: 8px 0 4px; }
+.budget-ring {
+  --pct: 0;
+  width: 120px; height: 120px; margin: 0 auto;
+  border-radius: 50%;
+  background: conic-gradient(var(--brand) calc(var(--pct) * 1%), var(--fill) 0);
+  display: flex; align-items: center; justify-content: center;
+}
+.budget-ring-inner {
+  width: 88px; height: 88px; border-radius: 50%; background: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.ring-total { font-size: 17px; font-weight: 700; color: var(--ink); }
+.ring-label { font-size: 11px; color: var(--faint); }
+.ring-caption { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+.budget-lines { margin-top: 12px; }
+.budget-line { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 13px; color: var(--ink-2); }
+.budget-dot { width: 8px; height: 8px; border-radius: 50%; }
+.budget-line-val { margin-left: auto; font-weight: 600; color: var(--ink); }
+.budget-line.total { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 12px; font-weight: 600; }
+.total-val { margin-left: auto; font-size: 17px; font-weight: 700; color: var(--brand); }
+.budget-daily { margin-top: 10px; font-size: 12.5px; color: var(--success); display: inline-flex; align-items: center; gap: 4px; }
+.budget-per-person { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 12.5px; color: var(--ink-2); display: flex; align-items: center; gap: 4px; }
+.budget-pp-sub { color: var(--muted); }
+/* 预算估算口径（诚实估算标注） */
+.budget-basis { display: flex; align-items: flex-start; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12px; color: var(--ink-2); line-height: 1.6; }
+.budget-basis .el-icon { margin-top: 2px; flex-shrink: 0; }
+.budget-basis-label { font-weight: 600; white-space: nowrap; color: var(--muted); }
+.budget-basis-text { word-break: break-all; }
+
+/* ── 时间校验卡片（TimeGate：营业时间/游玩时长提示） ── */
+.timegate-card {
+  margin-top: 4px; border: 1px solid #fde68a; background: #fffbeb;
+  border-radius: var(--radius-lg); padding: 12px 14px;
+}
+.timegate-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.timegate-title { font-size: 14px; font-weight: 600; color: #92400e; display: inline-flex; align-items: center; }
+.timegate-badge { font-size: 11px; color: #92400e; background: #fef3c7; border-radius: 999px; padding: 1px 8px; }
+.timegate-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.timegate-item { display: flex; align-items: baseline; gap: 6px; font-size: 13px; color: #78350f; }
+.timegate-sev { flex-shrink: 0; font-size: 11px; color: #92400e; background: #fef3c7; border-radius: 4px; padding: 0 6px; }
+.timegate-day { flex-shrink: 0; font-weight: 600; }
+.timegate-msg { flex: 1; min-width: 0; }
+.timegate-suggestion { color: #a16207; font-size: 12px; }
+
+/* ── AI 调整行程（方案 B） ── */
+.revise-card {
+  background: linear-gradient(135deg, var(--brand-soft), #fff 60%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+.revise-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.revise-title {
+  font-size: 15px; font-weight: 600; color: var(--ink);
+  display: inline-flex; align-items: center;
+}
+.revise-hint { font-size: 12px; color: var(--muted); }
+.revise-row { display: flex; gap: 10px; }
+.revise-loading {
+  margin-top: 10px; font-size: 13px; color: var(--muted);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.revise-error {
+  margin-top: 10px; font-size: 13px; color: #b45309;
+  background: rgba(245,158,11,.10); border: 1px solid rgba(245,158,11,.35);
+  border-radius: var(--radius-sm); padding: 8px 10px;
+  display: flex; align-items: flex-start;
+}
+.revise-error .el-icon { flex-shrink: 0; color: #d97706; margin-top: 2px; }
+.revise-error-body { display: flex; flex-direction: column; gap: 2px; }
+.revise-error-sub { font-size: 12px; color: var(--muted); }
+.revise-summary {
+  margin-top: 10px; font-size: 13px; color: var(--success);
+  background: rgba(16,185,129,.08); padding: 8px 12px;
+  border: 1px solid rgba(16,185,129,.30);
+  border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center;
+}
+.revise-diff {
+  margin-top: 10px; background: #fff; border: 1px solid var(--line);
+  border-radius: var(--radius-md); padding: 10px 12px;
+}
+.revise-diff-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.revise-diff-title { font-size: 13px; font-weight: 600; color: var(--ink); display: inline-flex; align-items: center; }
+.revise-diff-count { font-size: 12px; color: var(--faint); }
+.revise-diff-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: var(--radius-sm);
+  font-size: 13px; color: var(--ink-2);
+}
+.revise-diff-item + .revise-diff-item { margin-top: 2px; }
+.revise-diff-item.op-add { background: rgba(16,185,129,.07); }
+.revise-diff-item.op-remove { background: rgba(239,68,68,.07); }
+.revise-diff-item.op-replace { background: rgba(250,204,21,.10); }
+.revise-diff-icon { font-size: 14px; flex-shrink: 0; }
+.revise-diff-item.op-add .revise-diff-icon { color: var(--success); }
+.revise-diff-item.op-remove .revise-diff-icon { color: #ef4444; }
+.revise-diff-item.op-replace .revise-diff-icon { color: #d97706; }
+.revise-diff-text { line-height: 1.45; }
+.revise-diff-empty {
+  font-size: 12.5px; color: var(--faint);
+  padding: 6px 8px; background: rgba(0,0,0,.02);
+  border-radius: var(--radius-sm);
+}
+.revise-diff-more {
+  margin-top: 6px; font-size: 12px; color: var(--faint);
+  padding: 4px 8px; border-top: 1px dashed var(--line);
+}
+.detail-quality { margin-top: 4px; }
+
+/* ── 每日行程 ── */
+.day-section { margin-bottom: 24px; }
+.day-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 14px; gap: 12px; }
+.day-headline { display: flex; align-items: center; gap: 12px; }
+.day-badge {
+  width: 52px; height: 52px; border-radius: var(--radius-md); flex-shrink: 0;
+  background: var(--ink); color: #fff; font-weight: 700; font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+  letter-spacing: 0.02em;
+}
+.day-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+.day-note { font-size: 12.5px; color: var(--muted); }
+.day-actions { display: flex; gap: 8px; }
+
+.stops-list { display: flex; flex-direction: column; }
+.stop-item { display: flex; gap: 14px; }
+.stop-rail { display: flex; flex-direction: column; align-items: center; width: 28px; flex-shrink: 0; }
+.stop-index {
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+  color: #fff; font-size: 13px; font-weight: 600; z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 4px #fff;
+}
+.rail-line { flex: 1; width: 2px; background: var(--line); margin: 4px 0; }
+
+.stop-body {
+  flex: 1; min-width: 0; background: #fff;
+  border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 14px 18px; margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  transition: box-shadow .2s;
+}
+.stop-body:hover { box-shadow: var(--shadow-card); }
+.stop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.stop-name { font-size: 15px; font-weight: 600; color: var(--ink); }
+.stop-meta { display: flex; gap: 14px; font-size: 12.5px; color: var(--muted); margin-top: 6px; align-items: center; }
+.stop-meta .el-icon { font-size: 13px; color: var(--faint); }
+.stop-desc { margin-top: 6px; font-size: 13px; color: var(--ink-2); line-height: 1.55; }
+.stop-actions { margin-top: 6px; display: flex; justify-content: flex-end; }
+
+/* ── 底部 ── */
+.bottom-bar { display: flex; gap: 12px; margin-top: 20px; padding: 8px 0 20px; flex-wrap: wrap; }
+
+.latlng { display: flex; gap: 8px; width: 100%; }
+
+/* ── 备选方案对比（Plan B） ── */
+.planb-card {
+  background: linear-gradient(135deg, #eef4ff, #fff 60%);
+  border: 1px solid #d6e4ff;
+  border-radius: var(--radius-xl);
+  padding: 14px 20px;
+  margin-bottom: 20px;
+}
+.planb-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap;
+}
+.planb-title {
+  font-size: 15px; font-weight: 600; color: var(--ink);
+  display: inline-flex; align-items: center;
+}
+.planb-body { margin-top: 12px; }
+.planb-meta { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.planb-label {
+  font-size: 13px; font-weight: 700; color: var(--brand);
+  background: rgba(64,110,255,.10); padding: 3px 10px; border-radius: var(--radius-full);
+}
+.planb-desc { font-size: 13px; color: var(--ink-2); }
+.planb-deltas {
+  margin-top: 10px; background: #fff; border: 1px solid var(--line);
+  border-radius: var(--radius-md); padding: 8px 12px;
+}
+.planb-delta {
+  display: flex; align-items: flex-start; gap: 4px;
+  font-size: 13px; color: var(--ink-2); line-height: 1.5; padding: 4px 0;
+}
+.planb-delta .el-icon { flex-shrink: 0; margin-top: 3px; }
+.planb-budget {
+  margin-top: 10px; font-size: 13px; color: var(--ink); font-weight: 600;
+  display: inline-flex; align-items: center;
+}
+.planb-budget-sub {
+  margin-left: 10px; font-weight: 500; color: var(--muted);
+}
+.planb-hint { margin-top: 8px; font-size: 12px; color: var(--faint); }
+
+/* ── 分享设置弹窗（生命周期：TTL / 吊销 / 审计） ── */
+.share-settings-hint { font-size: 13px; color: var(--muted); margin-bottom: 14px; }
+.share-settings-body { min-height: 80px; }
+.share-settings-empty { text-align: center; color: var(--faint); padding: 24px 0; }
+.share-setting-card {
+  border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 14px 16px; margin-bottom: 12px; background: #fff;
+}
+.share-setting-card.revoked { opacity: 0.65; background: #fafafa; }
+.ss-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.ss-kind { font-size: 14px; font-weight: 600; color: var(--ink); }
+.ss-row {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--ink-2); padding: 5px 0;
+  flex-wrap: wrap;
+}
+.ss-label { color: var(--faint); flex-shrink: 0; min-width: 64px; }
+.ss-value { flex: 1; min-width: 0; word-break: break-all; }
+.ss-url { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--brand); }
+.ss-actions { margin-top: 6px; display: flex; justify-content: flex-end; }
+
+/* 响应式 */
+@media (max-width: 860px) {
+  .map-budget-row { grid-template-columns: 1fr; }
+  .hero-cover { height: 160px; }
+  .hero-overlay { padding: 24px; }
+  .hero-title { font-size: 24px; }
+}
+
+/* ── 移动端（≤640px）断点适配（task-mobile-views）：375px 可用、可滚动、无水平滚动 ── */
+@media (max-width: 640px) {
+  .detail-page { padding: 0 12px; }
+  /* 顶栏：返回按钮与操作区分行，操作按钮换行不溢出；触控目标 ≥40px */
+  .topbar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .topbar-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .topbar-actions :deep(.el-button) { margin-left: 0; min-height: 40px; }
+  /* 头图：垂直堆叠（标题区 + 底部状态区），状态不再绝对定位重叠标题 */
+  .hero-cover { height: auto; min-height: 150px; flex-direction: column; align-items: stretch; }
+  .hero-city { font-size: 110px; bottom: -20px; }
+  .hero-overlay { padding: 20px 16px 12px; }
+  .hero-title { font-size: 20px; margin-bottom: 10px; }
+  .hero-pill { font-size: 11.5px; padding: 5px 10px; }
+  .status-group { position: static; order: 2; display: flex; justify-content: flex-end; gap: 6px; padding: 8px 12px 12px; }
+  /* 卡片内边距收窄 */
+  .map-card, .budget-card { padding: 14px; }
+  .map-hint { font-size: 11px; }
+  /* AI 调整区：输入与按钮纵向堆叠，按钮全宽 + 44px 触控 */
+  .revise-card { padding: 14px; }
+  .revise-row { flex-direction: column; gap: 8px; }
+  .revise-row :deep(.el-button) { width: 100%; margin-left: 0; min-height: 44px; }
+  /* 每日行程：日期头纵向 + 操作右对齐换行；徽章缩小 */
+  .day-head { flex-direction: column; align-items: stretch; gap: 8px; }
+  .day-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; }
+  .day-actions :deep(.el-button) { margin-left: 0; min-height: 40px; }
+  .day-badge { width: 44px; height: 44px; font-size: 12px; }
+  .day-headline { gap: 10px; }
+  .stop-body { padding: 12px 14px; }
+  .stop-actions { flex-wrap: wrap; }
+  .stop-actions :deep(.el-button) { min-height: 40px; }
+  /* 底部操作：2 列网格 + 44px 触控目标 */
+  .bottom-bar { gap: 8px; }
+  .bottom-bar :deep(.el-button) { flex: 1 1 calc(50% - 4px); margin-left: 0; min-height: 44px; }
+  /* 编辑对话框：经纬度输入纵向（对话框已由全局断点收窄） */
+  .latlng { flex-direction: column; }
+}
+</style>

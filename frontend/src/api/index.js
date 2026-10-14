@@ -155,4 +155,18 @@ export const getSharedTripVotes = (token) => http.get(`/trips/share/${token}/vot
 export const castSharedTripVote = (token, stopId, value) =>
   http.post(`/trips/share/${token}/votes/${stopId}`, { value }).then((r) => r.data)
 
+// ── 内容导入（四通道：笔记 / 截图 / 邮件 / 链接；外部内容按敌意输入处理，纯规则解析零凭证） ──
+// 后端契约：POST /trips/note/import {text} / screenshot/import <图片原始字节> /
+// email/import {text} / link/import {url} → 解析为站点候选，勾选后经 addStop 并入行程
+export const importNote = (data) => http.post('/trips/note/import', data).then((r) => r.data)
+export const importScreenshot = (file) =>
+  http
+    .post('/trips/screenshot/import', file, {
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      maxBodyLength: 20 * 1024 * 1024,
+    })
+    .then((r) => r.data)
+export const importEmail = (data) => http.post('/trips/email/import', data).then((r) => r.data)
+export const importLink = (data) => http.post('/trips/link/import', data).then((r) => r.data)
+
 export default http
