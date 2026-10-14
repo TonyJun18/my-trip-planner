@@ -223,6 +223,71 @@ const budgetPresets = [
 ]
 function pickBudget(v) { form.budget = v }
 
+// ── 灵感优先（task-inspiration-mode：还没想好去哪 → 推荐目的地 → 选点预填） ──
+// 后端 GET /trips/inspiration 纯规则推荐（零 LLM）；筛选复用偏好 chips 词表
+const inspirationOpen = ref(false)
+const inspirationLoaded = ref(false)
+const inspirationLoading = ref(false)
+const inspirationItems = ref([])
+const inspirationNote = ref('')
+const inspirationError = ref('')
+const budgetTierKey = ref('comfort')
+const seasonKey = ref('')
+const budgetTierOptions = [
+  { key: 'economy', labelKey: 'budgetEconomy' },
+  { key: 'comfort', labelKey: 'budgetComfort' },
+  { key: 'quality', labelKey: 'budgetQuality' },
+  { key: 'luxury', labelKey: 'budgetLuxury' },
+]
+const seasonOptions = [
+  { key: '', labelKey: 'inspSeasonAny' },
+  { key: 'spring', labelKey: 'inspSeasonSpring' },
+  { key: 'summer', labelKey: 'inspSeasonSummer' },
+  { key: 'autumn', labelKey: 'inspSeasonAutumn' },
+  { key: 'winter', labelKey: 'inspSeasonWinter' },
+]
+// 后端 budget_tier 与表单预算档（元）对齐
+const tierPresetMap = { economy: 1500, comfort: 3000, quality: 6000, luxury: 12000 }
+function destTierLabelKey(tier) {
+  return { economy: 'budgetEconomy', comfort: 'budgetComfort', quality: 'budgetQuality', luxury: 'budgetLuxury' }[tier] || 'budgetComfort'
+}
+
+function toggleInspiration() {
+  inspirationOpen.value = !inspirationOpen.value
+  if (inspirationOpen.value && !inspirationLoaded.value) {
+    inspirationLoaded.value = true
+    loadInspiration()
+  }
+}
+
+async function loadInspiration() {
+  inspirationLoading.value = true
+  inspirationError.value = ''
+  try {
+    const data = await api.getInspiration({
+      interests: form.preferences.join(','),
+      budget_tier: budgetTierKey.value,
+      season: seasonKey.value,
+      limit: 5,
+    })
+    inspirationItems.value = data.items || []
+    inspirationNote.value = data.note || ''
+  } catch {
+    inspirationError.value = t('planWizard.inspLoadFailed')
+    inspirationItems.value = []
+  } finally {
+    inspirationLoading.value = false
+  }
+}
+
+function applyInspiration(dest) {
+  // 选点预填创建表单：目的地 + 预算对齐该目的地基准档
+  form.destination = dest.name
+  form.budget = tierPresetMap[dest.budget_tier] || form.budget
+  inspirationOpen.value = false
+  ElMessage.success(t('planWizard.inspApplied', { dest: dest.name }))
+}
+
 async function submit() {
   await formRef.value.validate()
   submitting.value = true
@@ -461,6 +526,72 @@ function goDetail() {
                         type="button" class="chip" :class="{ picked: form.destination === c }" @click="form.destination = c">
                   {{ c }}
                 </button>
+              </div>
+            </div>
+            <!-- 灵感优先入口：还没想好去哪 → 目的地推荐卡片 → 选点预填 -->
+            <div class="insp-entry">
+              <button type="button" class="insp-toggle" @click="toggleInspiration">
+                <el-icon style="margin-right: 6px"><MagicStick /></el-icon>{{ $t('planWizard.inspTitle') }}
+                <el-icon class="insp-arrow" :class="{ open: inspirationOpen }"><ArrowDown /></el-icon>
+              </button>
+
+              <div v-if="inspirationOpen" class="insp-panel">
+                <div class="insp-filters">
+                  <div class="insp-filter">
+                    <span class="insp-filter-label">{{ $t('planWizard.budgetLabel') }}</span>
+                    <button v-for="b in budgetTierOptions" :key="b.key" type="button"
+                            class="chip" :class="{ picked: budgetTierKey === b.key }"
+                            @click="budgetTierKey = b.key; loadInspiration()">
+                      {{ $t('planWizard.' + b.labelKey) }}
+                    </button>
+                  </div>
+                  <div class="insp-filter">
+                    <span class="insp-filter-label">{{ $t('planWizard.inspSeasonLabel') }}</span>
+                    <button v-for="s in seasonOptions" :key="s.key" type="button"
+                            class="chip" :class="{ picked: seasonKey === s.key }"
+                            @click="seasonKey = s.key; loadInspiration()">
+                      {{ $t('planWizard.' + s.labelKey) }}
+                    </button>
+                  </div>
+                  <div class="insp-filter">
+                    <span class="insp-filter-label">{{ $t('planWizard.prefLabel') }}</span>
+                    <button v-for="p in preferenceOptions" :key="p.key" type="button"
+                            class="chip pref" :class="{ picked: form.preferences.includes(p.key) }"
+                            @click="togglePref(p); loadInspiration()">
+                      <span class="pref-emoji">{{ p.emoji }}</span>
+                      {{ p.label }}
+                    </button>
+                  </div>
+                </div>
+
+                <div v-if="inspirationLoading" class="insp-loading">
+                  <el-icon class="is-loading"><Loading /></el-icon> {{ $t('planWizard.inspLoading') }}
+                </div>
+                <div v-else-if="inspirationError" class="insp-empty">{{ inspirationError }}</div>
+                <div v-else-if="!inspirationItems.length" class="insp-empty">{{ $t('planWizard.inspEmpty') }}</div>
+                <div v-else>
+                  <div class="insp-note">{{ inspirationNote }}</div>
+                  <div class="insp-cards">
+                    <button v-for="d in inspirationItems" :key="d.name" type="button"
+                            class="insp-card" @click="applyInspiration(d)">
+                      <div class="insp-card-main">
+                        <div class="insp-card-head">
+                          <span class="insp-card-name">{{ d.name }}</span>
+                          <el-tag size="small" round class="insp-tier">{{ $t('planWizard.' + destTierLabelKey(d.budget_tier)) }}
+                            · ¥{{ d.est_daily_budget }}/天</el-tag>
+                        </div>
+                        <div class="insp-card-reason">{{ d.reason }}</div>
+                        <div v-if="d.play" class="insp-card-play">🎯 {{ d.play }}</div>
+                        <div v-if="d.season_note" class="insp-card-note">{{ d.season_note }}</div>
+                        <div class="insp-card-meta">
+                          <span v-for="tag in d.matched_tags" :key="tag" class="insp-tag">{{ $t('planWizard.' + (prefLabelKeyMap[tag] || '')) }}</span>
+                          <span class="insp-basis">rule-based</span>
+                        </div>
+                      </div>
+                      <span class="insp-apply">{{ $t('planWizard.inspApply') }} <el-icon><Right /></el-icon></span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -922,6 +1053,53 @@ function goDetail() {
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .budget-presets { display: flex; flex-wrap: wrap; gap: 8px; margin: -8px 0 22px; }
 .pref-list { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ── 灵感优先（task-inspiration-mode：目的地推荐卡片） ── */
+.insp-entry { margin-top: 12px; }
+.insp-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px dashed var(--line); background: var(--brand-soft); color: var(--brand);
+  font-size: 13.5px; font-weight: 600; padding: 9px 16px; border-radius: var(--radius-full);
+  cursor: pointer; transition: all .2s;
+}
+.insp-toggle:hover { border-color: var(--brand); background: #fff; }
+.insp-arrow { transition: transform .25s; font-size: 12px; }
+.insp-arrow.open { transform: rotate(180deg); }
+.insp-panel {
+  margin-top: 14px; border: 1px solid var(--line); border-radius: var(--radius-lg);
+  background: var(--canvas); padding: 16px 18px;
+}
+.insp-filters { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+.insp-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.insp-filter-label { font-size: 12.5px; color: var(--faint); width: 68px; flex-shrink: 0; }
+.insp-loading, .insp-empty { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--muted); padding: 18px 4px; }
+.insp-note { font-size: 12.5px; color: var(--faint); margin-bottom: 10px; }
+.insp-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.insp-card {
+  display: flex; flex-direction: column; gap: 8px; text-align: left;
+  border: 1px solid var(--line); background: #fff; border-radius: var(--radius-lg);
+  padding: 14px 16px; cursor: pointer; transition: all .2s;
+}
+.insp-card:hover { border-color: var(--brand); box-shadow: var(--shadow-card); transform: translateY(-1px); }
+.insp-card-main { flex: 1; min-width: 0; }
+.insp-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.insp-card-name { font-size: 15px; font-weight: 700; color: var(--ink); }
+.insp-tier { background: var(--brand-soft) !important; color: var(--brand) !important; border: none; }
+.insp-card-reason { font-size: 13px; color: var(--ink-2); line-height: 1.45; }
+.insp-card-play { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+.insp-card-note { font-size: 12px; color: #c2410c; background: #fff7ed; border-radius: var(--radius); padding: 4px 8px; margin-top: 6px; }
+.insp-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.insp-tag { font-size: 11.5px; color: var(--muted); background: var(--fill); border-radius: var(--radius-full); padding: 2px 8px; }
+.insp-basis { font-size: 10.5px; color: var(--faint); margin-left: auto; font-family: monospace; }
+.insp-apply {
+  display: inline-flex; align-items: center; gap: 4px; align-self: flex-end;
+  font-size: 12.5px; font-weight: 600; color: var(--brand); flex-shrink: 0;
+}
+.insp-apply .el-icon { font-size: 12px; }
+@media (max-width: 640px) {
+  .insp-cards { grid-template-columns: 1fr; }
+  .insp-filter-label { width: 56px; font-size: 12px; }
+}
 
 /* ── 主动提问（需求澄清） ── */
 .qa-field { background: var(--canvas); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 16px 18px; }

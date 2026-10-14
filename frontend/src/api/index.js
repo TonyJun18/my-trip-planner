@@ -224,4 +224,10 @@ export const importScreenshot = (file) =>
 export const importEmail = (data) => http.post('/trips/email/import', data).then((r) => r.data)
 export const importLink = (data) => http.post('/trips/link/import', data).then((r) => r.data)
 
+// ── 灵感优先目的地推荐（task-inspiration-mode：还没想好去哪 → 按兴趣/预算/季节推荐） ──
+// 后端契约：GET /trips/inspiration?interests=food,nature&budget_tier=comfort&season=&limit=5
+// → { items: [{name/country/tags/best_season/budget_tier/est_daily_budget/suggested_days/
+//              reason/play/match_score/matched_tags/season_note/basis}], counts, note }
+export const getInspiration = (params = {}) => http.get('/trips/inspiration', { params }).then((r) => r.data)
+
 export default http

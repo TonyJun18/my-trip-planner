@@ -9,6 +9,7 @@ import HotelRecommend from '@/components/HotelRecommend.vue'
 import TripServicing from '@/components/TripServicing.vue'
 import QualityCard from '@/components/QualityCard.vue'
 import XhsNoteDialog from '@/components/XhsNoteDialog.vue'
+import ImportDialog from '@/components/ImportDialog.vue'
 import { exportImage, exportPdf } from '@/utils/export'
 import { readCachedJson } from '@/utils/pwa'
 
@@ -489,6 +490,7 @@ async function doExportPdf() {
 // ── 分享（只读链接） ─────────────────────────────────────
 const sharing = ref(false)
 const xhsNoteVisible = ref(false)
+const importVisible = ref(false)
 async function doShare() {
   sharing.value = true
   try {
@@ -815,6 +817,9 @@ onBeforeUnmount(() => {
         </el-button>
         <el-button type="success" plain :loading="sharing" @click="doShare">
           <el-icon style="margin-right: 4px"><Share /></el-icon>{{ $t('tripDetail.shareTrip') }}
+        </el-button>
+        <el-button type="primary" plain @click="importVisible = true">
+          <el-icon style="margin-right: 4px"><Upload /></el-icon>{{ $t('tripDetail.importContent') }}
         </el-button>
         <el-button type="danger" plain @click="xhsNoteVisible = true">
           <el-icon style="margin-right: 4px"><Promotion /></el-icon>{{ $t('tripDetail.shareToXhs') }}
@@ -1208,6 +1213,9 @@ onBeforeUnmount(() => {
 
     <!-- 小红书笔记（生成文案/封面 → 复制 → App 发布） -->
     <XhsNoteDialog v-model="xhsNoteVisible" :trip-id="trip?.id" :trip="trip" />
+
+    <!-- 内容导入（笔记/截图/链接/邮件 → 候选并入当前行程） -->
+    <ImportDialog v-model="importVisible" :preset-trip-id="trip?.id" @imported="load" />
 
     <!-- 批量生成日程对话框 -->
     <el-dialog v-model="genDaysVisible" :title="$t('tripDetail.genDaysTitle')" width="440px">
