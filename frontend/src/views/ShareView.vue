@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import * as api from '@/api'
 import { readCachedJson, isOnline } from '@/utils/pwa'
 import TripMap from '@/components/TripMap.vue'
@@ -145,6 +145,11 @@ async function load() {
       return
     }
     await Promise.all([loadComments(), loadVotes()])
+    // 行中「今日视图」+ WS feed（仅受邀编辑模式；只读分享无操作权限）
+    if (editMode.value) {
+      await loadLive()
+    }
+    watchCollabFeed()
   } catch (e) {
     error.value = editMode.value ? t('share.editLinkInvalid') : t('share.linkInvalid')
   } finally {
@@ -299,7 +304,96 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   window.removeEventListener('online', handleOnline)
+  if (collabClose) {
+    collabClose()
+    collabClose = null
+  }
 })
+
+// ── 行中「今日视图」受邀编辑版（免登录，凭 edit_token；同伴打卡/顺延） ──
+// 只读分享模式（!editMode）不展示行中卡片：无操作权限，且编辑令牌才是协作语义。
+const live = ref(null)
+const liveLoading = ref(false)
+const liveOp = ref('') // 正在执行的行中操作，防重复点击
+let collabClose = null
+
+async function loadLive() {
+  if (!editMode.value || offlineFallback.value || !route.params.token) return
+  liveLoading.value = true
+  try {
+    live.value = await api.getLiveSnapshotByToken(route.params.token)
+  } catch {
+    live.value = null // 失败不打扰只读浏览
+  } finally {
+    liveLoading.value = false
+  }
+}
+
+async function doCheckLiveStop(stop, checked) {
+  if (liveOp.value || !editMode.value) return
+  liveOp.value = 'check'
+  try {
+    live.value = await api.checkLiveStopByToken(route.params.token, stop.id, checked)
+  } catch {
+    // 拦截器已 toast（如链接已收回）
+  } finally {
+    liveOp.value = ''
+  }
+}
+
+async function doSkipLiveStop(stop) {
+  if (liveOp.value || !editMode.value) return
+  try {
+    await ElMessageBox.confirm(
+      t('share.liveSkipConfirmMsg', { name: stop.name }),
+      t('share.liveSkipConfirmTitle'),
+      { type: 'warning' }
+    )
+  } catch { return }
+  liveOp.value = 'skip'
+  try {
+    live.value = await api.skipLiveStopByToken(route.params.token, stop.id)
+    await load()
+  } catch {
+  } finally {
+    liveOp.value = ''
+  }
+}
+
+async function doDelayLiveTrip() {
+  if (liveOp.value || !editMode.value) return
+  try {
+    await ElMessageBox.confirm(
+      t('share.liveDelayConfirmMsg'),
+      t('share.liveDelayConfirmTitle'),
+      { type: 'warning' }
+    )
+  } catch { return }
+  liveOp.value = 'delay'
+  try {
+    live.value = await api.delayLiveTripByToken(route.params.token)
+    await load()
+    ElMessage.success(t('share.liveDelayed'))
+  } catch {
+  } finally {
+    liveOp.value = ''
+  }
+}
+
+// WS feed：同伴打卡/顺延实时刷新今日卡片（免登录 token 鉴权）
+function watchCollabFeed() {
+  if (!editMode.value || !trip.value?.id || collabClose) return
+  collabClose = api.subscribeTripCollab(trip.value.id, {
+    token: route.params.token,
+    edit: true,
+    onEvent: (evt) => {
+      const type = evt?.type || ''
+      if (type.startsWith('stop.') || type === 'trip.delayed') {
+        loadLive()
+      }
+    },
+  })
+}
 </script>
 
 <template>
@@ -405,6 +499,42 @@ onBeforeUnmount(() => {
             </div>
           </template>
           <el-empty v-else :description="$t('common.noBudget')" :image-size="60" />
+        </div>
+      </div>
+
+      <!-- 行中「今日视图」（受邀编辑模式：同伴打卡/跳过/迟到顺延，免登录） -->
+      <div v-if="editMode && live && live.phase === 'live'" class="live-card">
+        <div class="live-head">
+          <div>
+            <div class="live-title">📅 {{ $t('share.liveTodayTitle') }}</div>
+            <div class="live-sub">{{ $t('share.liveTodaySub', { day: live.day_number, date: live.date }) }}</div>
+          </div>
+          <div class="live-progress">
+            <span class="live-progress-num">{{ live.completed }}/{{ live.total }}</span>
+            <el-progress :percentage="live.total ? Math.round(live.completed / live.total * 100) : 0"
+                         :stroke-width="6" :show-text="false" style="width: 90px" />
+          </div>
+        </div>
+
+        <div class="live-stops">
+          <div v-for="stop in live.stops" :key="stop.id" class="live-stop" :class="{ done: stop.checked }">
+            <el-checkbox :model-value="stop.checked"
+                         :disabled="!!liveOp"
+                         @change="(v) => doCheckLiveStop(stop, v)" />
+            <div class="live-stop-info">
+              <div class="live-stop-name" :class="{ muted: stop.checked }">{{ stop.name }}</div>
+              <div class="live-stop-type">{{ typeEmoji[stop.stop_type] }} {{ typeLabel[stop.stop_type] || stop.stop_type }}</div>
+            </div>
+            <div class="live-stop-actions">
+              <el-button size="small" text type="danger" :disabled="!!liveOp"
+                         @click="doSkipLiveStop(stop)">{{ $t('share.liveSkip') }}</el-button>
+            </div>
+          </div>
+        </div>
+
+        <div class="live-footer">
+          <el-button size="small" type="warning" plain :loading="liveOp === 'delay'"
+                     @click="doDelayLiveTrip">{{ $t('share.liveDelay') }}</el-button>
         </div>
       </div>
 
@@ -641,6 +771,42 @@ onBeforeUnmount(() => {
 .budget-pp-sub { color: var(--muted); }
 
 .detail-quality { margin-top: 4px; }
+
+/* ── 行中「今日视图」（受邀编辑模式：同伴打卡/跳过/迟到顺延） ── */
+.live-card {
+  margin-bottom: 24px;
+  border: 1.5px solid var(--brand);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  background: linear-gradient(180deg, var(--card), transparent);
+  box-shadow: var(--shadow-sm);
+}
+.live-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.live-title { font-size: 16px; font-weight: 700; color: var(--ink); }
+.live-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.live-progress { display: flex; align-items: center; gap: 10px; }
+.live-progress-num { font-size: 14px; font-weight: 700; color: var(--brand); }
+.live-stops { display: flex; flex-direction: column; gap: 8px; }
+.live-stop {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+.live-stop.done { opacity: 0.6; }
+.live-stop-info { flex: 1; min-width: 0; }
+.live-stop-name { font-size: 14px; font-weight: 600; color: var(--ink); }
+.live-stop-name.muted { text-decoration: line-through; color: var(--muted); }
+.live-stop-type { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.live-stop-actions { flex-shrink: 0; }
+.live-footer { margin-top: 14px; display: flex; justify-content: flex-end; }
+
+/* 移动端（≤640px）：卡片压满、进度条换行 */
+@media (max-width: 640px) {
+  .live-head { flex-direction: column; align-items: flex-start; }
+  .live-progress { width: 100%; justify-content: space-between; }
+}
 
 /* ── 每日行程 ── */
 .day-section { margin-bottom: 24px; }

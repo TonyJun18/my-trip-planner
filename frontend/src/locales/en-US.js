@@ -560,6 +560,16 @@ export default {
     basisHotelShort: 'Hotel estimated from city base rate',
     basisTransport: 'Transport: reference fare ×2 (cheapest one-way × round trip)',
     basisTransportShort: 'Transport estimated from reference fare',
+    // ── Live "Today" view for invited editors (no-login check-in / delay) ──
+    liveTodayTitle: "Today's Itinerary",
+    liveTodaySub: 'Day {day} · {date}',
+    liveSkip: 'Skip',
+    liveDelay: 'Delay all (+1 day)',
+    liveDelayed: 'Delayed — unfinished stops roll over to tomorrow',
+    liveSkipConfirmTitle: 'Skip stop',
+    liveSkipConfirmMsg: 'Remove "{name}" from the itinerary?',
+    liveDelayConfirmTitle: 'Delay trip',
+    liveDelayConfirmMsg: 'Shift today and all remaining days back by one day (end date +1). Continue?',
   },
   // ── XHS note (Plan A: content factory) ──────────────────
   xhsNote: {

@@ -69,6 +69,23 @@ async def get_shared_trip(
     )
 
 
+# ── 行中「今日视图」只读版（share_token 免登录查看；无写接口） ──
+@router.get("/share/{token}/live", response_model=LiveSnapshotOut, summary="行中「今日视图」快照（免登录只读，凭 share_token）")
+async def get_live_snapshot_shared(
+    token: str,
+    db: AsyncSession = Depends(get_session),
+) -> LiveSnapshotOut:
+    """持只读分享令牌即可查看行中快照（不开放打卡/顺延等写操作）。
+
+    与受邀编辑版（/edit/{token}/live）的差异：分享令牌只有读权限，
+    行中只读卡片用于同伴围观进度，避免误操作。
+    """
+    from app.services import live_service
+
+    trip = await trip_service.get_trip_by_share_token(db, token)
+    return LiveSnapshotOut(**live_service.live_snapshot(trip))
+
+
 # ── 分享页协作（评论 / 投票，免登录，凭 share_token） ─────────────
 @router.get("/share/{token}/comments", response_model=list[CommentOut], summary="分享页评论列表（免登录）")
 async def list_share_comments(
@@ -629,4 +646,58 @@ async def delay_live_trip(
     from app.services import live_service
 
     result = await live_service.delay_today(db, trip_id, owner=user.id)
+    return LiveSnapshotOut(**result["live"])
+
+
+# ── 行中「今日视图」受邀编辑版（免登录，凭 edit_token；ShareView 同伴操作） ──
+@router.get("/edit/{token}/live", response_model=LiveSnapshotOut, summary="行中「今日视图」快照（免登录，凭 edit_token）")
+async def get_live_snapshot_by_token(
+    token: str,
+    db: AsyncSession = Depends(get_session),
+) -> LiveSnapshotOut:
+    """受邀者（持 edit_token）免登录查看行中快照（投稿 → 实时同伴操作）。"""
+    from app.services import live_service
+    from app.services.trip_service import get_trip_by_edit_token
+
+    trip = await get_trip_by_edit_token(db, token)
+    return LiveSnapshotOut(**live_service.live_snapshot(trip))
+
+
+@router.post("/edit/{token}/live/stops/{stop_id}/check", response_model=LiveSnapshotOut, summary="打卡/取消打卡（免登录，凭 edit_token）")
+async def check_live_stop_by_token(
+    token: str,
+    stop_id: str,
+    data: LiveCheckIn | None = None,
+    db: AsyncSession = Depends(get_session),
+) -> LiveSnapshotOut:
+    """受邀者免登录打卡/取消（与受邀编辑站点同信任语义）。"""
+    from app.services import live_service
+
+    checked = data.checked if data else True
+    result = await live_service.check_stop_by_token(db, token, stop_id, checked=checked)
+    return LiveSnapshotOut(**result["live"])
+
+
+@router.post("/edit/{token}/live/stops/{stop_id}/skip", response_model=LiveSnapshotOut, summary="跳过今日站点（免登录，凭 edit_token）")
+async def skip_live_stop_by_token(
+    token: str,
+    stop_id: str,
+    db: AsyncSession = Depends(get_session),
+) -> LiveSnapshotOut:
+    """受邀者免登录跳过今日站点。"""
+    from app.services import live_service
+
+    result = await live_service.skip_stop_by_token(db, token, stop_id)
+    return LiveSnapshotOut(**result["live"])
+
+
+@router.post("/edit/{token}/live/delay", response_model=LiveSnapshotOut, summary="迟到一键顺延（免登录，凭 edit_token）")
+async def delay_live_trip_by_token(
+    token: str,
+    db: AsyncSession = Depends(get_session),
+) -> LiveSnapshotOut:
+    """受邀者免登录迟到顺延（所有日期 +1 天）。"""
+    from app.services import live_service
+
+    result = await live_service.delay_today_by_token(db, token)
     return LiveSnapshotOut(**result["live"])

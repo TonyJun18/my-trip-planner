@@ -125,6 +125,52 @@ export function subscribePlanTask(taskId, { onEvent, onStatus, onClose }) {
 // ── 对话式修订行程（方案 B） ──────────────────────────────
 export const reviseTrip = (tripId, data) => http.post(`/trips/${tripId}/revise`, data).then((r) => r.data)
 
+// ── 行中「今日视图」受邀编辑版（免登录，凭 edit_token；ShareView 同伴操作） ──
+export const getLiveSnapshotByToken = (token, edit = true) =>
+  http.get(`/trips/${edit ? 'edit' : 'share'}/${token}/live`).then((r) => r.data)
+export const checkLiveStopByToken = (token, stopId, checked = true) =>
+  http.post(`/trips/edit/${token}/live/stops/${stopId}/check`, { checked }).then((r) => r.data)
+export const skipLiveStopByToken = (token, stopId) =>
+  http.post(`/trips/edit/${token}/live/stops/${stopId}/skip`, null).then((r) => r.data)
+export const delayLiveTripByToken = (token) =>
+  http.post(`/trips/edit/${token}/live/delay`, null).then((r) => r.data)
+// 只读分享版今日快照（share_token 免登录查看，不支持操作）
+export const getLiveSnapshotShared = (token) => getLiveSnapshotByToken(token, false)
+
+/**
+ * 订阅行程协作/行中 feed（实时同步今日卡片）。
+ * - 登录态：传 tripId（owner 详情页，JWT 鉴权）
+ * - 免登录：传 { token, edit }（分享/受邀编辑页）
+ * 返回 close()；断线由调用方轮询兜底。
+ */
+export function subscribeTripCollab(tripId, { token, edit = false, onEvent, onClose } = {}) {
+  const params = new URLSearchParams()
+  if (token) {
+    params.set('token', token)
+    if (edit) params.set('edit', '1')
+  } else {
+    const jwt = localStorage.getItem('trip_planner_token') || ''
+    params.set('token', jwt)
+  }
+  const ws = new WebSocket(`${WS_BASE()}/trips/${tripId}/collab?${params.toString()}`)
+  ws.onmessage = (evt) => {
+    let msg
+    try {
+      msg = JSON.parse(evt.data)
+    } catch {
+      return
+    }
+    onEvent?.(msg)
+  }
+  ws.onclose = () => onClose?.()
+  ws.onerror = () => {
+    try { ws.close() } catch { /* noop */ }
+  }
+  return () => {
+    try { ws.close() } catch { /* noop */ }
+  }
+}
+
 // ── 地图拖拽修订（task-map-drag-edit）：拖动 marker 改坐标 → 最小 diff 原子应用 ──
 export const mapEditTrip = (tripId, data) => http.post(`/trips/${tripId}/map-edit`, data).then((r) => r.data)
 

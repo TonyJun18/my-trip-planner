@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -770,6 +770,30 @@ async function removeTrip() {
 }
 
 onMounted(load)
+
+// ── 行中实时 feed：订阅行程协作频道，同伴打卡/顺延时今日卡片自动刷新 ──
+// 断线不打扰（详情页主流程靠手动 load / 本地操作后的重载兜底）。
+let collabClose = null
+function watchCollabFeed() {
+  if (!route.params.id) return
+  collabClose = api.subscribeTripCollab(route.params.id, {
+    onEvent: (evt) => {
+      // 行中相关事件（打卡/跳过/顺延）→ 刷新今日卡片；评论/投票事件不打扰
+      if (evt && (evt.type || '').startsWith('stop.') || (evt.type || '') === 'trip.delayed') {
+        loadLive()
+      }
+    },
+  })
+}
+onMounted(() => {
+  watchCollabFeed()
+})
+onBeforeUnmount(() => {
+  if (collabClose) {
+    collabClose()
+    collabClose = null
+  }
+})
 </script>
 
 <template>

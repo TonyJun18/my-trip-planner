@@ -111,21 +111,42 @@ async def ws_planner_task(websocket: WebSocket, task_id: str, db: AsyncSession =
 # ── 协作：评论 / 投票 / 受邀编辑实时同步 ───────────────────────
 @router.websocket("/trips/{trip_id}/collab")
 async def ws_trip_collab(websocket: WebSocket, trip_id: str, db: AsyncSession = Depends(get_session)) -> None:
-    """行程协作频道：持有分享/编辑令牌的连接实时收到评论/投票/站点变更。"""
+    """行程协作频道：持有分享/编辑令牌的连接实时收到评论/投票/站点变更。
+
+    鉴权（两条路径，任选其一）：
+    1. JWT 登录态：query token= 为登录 JWT 且行程 owner 匹配 → owner 详情页订阅；
+    2. 分享/编辑令牌：query token= 为 share_token（或 edit=1 时 edit_token）
+       → 免登录受邀者订阅（现有语义）。
+    广播统一走 ``collab:{trip_id}`` 频道。
+    """
     token = websocket.query_params.get("token") or ""
     edit = websocket.query_params.get("edit") == "1"
-    # 校验令牌属于该行程（读一次库；广播用 token 维度，避免行程 id 泄露风险）
+
+    # 路径 1：先尝试 JWT（owner 登录态）
     try:
-        trip = (
-            await collab_service._get_trip_by_edit_token(db, token)
-            if edit else await collab_service._get_trip_by_token(db, token)
-        )
-    except Exception:  # noqa: BLE001 — 令牌无效
-        await websocket.close(code=4404)
-        return
-    if trip is None or trip.id != trip_id:
-        await websocket.close(code=4404)
-        return
+        user = await _user_from_ws(websocket, db)
+    except Exception:  # noqa: BLE001 — JWT 解析失败不阻断 token 路径
+        user = None
+    if user is not None:
+        from app.services import trip_service
+
+        trip = await trip_service.get_trip(db, trip_id, owner=user.id)
+        if trip is None:
+            await websocket.close(code=4404)
+            return
+    else:
+        # 路径 2：分享/编辑令牌（现有语义）
+        try:
+            trip = (
+                await collab_service._get_trip_by_edit_token(db, token)
+                if edit else await collab_service._get_trip_by_token(db, token)
+            )
+        except Exception:  # noqa: BLE001 — 令牌无效
+            await websocket.close(code=4404)
+            return
+        if trip is None or trip.id != trip_id:
+            await websocket.close(code=4404)
+            return
 
     key = f"collab:{trip_id}"
     queue = hub.subscribe(key)

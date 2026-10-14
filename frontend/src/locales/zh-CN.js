@@ -560,6 +560,16 @@ export default {
     basisHotelShort: '住宿按城市基准价估算',
     basisTransport: '大交通按参考价×2（单程最低×往返）',
     basisTransportShort: '大交通按参考价估算',
+    // ── 行中「今日视图」受邀编辑版（同伴免登录打卡 / 顺延） ──
+    liveTodayTitle: '今日行程',
+    liveTodaySub: 'Day {day} · {date}',
+    liveSkip: '跳过',
+    liveDelay: '迟到顺延（全部 +1 天）',
+    liveDelayed: '已顺延，今天没完成的行程自动移到明天',
+    liveSkipConfirmTitle: '跳过该站点',
+    liveSkipConfirmMsg: '确定跳过「{name}」吗？将从行程中移除。',
+    liveDelayConfirmTitle: '迟到顺延',
+    liveDelayConfirmMsg: '将今天及之后的行程整体顺延一天（结束日期同步 +1）。确定？',
   },
   // ── 小红书笔记（方案 A：内容工厂） ──────────────────────
   xhsNote: {
