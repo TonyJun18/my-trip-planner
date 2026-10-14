@@ -155,6 +155,42 @@ class ShareTtlIn(BaseModel):
     days: Literal[0, 1, 7, 30] = Field(description="有效期天数：0=永久，1/7/30 天")
 
 
+# ── 行中「今日视图」（task-live-today-view：MonkeyTravel live trip 差异化） ──
+class LiveStopOut(BaseModel):
+    """行中快照里的一个站点（带打卡状态）。"""
+
+    id: str
+    name: str
+    stop_type: str = "attraction"
+    checked: bool = False
+    order_index: int = 0
+    description: str | None = None
+    lat: float | None = None
+    lng: float | None = None
+
+
+class LiveSnapshotOut(BaseModel):
+    """行中状态快照：阶段 + 今日站点 + 打卡进度。
+
+    phase: upcoming（未开始）/ live（行中）/ finished（已结束）。
+    """
+
+    phase: str
+    today: str
+    trip_id: str
+    day_number: int | None = None
+    date: str | None = None
+    stops: list[LiveStopOut] = []
+    completed: int = 0
+    total: int = 0
+
+
+class LiveCheckIn(BaseModel):
+    """打卡请求。"""
+
+    checked: bool = True
+
+
 class TripListOut(BaseModel):
     items: list[TripOut]
     total: int
@@ -212,6 +248,11 @@ class PlanRequest(BaseModel):
     budget: float | None = Field(default=None, ge=0)
     preferences: list[str] = Field(default_factory=list, description="偏好，如 ['美食', '自然风光', '博物馆']")
     questions: list[PlanQuestion] = Field(default_factory=list, max_length=10, description="主动提问 Q&A（人群/节奏/避峰/备选方案），答案并入规划上下文")
+    # 行程节奏档（task-pacing-leisure 结构化排程约束，联动 TimeGate 过饱和校验）
+    pace: Literal["compact", "balanced", "relaxed"] | None = Field(
+        default=None,
+        description="行程节奏档：compact=紧凑（每日站点偏多）/ balanced=均衡（默认）/ relaxed=松弛（每日站点上限收紧+强制留白）",
+    )
     provider: Literal["auto", "openai", "deepseek", "ollama"] = "auto"
 
 

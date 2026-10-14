@@ -47,6 +47,11 @@ class UserProfile(Base):
     # 触点异步回写，非用户声明；不进 ProfileIn/Out，用户手动 PUT 不覆盖。
     # 结构：{"signals": [{"kind","destination","summary","at"}...], "updated_at": iso}
     behavior_memory_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 系统推断的稳定偏好（task-preference-inference）：由行为记忆信号经规则引擎
+    # 推理产生（如「多次缩短时长 → 倾向轻松节奏」「反复删除某类站点 → avoid 清单」）。
+    # 非用户声明，不进 ProfileIn/Out，用户手动 PUT 不覆盖；规划注入时合并为独立段落。
+    # 结构：{"preferences": [...], "avoid": [...], "pace_hint": "...", "source": "rule_based", "updated_at": iso}
+    inferred_preferences_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

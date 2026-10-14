@@ -338,8 +338,78 @@ async function load() {
     } else {
       isFavorite.value = false
     }
+    // 行中「今日视图」：尽力加载，失败不阻断详情页
+    await loadLive()
   } finally {
     loading.value = false
+  }
+}
+
+// ── 行中「今日视图」（task-live-today-view：MonkeyTravel live trip 差异化） ──
+const live = ref(null)          // LiveSnapshotOut | null
+const liveLoading = ref(false)
+const liveOp = ref('')          // 正在执行的行中操作（check/skip/delay），防重复点击
+
+async function loadLive() {
+  if (!trip.value?.id || offlineFallback.value) return
+  liveLoading.value = true
+  try {
+    live.value = await api.getLiveSnapshot(trip.value.id)
+  } catch {
+    live.value = null // 详情页不因行中快照失败而报错（尽力而为）
+  } finally {
+    liveLoading.value = false
+  }
+}
+
+async function doCheckStop(stop, checked) {
+  if (liveOp.value) return
+  liveOp.value = 'check'
+  try {
+    live.value = await api.checkLiveStop(trip.value.id, stop.id, checked)
+  } catch {
+    // 拦截器已 toast；保持原状态等待用户重试
+  } finally {
+    liveOp.value = ''
+  }
+}
+
+async function doSkipStop(stop) {
+  if (liveOp.value) return
+  try {
+    await ElMessageBox.confirm(
+      t('tripDetail.liveSkipConfirmMsg', { name: stop.name }),
+      t('tripDetail.liveSkipConfirmTitle'),
+      { type: 'warning' }
+    )
+  } catch { return }
+  liveOp.value = 'skip'
+  try {
+    live.value = await api.skipLiveStop(trip.value.id, stop.id)
+    await load() // 同步主视图（站点被删）
+  } catch {
+  } finally {
+    liveOp.value = ''
+  }
+}
+
+async function doDelayTrip() {
+  if (liveOp.value) return
+  try {
+    await ElMessageBox.confirm(
+      t('tripDetail.liveDelayConfirmMsg'),
+      t('tripDetail.liveDelayConfirmTitle'),
+      { type: 'warning' }
+    )
+  } catch { return }
+  liveOp.value = 'delay'
+  try {
+    live.value = await api.delayLiveTrip(trip.value.id)
+    await load() // 同步主视图（日期全部 +1）
+    ElMessage.success(t('tripDetail.liveDelayed'))
+  } catch {
+  } finally {
+    liveOp.value = ''
   }
 }
 
@@ -1014,6 +1084,43 @@ onMounted(load)
           :discounts="servicingProps.discounts"
         />
 
+        <!-- 行中「今日视图」（live 期间置顶；打卡/跳过/迟到顺延） -->
+        <div v-if="live && live.phase === 'live'" class="live-card">
+          <div class="live-head">
+            <div>
+              <div class="live-title">📅 {{ $t('tripDetail.liveTodayTitle') }}</div>
+              <div class="live-sub">{{ $t('tripDetail.liveTodaySub', { day: live.day_number, date: live.date }) }}</div>
+            </div>
+            <div class="live-progress">
+              <span class="live-progress-num">{{ live.completed }}/{{ live.total }}</span>
+              <el-progress :percentage="live.total ? Math.round(live.completed / live.total * 100) : 0"
+                           :stroke-width="6" :show-text="false" style="width: 90px" />
+            </div>
+          </div>
+
+          <div class="live-stops">
+            <div v-for="stop in live.stops" :key="stop.id" class="live-stop"
+                 :class="{ done: stop.checked }">
+              <el-checkbox :model-value="stop.checked"
+                           :disabled="!!liveOp"
+                           @change="(v) => doCheckStop(stop, v)" />
+              <div class="live-stop-info">
+                <div class="live-stop-name" :class="{ muted: stop.checked }">{{ stop.name }}</div>
+                <div class="live-stop-type">{{ typeEmoji[stop.stop_type] }} {{ typeLabel[stop.stop_type] || stop.stop_type }}</div>
+              </div>
+              <div class="live-stop-actions">
+                <el-button size="small" text type="danger" :disabled="!!liveOp"
+                           @click="doSkipStop(stop)">{{ $t('tripDetail.liveSkip') }}</el-button>
+              </div>
+            </div>
+          </div>
+
+          <div class="live-footer">
+            <el-button size="small" type="warning" plain :loading="liveOp === 'delay'"
+                       @click="doDelayTrip">{{ $t('tripDetail.liveDelay') }}</el-button>
+          </div>
+        </div>
+
         <!-- 每日行程 -->
         <div class="day-section" v-for="day in trip.days" :key="day.id">
           <div class="day-head">
@@ -1391,6 +1498,42 @@ onMounted(load)
   padding: 4px 8px; border-top: 1px dashed var(--line);
 }
 .detail-quality { margin-top: 4px; }
+
+/* ── 行中「今日视图」（live 期间置顶卡片） ── */
+.live-card {
+  margin-bottom: 24px;
+  border: 1.5px solid var(--brand);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  background: linear-gradient(180deg, var(--card), transparent);
+  box-shadow: var(--shadow-sm);
+}
+.live-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.live-title { font-size: 16px; font-weight: 700; color: var(--ink); }
+.live-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.live-progress { display: flex; align-items: center; gap: 10px; }
+.live-progress-num { font-size: 14px; font-weight: 700; color: var(--brand); }
+.live-stops { display: flex; flex-direction: column; gap: 8px; }
+.live-stop {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+.live-stop.done { opacity: 0.6; }
+.live-stop-info { flex: 1; min-width: 0; }
+.live-stop-name { font-size: 14px; font-weight: 600; color: var(--ink); }
+.live-stop-name.muted { text-decoration: line-through; color: var(--muted); }
+.live-stop-type { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.live-stop-actions { flex-shrink: 0; }
+.live-footer { margin-top: 14px; display: flex; justify-content: flex-end; }
+
+/* 移动端（≤640px）：卡片压满、进度条换行 */
+@media (max-width: 640px) {
+  .live-head { flex-direction: column; align-items: flex-start; }
+  .live-progress { width: 100%; justify-content: space-between; }
+}
 
 /* ── 每日行程 ── */
 .day-section { margin-bottom: 24px; }

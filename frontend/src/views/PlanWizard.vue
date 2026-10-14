@@ -109,8 +109,22 @@ const form = reactive({
   budget: 3000,
   preferences: ['food', 'nature'],
   trip_type: 'leisure',
+  pace: 'balanced',
   provider: 'auto',
 })
+
+// 节奏档：表单内部存 key（语言切换不丢），提交时原样传后端契约值
+const paceKeyMap = {
+  compact: 'compact',
+  balanced: 'balanced',
+  relaxed: 'relaxed',
+}
+const paceOptions = [
+  { key: 'compact', labelKey: 'paceCompact' },
+  { key: 'balanced', labelKey: 'paceBalanced' },
+  { key: 'relaxed', labelKey: 'paceRelaxed' },
+]
+function pickPace(k) { form.pace = k }
 
 // 出行性质：表单内部存 key（语言切换不丢），提交时映射为稳定的中文契约值
 const tripTypeKeyMap = {
@@ -477,6 +491,19 @@ function goDetail() {
                       @click="pickTripType(tt.key)">
                 <span v-if="form.trip_type === tt.key" style="margin-right: 4px">✓</span>
                 {{ $t('planWizard.' + tt.labelKey) }}
+              </button>
+            </div>
+          </div>
+
+          <!-- 行程节奏档（task-pacing-leisure：结构化排程约束，联动 TimeGate） -->
+          <div class="field">
+            <label class="field-label">{{ $t('planWizard.paceLabel') }}</label>
+            <div class="pref-list">
+              <button v-for="p in paceOptions" :key="p.key"
+                      type="button" class="chip" :class="{ picked: form.pace === p.key }"
+                      @click="pickPace(p.key)">
+                <span v-if="form.pace === p.key" style="margin-right: 4px">✓</span>
+                {{ $t('planWizard.' + p.labelKey) }}
               </button>
             </div>
           </div>

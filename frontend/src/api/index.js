@@ -72,6 +72,15 @@ export const getPlanTask = (taskId) => http.get(`/planner/tasks/${taskId}`).then
 // ── 小红书笔记（方案 A：内容工厂） ─────────────────────────
 export const generateXhsNote = (tripId) => http.post(`/trips/${tripId}/xhs-note`, { provider: 'auto' }).then((r) => r.data)
 
+// ── 行中「今日视图」（task-live-today-view：MonkeyTravel live trip 差异化） ──
+export const getLiveSnapshot = (tripId) => http.get(`/trips/${tripId}/live`).then((r) => r.data)
+export const checkLiveStop = (tripId, stopId, checked = true) =>
+  http.post(`/trips/${tripId}/live/stops/${stopId}/check`, { checked }).then((r) => r.data)
+export const skipLiveStop = (tripId, stopId) =>
+  http.post(`/trips/${tripId}/live/stops/${stopId}/skip`, null).then((r) => r.data)
+export const delayLiveTrip = (tripId) =>
+  http.post(`/trips/${tripId}/live/delay`, null).then((r) => r.data)
+
 // ── 规划任务实时推送（WebSocket；断线由轮询兜底） ─────────
 const WS_BASE = () => {
   // WebSocket 地址同样支持构建期注入（移动端壳场景）

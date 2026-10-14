@@ -393,6 +393,23 @@ def _questions_text(request: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _pace_constraint(pace: str | None) -> str:
+    """节奏档 → 确定性排程约束（task-pacing-leisure 结构化排程约束）。
+
+    与 TimeGate 的过饱和阈值同口径（MAX_STOPS_PER_DAY=5 / 480 分钟），
+    让 LLM 的排程倾向与确定性校验一致，避免「LLM 排 6 个站 → TimeGate 报警 →
+    PlanB 又把它挪松」的来回拉锯。未知档返回空串（不注入噪音）。
+    """
+    if pace == "compact":
+        return ("节奏档=紧凑：每天可安排 4-5 个站点（景点+餐饮），在用户不反感的前提下"
+                "优先体验密度；但**不要超过 5 个/天**（TypeGate 校验上限），也不要让单日"
+                "游玩时长超过 480 分钟。")
+    if pace == "relaxed":
+        return ("节奏档=松弛：每天站点控制在 2-3 个，至少保留一段自由活动/休息的留白，"
+                "不要让行程看起来像赶场。单日站点不要超过 4 个。")
+    return ""  # balanced / 未指定 → 不注入（默认由 LLM 权衡）
+
+
 def _profile_text(request: dict[str, Any]) -> str:
     """把跨会话用户画像摘要（create_task 时注入的 profile_text）组装成补充上下文。
 
@@ -911,6 +928,12 @@ def _planner_user_text(request: dict[str, Any], materials: dict[str, Any]) -> st
         hint = _trip_type_hint(trip_type)
         lines.append(f"【出行性质约束】{hint}")
 
+    # 节奏档 → 确定性排程约束（与 TimeGate 同口径；relaxed/compact 才注入）
+    pace = (request.get("pace") or "").strip() or None
+    pace_text = _pace_constraint(pace)
+    if pace_text:
+        lines.append(f"【节奏档约束】{pace_text}")
+
     # 主动提问 Q&A（需求澄清）：有回答才注入，未回答的问题忽略
     qa_text = _questions_text(request)
     if qa_text:
@@ -997,6 +1020,10 @@ async def critic_agent(
     qa_text = _questions_text(request)
     if qa_text:
         critic_req += f"\n{qa_text}"
+    pace = (request.get("pace") or "").strip() or None
+    pace_text = _pace_constraint(pace)
+    if pace_text:
+        critic_req += f"\n【节奏档约束】{pace_text}"
     profile_text = _profile_text(request)
     if profile_text:
         critic_req += f"\n{profile_text}"

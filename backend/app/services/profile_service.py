@@ -15,8 +15,11 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import get_logger
 from app.models import UserProfile
 from app.schemas.profile import ProfileIn
+
+logger = get_logger(__name__)
 
 # 行为记忆上限：防止无界增长（每次规划注入只读摘要，不需要无限历史）
 MAX_BEHAVIOR_SIGNALS = 100
@@ -185,6 +188,25 @@ async def profile_for_request(db: AsyncSession, *, user_id: str) -> dict[str, An
     """规划任务创建时调用：读取画像并返回注入段。
 
     返回 {"profile_text": str}；未设置画像时 profile_text 为空串。
+
+    注入内容 = 声明画像（profile_to_context）+ 系统推断偏好（preference_service，
+    懒计算并写回 inferred_preferences_json）。推断段始终在声明段之后，
+    且来源标注「系统推断」，避免与用户声明混淆（诚实口径）。
     """
     profile = await get_profile(db, user_id=user_id)
-    return {"profile_text": profile_to_context(profile)}
+    if profile is None:
+        return {"profile_text": ""}
+
+    declared = profile_to_context(profile)
+    inferred = ""
+    try:
+        # 懒计算：行为记忆变化才重算；写回由调用方（create_task）的 commit 落库
+        from app.services.preference_service import ensure_inferred, inferred_to_text
+
+        inferred_dict = ensure_inferred(db, profile)
+        inferred = inferred_to_text(inferred_dict or {})
+    except Exception:  # noqa: BLE001 — 推理失败绝不影响规划主流程
+        logger.debug("偏好推断失败（降级为仅声明画像）", exc_info=True)
+
+    parts = [p for p in (declared, inferred) if p]
+    return {"profile_text": "\n\n".join(parts) if parts else ""}

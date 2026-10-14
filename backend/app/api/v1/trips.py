@@ -13,6 +13,8 @@ from app.schemas import (
     DayOut,
     FavoriteListOut,
     FavoriteOut,
+    LiveCheckIn,
+    LiveSnapshotOut,
     ReviseOut,
     ReviseRequest,
     ShareRevokeIn,
@@ -565,5 +567,66 @@ async def revise_trip(
         data.message,
         owner=user.id,
         provider=data.provider,
+        max_review_rounds=2,
     )
     return ReviseOut(**result)
+
+
+# ── 行中「今日视图」（task-live-today-view：MonkeyTravel live trip 差异化） ──
+# 行程日期已开始时的现场陪伴：今日快照 / 打卡 / 跳过 / 迟到一键顺延 / 替代候选。
+# 全部为确定性操作（不经过 LLM），复用 revise 原子内核 + DrivingGate 约束 +
+# collab WS feed 事件广播（同伴免登录实时可见）。
+@router.get("/{trip_id}/live", response_model=LiveSnapshotOut, summary="行中「今日视图」快照（归一化阶段 + 今日站点 + 打卡进度）")
+async def get_live_snapshot(
+    trip_id: str,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> LiveSnapshotOut:
+    """行中状态只读快照：upcoming / live / finished 三态 + 今日站点列表。"""
+    from app.services import live_service
+
+    trip = await trip_service.get_trip(db, trip_id, owner=user.id)
+    return LiveSnapshotOut(**live_service.live_snapshot(trip))
+
+
+@router.post("/{trip_id}/live/stops/{stop_id}/check", response_model=LiveSnapshotOut, summary="打卡/取消打卡（行中）")
+async def check_live_stop(
+    trip_id: str,
+    stop_id: str,
+    data: LiveCheckIn | None = None,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> LiveSnapshotOut:
+    """标记今日站点完成（checked=True）或取消（checked=False），返回最新行中快照。"""
+    from app.services import live_service
+
+    checked = data.checked if data else True
+    result = await live_service.check_stop(db, trip_id, stop_id, checked=checked, owner=user.id)
+    return LiveSnapshotOut(**result["live"])
+
+
+@router.post("/{trip_id}/live/stops/{stop_id}/skip", response_model=LiveSnapshotOut, summary="跳过今日站点（行中）")
+async def skip_live_stop(
+    trip_id: str,
+    stop_id: str,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> LiveSnapshotOut:
+    """跳过今日某站点（删除），返回最新行中快照。"""
+    from app.services import live_service
+
+    result = await live_service.skip_stop(db, trip_id, stop_id, owner=user.id)
+    return LiveSnapshotOut(**result["live"])
+
+
+@router.post("/{trip_id}/live/delay", response_model=LiveSnapshotOut, summary="迟到一键顺延（今日及之后整体后移一天，行中）")
+async def delay_live_trip(
+    trip_id: str,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> LiveSnapshotOut:
+    """迟到一键顺延：所有日期 +1 天（行程不缩水），今日未完成站点自然落到明天。"""
+    from app.services import live_service
+
+    result = await live_service.delay_today(db, trip_id, owner=user.id)
+    return LiveSnapshotOut(**result["live"])
