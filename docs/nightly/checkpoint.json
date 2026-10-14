@@ -1,8 +1,9 @@
 {
-  "night": "2026-10-13",
-  "status": "failed",
+  "night": "2026-10-14",
+  "status": "in_progress",
   "todo": [
     "competitive-analysis",
+    "task-pwa-cache-deep",
     "task-capacitor-shell",
     "task-capacitor-stores",
     "task-trip-type-profile-memory",
@@ -21,9 +22,8 @@
   "completed": [],
   "current_index": 0,
   "issues": [
-    "night-start(10-12) 遗留：10-12 夜重建检查点后无任何 worker 执行（completed 空、branches 空），本夜（10-13）按 night-start 逻辑再次重建，todo 从 docs/night-build-todo.md 未完成项重建（15 项，competitive-analysis 恒居首）。",
-    "task-pwa-cache-deep 在 todo 文件仍未勾选，但 10-11 worker-8 已完成并入 main（merge 1f1acdc 包含 03701cf/a2a99b8/c5fcb56，git branch --contains 核验通过），按事实核销不重复排队，待白天用户 review 时补勾。",
-    "night-report(10-13) 收尾：本夜 0/15 任务完成——night-start 00:57 重建检查点后，0:15~5:30 的 8 个 night-worker 全部未产出（无 nightly/2026-10-13/* 分支、无 2026-10-12 后 commit、main 仍为 1f1acdc），连续第二夜空转。疑似 worker cron job 未触发/被掐断，需用户白天 hermes cron list/runs 排查并手动补跑验证链路。已写 reports/2026-10-13.md，status 置 failed。"
+    "night-start(10-14) 重建：night 由 2026-10-13 更新为 2026-10-14（10-12/10-13 连续空转，10-13 夜 0/15 完成，见 reports/2026-10-13.md；工作区遗留 10-13 night-start 半成品改动——status 已置 in_progress、issues 已清空），todo 从 docs/night-build-todo.md 未完成项重建（16 项，competitive-analysis 恒居首）。",
+    "task-pwa-cache-deep 在 todo 文件未勾选，但 10-11 worker-8 已有实现并入 main（merge 1f1acdc 含 03701cf/a2a99b8/c5fcb56，git branch --contains 可核验），10-13 已核销一次；本夜重建按 todo 文件原样保留排队，建议白天用户 review 时补勾 todo 或移出。"
   ],
   "branches": []
 }
