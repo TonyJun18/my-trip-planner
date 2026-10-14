@@ -136,6 +136,9 @@ export const updateInvitedStop = (token, stopId, data) =>
   http.patch(`/trips/edit/${token}/stops/${stopId}`, data).then((r) => r.data)
 export const reorderInvitedStops = (token, dayId, order) =>
   http.put(`/trips/edit/${token}/days/${dayId}/stops/order`, { order }).then((r) => r.data)
+// 受邀编辑地图拖拽（task-map-drag-edit：持 edit_token 免登录移动站点坐标）
+export const mapEditInvitedTrip = (token, data) =>
+  http.post(`/trips/edit/${token}/map-edit`, data).then((r) => r.data)
 
 // ── 分享页协作（评论 / 站点投票，免登录，凭 share_token） ──
 export const getSharedTripComments = (token) => http.get(`/trips/share/${token}/comments`).then((r) => r.data)

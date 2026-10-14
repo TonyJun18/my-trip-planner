@@ -233,3 +233,62 @@ async def test_map_edit_owner_isolation(client, auth_user):
         headers=headers_b,
     )
     assert resp.status_code == 404, resp.text
+
+
+async def _make_edit_token(client, headers, trip_id) -> str:
+    """owner 生成受邀编辑令牌 → 返回 edit_token。"""
+    resp = await client.post(f"/api/v1/trips/{trip_id}/share/edit", headers=headers)
+    assert resp.status_code == 200, resp.text
+    token = resp.json()["edit_token"]
+    assert token
+    return token
+
+
+async def test_map_edit_by_token_moves_stop(client, auth_user):
+    """受邀编辑版：凭 edit_token 免登录拖拽 marker 改坐标 → 原子应用 + 落库。"""
+    _, headers = auth_user
+    trip_id, _ = await _make_trip_with_stops(
+        client, headers,
+        [{"name": "西湖", "lat": 30.24, "lng": 120.15}],
+    )
+    edit_token = await _make_edit_token(client, headers, trip_id)
+
+    # 免登录（不带 Authorization）调受邀版 map-edit
+    resp = await client.post(
+        f"/api/v1/trips/edit/{edit_token}/map-edit",
+        json={"name": "西湖", "lat": 30.25, "lng": 120.16},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["applied"] is True
+    assert "地图调整" in body["summary"]
+    stops = body["plan"]["days"][0]["stops"]
+    assert abs(stops[0]["lat"] - 30.25) < 1e-6
+    assert abs(stops[0]["lng"] - 120.16) < 1e-6
+
+    # 落库持久化：owner 视角确认
+    trip = await client.get(f"/api/v1/trips/{trip_id}", headers=headers)
+    saved = trip.json()["days"][0]["stops"][0]
+    assert abs(saved["lat"] - 30.25) < 1e-6
+    assert abs(saved["lng"] - 120.16) < 1e-6
+
+
+async def test_map_edit_by_token_revoked_404(client, auth_user):
+    """令牌失效（owner 收回）后使用 → 404；恢复令牌幂等复用。"""
+    _, headers = auth_user
+    trip_id, _ = await _make_trip_with_stops(
+        client, headers,
+        [{"name": "西湖", "lat": 30.24, "lng": 120.15}],
+    )
+    edit_token = await _make_edit_token(client, headers, trip_id)
+
+    # owner 收回
+    resp = await client.delete(f"/api/v1/trips/{trip_id}/share/edit", headers=headers)
+    assert resp.status_code == 204
+
+    # 旧令牌做地图拖拽 → 404（与受邀编辑 stop 更新同门禁）
+    resp = await client.post(
+        f"/api/v1/trips/edit/{edit_token}/map-edit",
+        json={"name": "西湖", "lat": 30.3, "lng": 120.2},
+    )
+    assert resp.status_code == 404, resp.text
