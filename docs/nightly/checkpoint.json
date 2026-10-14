@@ -3,7 +3,6 @@
   "status": "in_progress",
   "todo": [
     "task-map-pin-cards",
-    "task-guest-trial",
     "content-inspiration-first",
     "task-price-alert-eval",
     "content-ai-travel-crashes",
@@ -14,14 +13,18 @@
     "content-independent-planner-survival"
   ],
   "completed": [
-    "competitive-analysis"
+    "competitive-analysis",
+    "task-guest-trial"
   ],
-  "current_index": 1,
+  "current_index": 2,
   "issues": [
-    "night-start(10-15) 重建：night 由 2026-10-14 更新为 2026-10-15。10-14 白天遗留 WIP（inspiration 后端 4 文件 + 前端 6 文件 + todo 勾选 5 项 + 报告）已核验（389 测试全绿 + 前端 build 3.08s 通过）并提交到分支 nightly/2026-10-15/0-daywork-inspiration-import（eba5337），待用户 review 合并后 main 的 todo 勾选即同步。checkpoint 4 个陈旧项（task-pwa-cache-deep/task-capacitor-shell/task-capacitor-stores/task-trip-type-profile-memory）在 todo 文件已不存在（前 3 个 10-11/10-12 已并入 main，第 4 个已被 preference_service 推断取代且 todo 文件无此任务），按真实状态清账移出，不再排队。task-price-alert-eval 维持排队但本夜竞品分析已给出降级结论（免费价格提醒 API 不存在 → 降级为行程内事件通知，新任务 task-trip-event-notify 承接）。"
+    "night-start(10-15) 重建：night 由 2026-10-14 更新为 2026-10-15。10-14 白天遗留 WIP（inspiration 后端 4 文件 + 前端 6 文件 + todo 勾选 5 项 + 报告）已核验（389 测试全绿 + 前端 build 3.08s 通过）并提交到分支 nightly/2026-10-15/0-daywork-inspiration-import（eba5337），待用户 review 合并后 main 的 todo 勾选即同步。checkpoint 4 个陈旧项（task-pwa-cache-deep/task-capacitor-shell/task-capacitor-stores/task-trip-type-profile-memory）在 todo 文件已不存在（前 3 个 10-11/10-12 已并入 main，第 4 个已被 preference_service 推断取代且 todo 文件无此任务），按真实状态清账移出，不再排队。task-price-alert-eval 维持排队但本夜竞品分析已给出降级结论（免费价格提醒 API 不存在 → 降级为行程内事件通知，新任务 task-trip-event-notify 承接）。",
+    "worker-3(10-15) task-guest-trial 评估关闭：评估不过，降级关单。三大阻断：①成本滥用——规划=多 agent LLM 多轮调用（invoke_with_resilience），全仓零限流设施，匿名创建=免费算力矿场敞口；②数据安全——Trip.owner nullable 但归属校验/share_lifecycle 全链路假设有主，owner=NULL 需旁路访问控制+孤儿数据 24h 过期+清理任务；③share_token 语义边界——share=「有主行程免登录消费」、guest=「匿名可写会话」，无复用件，硬塞污染令牌信任模型。零凭证降级替代已就位：task-inspiration-mode 灵感入口（10-14 已完成，分支 0-daywork-inspiration-import）+ Google OAuth 一键登录 + share_token 消费端。评估记录 docs/nightly/evaluations/task-guest-trial-2026-10-15.md（纯 docs 零代码，无 pytest/build 需求）。重启前置（需用户立项）：IP+账号双层限流配额表、guest 行程 24h 过期清理任务、claim token 注册接管防越权。",
+    "worker-3(10-15) 复核记录：task-map-pin-cards 仍在 todo[0] 未被标记完成，但代码事实显示其主体已在 main（TripMap.vue 已有 marker.bindPopup 信息卡、按日 polyline 连线、day_number/stop_id 拖拽修订——10-05/10-11 已并入）。本夜 current_index 从 1 前进到 2（完成 guest-trial），未触碰 map-pin-cards 队列位；建议用户白天 review 时核验 todo 勾选或按陈旧项清账，避免后续 night-start 重建时重复排队。"
   ],
   "branches": [
     "nightly/2026-10-15/0-daywork-inspiration-import",
-    "nightly/2026-10-15/1-competitive-analysis"
+    "nightly/2026-10-15/1-competitive-analysis",
+    "nightly/2026-10-15/2-task-guest-trial"
   ]
 }
