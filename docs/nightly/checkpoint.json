@@ -1,29 +1,27 @@
 {
-  "night": "2026-10-14",
+  "night": "2026-10-15",
   "status": "in_progress",
   "todo": [
-    "competitive-analysis",
-    "task-pwa-cache-deep",
-    "task-capacitor-shell",
-    "task-capacitor-stores",
-    "task-trip-type-profile-memory",
-    "task-inspiration-mode",
-    "task-open-hours-check",
     "task-map-pin-cards",
     "task-guest-trial",
     "content-inspiration-first",
     "task-price-alert-eval",
-    "task-pacing-leisure",
     "content-ai-travel-crashes",
-    "task-live-today-view",
     "task-packing-expense",
-    "content-trust-gap"
+    "content-trust-gap",
+    "task-multi-city-segments",
+    "task-trip-event-notify",
+    "content-independent-planner-survival"
   ],
-  "completed": [],
-  "current_index": 0,
+  "completed": [
+    "competitive-analysis"
+  ],
+  "current_index": 1,
   "issues": [
-    "night-start(10-14) 重建：night 由 2026-10-13 更新为 2026-10-14（10-12/10-13 连续空转，10-13 夜 0/15 完成，见 reports/2026-10-13.md；工作区遗留 10-13 night-start 半成品改动——status 已置 in_progress、issues 已清空），todo 从 docs/night-build-todo.md 未完成项重建（16 项，competitive-analysis 恒居首）。",
-    "task-pwa-cache-deep 在 todo 文件未勾选，但 10-11 worker-8 已有实现并入 main（merge 1f1acdc 含 03701cf/a2a99b8/c5fcb56，git branch --contains 可核验），10-13 已核销一次；本夜重建按 todo 文件原样保留排队，建议白天用户 review 时补勾 todo 或移出。"
+    "night-start(10-15) 重建：night 由 2026-10-14 更新为 2026-10-15。10-14 白天遗留 WIP（inspiration 后端 4 文件 + 前端 6 文件 + todo 勾选 5 项 + 报告）已核验（389 测试全绿 + 前端 build 3.08s 通过）并提交到分支 nightly/2026-10-15/0-daywork-inspiration-import（eba5337），待用户 review 合并后 main 的 todo 勾选即同步。checkpoint 4 个陈旧项（task-pwa-cache-deep/task-capacitor-shell/task-capacitor-stores/task-trip-type-profile-memory）在 todo 文件已不存在（前 3 个 10-11/10-12 已并入 main，第 4 个已被 preference_service 推断取代且 todo 文件无此任务），按真实状态清账移出，不再排队。task-price-alert-eval 维持排队但本夜竞品分析已给出降级结论（免费价格提醒 API 不存在 → 降级为行程内事件通知，新任务 task-trip-event-notify 承接）。"
   ],
-  "branches": []
+  "branches": [
+    "nightly/2026-10-15/0-daywork-inspiration-import",
+    "nightly/2026-10-15/1-competitive-analysis"
+  ]
 }
