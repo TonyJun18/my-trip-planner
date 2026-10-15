@@ -377,6 +377,12 @@ class TestServicingIsolation:
             raise RuntimeError("tavily down")
 
         monkeypatch.setattr("app.agent.tools.tavily_search", _boom)
+        # LLM 也必须 mock：checkin 的真调 DeepSeek 在网络黑洞时会拖满
+        # 60s×3 次重试+兜底链，让测试看似死锁（既有脆弱性，2026-10-15 修复）
+        async def _boom_llm(*a, **k):
+            raise RuntimeError("llm off")
+
+        monkeypatch.setattr("app.agent.providers.invoke_with_resilience", _boom_llm)
         result = await servicing_service.run_servicing(plan, provider="deepseek")
         assert result["transit"] is not None
         assert result["checkin"] is not None
