@@ -3,11 +3,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1 import auth, email_import, health, link_import, map_edit, note_import, plan_b, planner, profile, screenshot_import, trips, ws
+from app.api.v1 import auth, email_import, health, inspiration, link_import, map_edit, note_import, plan_b, planner, profile, screenshot_import, trips, ws
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(health.router, tags=["health"])
+# inspiration 先于 trips 注册：/trips/inspiration 是字面量路径，
+# 若排在 trips.router 之后会被 GET /{trip_id} 吞掉（trip_id="inspiration" → 404）
+api_router.include_router(inspiration.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips.router, prefix="/trips", tags=["trips"])
 api_router.include_router(note_import.router, tags=["trips"])
 api_router.include_router(screenshot_import.router, tags=["trips"])

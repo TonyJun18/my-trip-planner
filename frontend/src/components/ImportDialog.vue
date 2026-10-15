@@ -9,6 +9,10 @@ import { useI18n } from 'vue-i18n'
 import * as api from '@/api'
 
 const visible = defineModel({ type: Boolean, default: false })
+const props = defineProps({
+  // 从详情页打开时预选当前行程（TripDetailView 导入入口）
+  presetTripId: { type: String, default: '' },
+})
 const emit = defineEmits(['imported'])
 const { t } = useI18n()
 
@@ -71,6 +75,11 @@ async function loadTrips() {
   try {
     const data = await api.listTrips({ limit: 100 })
     trips.value = data.items || []
+    // 预选当前行程（详情页导入入口）：列表里存在则直接选中其首个日程
+    if (props.presetTripId && trips.value.some((x) => x.id === props.presetTripId)) {
+      targetTripId.value = props.presetTripId
+      targetDayId.value = targetTripDays.value[0]?.id || ''
+    }
   } catch {
     /* 拦截器已提示 */
   }
