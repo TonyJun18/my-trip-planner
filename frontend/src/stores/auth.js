@@ -11,7 +11,7 @@ export const useAuthStore = defineStore('auth', {
   }),
   getters: {
     isLoggedIn: (state) => !!state.token,
-    displayName: (state) => state.user?.display_name || state.user?.email || state.user?.phone || '未登录',
+    displayName: (state) => state.user?.display_name || state.user?.email || state.user?.phone || '',
   },
   actions: {
     async login(account, password) {
