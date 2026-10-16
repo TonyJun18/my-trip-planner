@@ -221,7 +221,7 @@ watch(visible, (v) => {
             <div class="cover-dest">{{ props.trip?.destination || 'Trip' }}</div>
             <div class="cover-days">{{ coverDays }} {{ t('xhsNote.daysUnit') }}</div>
           </div>
-          <div class="cover-title">{{ title || props.trip?.title || '我的旅行计划' }}</div>
+          <div class="cover-title">{{ title || props.trip?.title || t('xhsNote.coverShareTag') }}</div>
           <div class="cover-stops">
             <div v-for="(s, i) in coverStops" :key="i" class="cover-stop">
               <span class="cover-stop-emoji">{{ coverEmoji(s.type) }}</span>

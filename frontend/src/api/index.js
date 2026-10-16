@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import i18n from '@/i18n'
 
 // API 地址支持构建期注入（Capacitor/移动端打包时 WebView 无法用相对路径 /api/v1）：
 // - VITE_API_BASE_URL：完整后端地址（如 https://api.example.com/api/v1）
@@ -31,7 +32,7 @@ http.interceptors.response.use(
         window.location.href = '/login'
       }
     }
-    const msg = err.response?.data?.error?.message || err.message || '请求失败'
+    const msg = err.response?.data?.error?.message || i18n.global.t('common.requestFailed')
     if (msg !== 'canceled') ElMessage.error(msg)
     return Promise.reject(err)
   },

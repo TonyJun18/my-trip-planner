@@ -126,6 +126,11 @@ const tripTypeOptions = [
   { key: 'tripTypeHoneymoon', value: '蜜月度假' },
   { key: 'tripTypeVisiting', value: '探亲访友' },
 ]
+// 后端返回的中文契约值 → 当前语言显示（映射到 i18n key，未知值原样显示）
+function tripTypeDisplay(v) {
+  const found = tripTypeOptions.find((o) => o.value === v)
+  return found ? t('tripList.' + found.key) : v
+}
 const dialogVisible = ref(false)
 const stopFormRef = ref(null)
 
@@ -875,7 +880,7 @@ onBeforeUnmount(() => {
               <div class="hero-meta">
                 <span class="hero-pill"><el-icon><Location /></el-icon>{{ trip.destination }}</span>
                 <span class="hero-pill" v-if="trip.departure"><el-icon><Promotion /></el-icon>{{ $t('tripDetail.fromDeparture', { dep: trip.departure }) }}</span>
-                <span class="hero-pill" v-if="trip.trip_type"><el-icon><Briefcase /></el-icon>{{ $t('tripDetail.tripTypeLabel') }}：{{ trip.trip_type }}</span>
+                <span class="hero-pill" v-if="trip.trip_type"><el-icon><Briefcase /></el-icon>{{ $t('tripDetail.tripTypeLabel') }}：{{ tripTypeDisplay(trip.trip_type) }}</span>
                 <span class="hero-pill"><el-icon><Calendar /></el-icon>{{ trip.start_date }} ~ {{ trip.end_date }}</span>
                 <span class="hero-pill"><el-icon><User /></el-icon>{{ trip.travelers }} {{ $t('common.peopleUnit') }}</span>
                 <span class="hero-pill" v-if="trip.budget != null"><el-icon><Wallet /></el-icon>{{ $t('common.budget') }} ¥{{ trip.budget }}</span>
@@ -1377,8 +1382,11 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-card);
 }
 .hero-city {
-  position: absolute; right: 6%; bottom: -36px;
-  font-size: 210px; font-weight: 800; color: rgba(255,255,255,0.35);
+  position: absolute; right: 6%; bottom: 28px;
+  /* 中文字形渲染高度 ≈ font-size × 1.4（ascender/descender 溢出 line box）。
+     容器 200px：140px 字形即 196px，bottom 正值把字形完整收进容器、贴底摆放，
+     避免被 overflow:hidden 裁切导致字形残缺 */
+  font-size: 140px; font-weight: 800; color: rgba(255,255,255,0.35);
   line-height: 1; user-select: none;
 }
 .hero-overlay { position: relative; z-index: 1; padding: 32px 36px; }
@@ -1691,7 +1699,8 @@ onBeforeUnmount(() => {
   .topbar-actions :deep(.el-button) { margin-left: 0; min-height: 40px; }
   /* 头图：垂直堆叠（标题区 + 底部状态区），状态不再绝对定位重叠标题 */
   .hero-cover { height: auto; min-height: 150px; flex-direction: column; align-items: stretch; }
-  .hero-city { font-size: 110px; bottom: -20px; }
+  /* 移动端：min-height 150px，字形 100px×1.4=140px，bottom 正值完整容纳 */
+  .hero-city { font-size: 100px; bottom: 20px; }
   .hero-overlay { padding: 20px 16px 12px; }
   .hero-title { font-size: 20px; margin-bottom: 10px; }
   .hero-pill { font-size: 11.5px; padding: 5px 10px; }

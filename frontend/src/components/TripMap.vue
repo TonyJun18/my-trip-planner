@@ -2,6 +2,9 @@
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   // [{lat, lng, name, stop_type, description, day_number?, stop_id?}]
@@ -21,7 +24,7 @@ let markerLayer = null
 let polyline = null
 
 const typeColors = { attraction: '#ff385c', food: '#c2410c', hotel: '#0d8a5f' }
-const typeLabel = { attraction: '景点', food: '餐饮', hotel: '住宿' }
+const typeLabel = { attraction: () => t('common.typeAttraction'), food: () => t('common.typeFood'), hotel: () => t('common.typeHotel') }
 
 // 移动端隐藏拖拽：拖拽需要精确点击，触控设备误触率极高。
 // 与「task-trip-collab-vote」的移动端适配同策略——响应式能力，不读状态。
@@ -57,9 +60,9 @@ function renderMarkers(markers) {
   const canDrag = props.draggable && !isMobileViewport()
 
   valid.forEach((m, i) => {
-    const t = m.stop_type || m.type || 'attraction'
-    const icon = makeIcon(t, i + 1)
-    const label = typeLabel[t] || t
+    const stopType = m.stop_type || m.type || 'attraction'
+    const icon = makeIcon(stopType, i + 1)
+    const label = typeLabel[stopType] ? typeLabel[stopType]() : stopType
     // 用 DOM API 构建 popup（textContent），杜绝 name/description 的 HTML 注入
     // （数据可来自 LLM 输出或被受邀编辑者写入 → 存储型 XSS 面）
     const popupEl = document.createElement('div')

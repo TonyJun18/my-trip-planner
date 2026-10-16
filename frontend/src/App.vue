@@ -80,8 +80,8 @@ function goHome() {
             </button>
             <el-dropdown>
               <span class="user-chip">
-                <span class="avatar">{{ (auth.displayName || '旅')[0].toUpperCase() }}</span>
-                <span class="user-name">{{ auth.displayName }}</span>
+                <span class="avatar">{{ (auth.displayName || t('app.traveler'))[0].toUpperCase() }}</span>
+                <span class="user-name">{{ auth.displayName || t('app.traveler') }}</span>
                 <el-icon class="chevron"><ArrowDown /></el-icon>
               </span>
               <template #dropdown>

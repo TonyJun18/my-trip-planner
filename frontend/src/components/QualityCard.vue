@@ -1,5 +1,8 @@
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   quality: { type: Object, default: null },
@@ -17,16 +20,16 @@ const scoreColor = computed(() => {
   return '#dc2626'
 })
 
-const sevLabel = { critical: '必须改', warning: '建议改', info: '提示' }
+const sevLabel = { critical: () => t('quality.sevCritical'), warning: () => t('quality.sevWarning'), info: () => t('quality.sevInfo') }
 const sevColor = { critical: '#dc2626', warning: '#d97706', info: 'var(--faint)' }
-const catLabel = { schedule: '日程', budget: '预算', geography: '地理', logistics: '完整', info: '一般' }
+const catLabel = { schedule: () => t('quality.catSchedule'), budget: () => t('quality.catBudget'), geography: () => t('quality.catGeography'), logistics: () => t('quality.catLogistics'), info: () => t('quality.catInfo') }
 </script>
 
 <template>
   <div v-if="hasQuality" class="quality-card">
     <div class="quality-head">
-      <span class="quality-title"><el-icon style="margin-right: 6px"><CircleCheck /></el-icon>行程质检报告</span>
-      <span v-if="q.rounds" class="quality-meta">AI 质检专家评审 {{ q.rounds }} 轮</span>
+      <span class="quality-title"><el-icon style="margin-right: 6px"><CircleCheck /></el-icon>{{ t('quality.reportTitle') }}</span>
+      <span v-if="q.rounds" class="quality-meta">{{ t('quality.reviewMeta', { rounds: q.rounds }) }}</span>
     </div>
 
     <div class="quality-main">
@@ -35,30 +38,30 @@ const catLabel = { schedule: '日程', budget: '预算', geography: '地理', lo
         <span class="score-num">{{ score }}</span>
         <span class="score-total">/100</span>
         <span class="score-badge" :style="{ background: scoreColor }">
-          {{ passed ? '通过' : finalized ? '强制定稿' : '未通过' }}
+          {{ passed ? t('quality.passed') : finalized ? t('quality.finalized') : t('quality.failed') }}
         </span>
       </div>
 
       <div class="quality-side">
         <div v-if="q.summary" class="quality-summary">{{ q.summary }}</div>
         <div v-if="finalized" class="quality-finalized">
-          已达最大评审轮数（{{ q.max_rounds }}），按当前版本定稿
+          {{ t('quality.finalizedHint', { max: q.max_rounds }) }}
         </div>
 
         <!-- 问题列表 -->
         <ul v-if="q.issues && q.issues.length" class="quality-issues">
           <li v-for="(iss, i) in q.issues" :key="i" class="quality-issue">
             <span class="sev-tag" :style="{ background: sevColor[iss.severity] || 'var(--faint)' }">
-              {{ sevLabel[iss.severity] || iss.severity }}
+              {{ (sevLabel[iss.severity] || (() => iss.severity))() }}
             </span>
-            <span v-if="iss.category" class="issue-cat">{{ catLabel[iss.category] || iss.category }}</span>
+            <span v-if="iss.category" class="issue-cat">{{ (catLabel[iss.category] || (() => iss.category))() }}</span>
             <span class="issue-msg">{{ iss.message }}</span>
             <span v-if="iss.day_number" class="issue-day">Day {{ iss.day_number }}</span>
             <span v-if="iss.suggestion" class="issue-suggestion">→ {{ iss.suggestion }}</span>
           </li>
         </ul>
         <div v-else class="quality-clean">
-          <el-icon style="margin-right: 4px; color: var(--success)"><CircleCheck /></el-icon>未发现明显问题
+          <el-icon style="margin-right: 4px; color: var(--success)"><CircleCheck /></el-icon>{{ t('quality.clean') }}
         </div>
       </div>
     </div>

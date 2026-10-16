@@ -200,12 +200,19 @@ onBeforeUnmount(() => {
     <!-- 空状态 -->
     <div v-if="!loading && !trips.length" class="empty">
       <div class="empty-illustration">
-        <svg width="120" height="120" viewBox="0 0 120 120" fill="none" aria-hidden="true">
-          <circle cx="60" cy="60" r="54" fill="#fff0f3" />
-          <path d="M60 28c-9 12-16 21-16 30 0 11 7.2 18 16 18s16-7 16-18c0-9-7-18-16-30z" fill="#ff385c" opacity="0.85" />
-          <circle cx="60" cy="57" r="6.5" fill="#fff" />
-          <path d="M38 88h44" stroke="#ff8a5c" stroke-width="3" stroke-linecap="round" />
-          <path d="M30 98h60" stroke="#ffb199" stroke-width="3" stroke-linecap="round" />
+        <svg width="140" height="140" viewBox="0 0 140 140" fill="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="empty-bg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#ff8a5c" stop-opacity="0.18" />
+              <stop offset="1" stop-color="#ff385c" stop-opacity="0.12" />
+            </linearGradient>
+          </defs>
+          <circle cx="70" cy="70" r="62" fill="url(#empty-bg)" />
+          <circle cx="70" cy="70" r="54" fill="#fff0f3" />
+          <path d="M70 38c-9 12-16 21-16 30 0 11 7.2 18 16 18s16-7 16-18c0-9-7-18-16-30z" fill="url(#empty-bg)" stroke="#ff385c" stroke-width="1.2" opacity="0.9" />
+          <circle cx="70" cy="67" r="6.5" fill="#fff" stroke="#ff385c" stroke-width="1" />
+          <path d="M48 98h44" stroke="#ff8a5c" stroke-width="3.5" stroke-linecap="round" />
+          <path d="M40 108h60" stroke="#ffb199" stroke-width="3.5" stroke-linecap="round" />
         </svg>
       </div>
       <p class="empty-title">{{ t('tripList.emptyTitle') }}</p>
@@ -224,10 +231,12 @@ onBeforeUnmount(() => {
           class="trip-card"
           @click="router.push(`/trips/${trip.id}`)"
         >
-          <!-- 氛围头图 -->
+          <!-- 氛围头图：超大首字半透水印沉底 + 全名居中（长名自适应字号 + 省略号） -->
           <div class="card-cover" :style="{ background: gradientOf(trip.destination) }">
-            <span class="cover-city">{{ (trip.destination || '?').slice(0, 1) }}</span>
-            <span class="cover-name">{{ trip.destination }}</span>
+            <span class="cover-watermark" aria-hidden="true">{{ (trip.destination || '?').slice(0, 1) }}</span>
+            <span class="cover-city" :class="{ 'is-long': (trip.destination || '').length > 6 }">
+              {{ trip.destination || '?' }}
+            </span>
             <span class="status-badge" :class="(statusMap[trip.status] || statusMap.draft).type">
               {{ (statusMap[trip.status] || statusMap.draft).label }}
             </span>
@@ -369,17 +378,18 @@ onBeforeUnmount(() => {
   gap: 20px;
 }
 .trip-card {
+  position: relative;
   background: var(--surface);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-card);
   overflow: hidden;
   cursor: pointer;
-  transition: transform .2s ease, box-shadow .2s ease;
+  transition: transform .25s ease, box-shadow .25s ease;
   border: 1px solid var(--line);
 }
 .trip-card:hover {
   transform: translateY(-4px);
-  box-shadow: var(--shadow-hover);
+  box-shadow: var(--shadow-float);
 }
 
 .card-cover {
@@ -387,21 +397,47 @@ onBeforeUnmount(() => {
   height: 132px;
   display: flex; align-items: center; justify-content: center;
   gap: 10px;
+  padding: 0 12px;
+}
+.card-cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.02) 0%, rgba(0, 0, 0, 0.08) 100%);
+  pointer-events: none;
+}
+/* 超大首字水印：半透明白、沉底靠右，纯装饰（aria-hidden 不进读屏） */
+.cover-watermark {
+  position: absolute;
+  right: 2px;
+  bottom: -12px;
+  z-index: 1;
+  font-size: 132px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: rgba(255, 255, 255, 0.14);
+  user-select: none;
+  pointer-events: none;
 }
 .cover-city {
-  font-size: 52px; font-weight: 700; color: rgba(255,255,255,0.95);
-  text-shadow: 0 2px 12px rgba(0,0,0,0.12);
+  position: relative;
+  z-index: 2;
+  font-size: 30px; font-weight: 700; color: rgba(255, 255, 255, 0.96);
+  letter-spacing: 0.04em;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+  /* 给右上角状态徽章留位；超长地名省略，避免溢出卡片 */
+  max-width: calc(100% - 40px);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.cover-name {
-  font-size: 22px; font-weight: 700; color: rgba(255,255,255,0.95);
-  letter-spacing: 0.02em;
-  text-shadow: 0 2px 10px rgba(0,0,0,0.15);
-}
+.cover-city.is-long { font-size: 23px; letter-spacing: 0.02em; }
 .status-badge {
   position: absolute; top: 12px; right: 12px;
   font-size: 11px; font-weight: 600;
   padding: 4px 10px; border-radius: var(--radius-full);
-  background: rgba(255,255,255,0.9);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: saturate(150%) blur(6px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 .status-badge.success { color: var(--success); }
 .status-badge.warning { color: var(--warning); }
@@ -423,7 +459,7 @@ onBeforeUnmount(() => {
   display: flex; align-items: center; justify-content: space-between;
   border-top: 1px solid var(--line); padding-top: 10px;
 }
-.budget { font-size: 15px; font-weight: 600; color: var(--ink); }
+.budget { font-size: 15px; font-weight: 600; color: var(--brand); }
 .budget.muted { color: var(--faint); font-weight: 400; font-size: 13px; }
 .card-actions { display: flex; gap: 2px; }
 

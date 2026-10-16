@@ -13,7 +13,10 @@
  */
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import * as api from '@/api'
+
+const { t } = useI18n()
 
 const props = defineProps({
   // 酒店候选列表（plan.hotels）
@@ -55,8 +58,8 @@ function isArranged(h) {
 
 function hotelPriceText(h) {
   const cost = Number(h.estimated_cost)
-  if (cost > 0) return `¥${cost} 起`
-  return '价格以实际询价为准'
+  if (cost > 0) return t('hotel.priceFrom', { cost })
+  return t('hotel.priceQuote')
 }
 
 // ── 安排进日程 ──
@@ -70,7 +73,7 @@ const dialogVisible = computed(() => pickingHotel.value != null)
 
 async function startPick(h) {
   if (!dayOptions.value.length) {
-    ElMessage.warning('请先添加日程，再安排酒店')
+    ElMessage.warning(t('hotel.needDaysFirst'))
     return
   }
   pickingHotel.value = h
@@ -89,7 +92,7 @@ async function confirmArrange() {
       description: pickingHotel.value.description || '',
       estimated_cost: pickingHotel.value.estimated_cost || null,
     })
-    ElMessage.success(`已将「${pickingHotel.value.name}」安排进日程`)
+    ElMessage.success(t('hotel.added', { name: pickingHotel.value.name }))
     pickingHotel.value = null
     emit('arranged')
   } catch (e) {
@@ -102,14 +105,14 @@ async function confirmArrange() {
 <template>
   <div v-if="hotels.length" class="hotel-section">
     <div class="card-head">
-      <span class="card-title">🏨 住宿推荐</span>
-      <span class="map-hint">由 AI 酒店专家筛选 · 共 {{ hotels.length }} 家</span>
+      <span class="card-title">🏨 {{ t('hotel.recommendTitle') }}</span>
+      <span class="map-hint">{{ t('hotel.recommendMeta', { count: hotels.length }) }}</span>
     </div>
     <div class="hotel-grid">
       <div v-for="(h, idx) in hotels" :key="idx" class="hotel-card" :class="{ arranged: isArranged(h) }">
         <div class="hotel-top">
           <span class="hotel-name">{{ h.name }}</span>
-          <el-tag v-if="isArranged(h)" size="small" type="success" round>已安排</el-tag>
+          <el-tag v-if="isArranged(h)" size="small" type="success" round>{{ t('hotel.arranged') }}</el-tag>
         </div>
         <div class="hotel-meta">
           <span v-if="h.address" class="hotel-addr"><el-icon><Location /></el-icon>{{ h.address }}</span>
@@ -118,30 +121,30 @@ async function confirmArrange() {
         <div v-if="h.description" class="hotel-desc">{{ h.description }}</div>
         <div class="hotel-actions">
           <el-button v-if="h.source_url" link type="primary" tag="a" :href="h.source_url" target="_blank" rel="noopener">
-            查看详情 <el-icon style="margin-left: 2px"><TopRight /></el-icon>
+            {{ t('hotel.viewDetail') }} <el-icon style="margin-left: 2px"><TopRight /></el-icon>
           </el-button>
           <el-button v-if="actionable && !isArranged(h)" link type="success" @click="startPick(h)">
-            安排进日程
+            {{ t('hotel.arrange') }}
           </el-button>
         </div>
       </div>
     </div>
 
     <!-- 安排到哪一天 -->
-    <el-dialog v-model="dialogVisible" title="安排进日程" width="420px">
+    <el-dialog v-model="dialogVisible" :title="t('hotel.arrangeDialogTitle')" width="420px">
       <el-form label-width="60px">
-        <el-form-item label="酒店">
+        <el-form-item :label="t('hotel.hotelLabel')">
           <span>{{ pickingHotel?.name }}</span>
         </el-form-item>
-        <el-form-item label="日期">
+        <el-form-item :label="t('hotel.dateLabel')">
           <el-select v-model="pickingDayId" style="width: 100%">
             <el-option v-for="d in dayOptions" :key="d.id" :label="d.label" :value="d.id" />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="pickingHotel = null">取消</el-button>
-        <el-button type="primary" :loading="picking" @click="confirmArrange">确认安排</el-button>
+        <el-button @click="pickingHotel = null">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="picking" @click="confirmArrange">{{ t('common.confirm') }}</el-button>
       </template>
     </el-dialog>
   </div>

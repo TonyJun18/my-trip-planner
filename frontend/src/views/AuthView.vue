@@ -105,7 +105,7 @@ async function handleGoogleCredential(credential) {
   googleLoading.value = true
   try {
     await auth.loginWithGoogle(credential)
-    ElMessage.success('Google 登录成功，欢迎回来！')
+    ElMessage.success(t('auth.googleLoginSuccess'))
     const redirect = route.query.redirect || '/trips'
     router.push(redirect)
   } catch {
@@ -211,7 +211,7 @@ onMounted(initGoogleButton)
 
         <!-- Google 登录（仅登录模式展示；client id 未配置时不渲染） -->
         <template v-if="showGoogleLogin && mode === 'login'">
-          <div class="google-divider"><span>或</span></div>
+          <div class="google-divider"><span>{{ t('auth.dividerOr') }}</span></div>
           <div id="google-login-btn" class="google-btn-wrap" v-loading="googleLoading"></div>
         </template>
       </el-card>

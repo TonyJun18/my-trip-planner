@@ -9,6 +9,9 @@
   --brand-dark: #e00b41;
   --brand-soft: #fff0f3;
 
+  /* 品牌渐变（标题强调、封面底色等：珊瑚红 → 暖橙） */
+  --brand-gradient: linear-gradient(135deg, #ff385c 0%, #ff8a5c 100%);
+
   /* 中性色（Airbnb 暖色系） */
   --ink: #222222;          /* 主文字：暖近黑 */
   --ink-2: #4a4a4a;        /* 次级文字 */
@@ -28,6 +31,7 @@
   --shadow-card: 0 0 0 1px rgba(0, 0, 0, 0.02), 0 2px 6px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-hover: 0 0 0 1px rgba(0, 0, 0, 0.03), 0 6px 16px rgba(0, 0, 0, 0.08), 0 10px 28px rgba(0, 0, 0, 0.08);
   --shadow-pop: 0 4px 12px rgba(0, 0, 0, 0.12), 0 12px 32px rgba(0, 0, 0, 0.14);
+  --shadow-float: 0 0 0 1px rgba(0, 0, 0, 0.04), 0 12px 24px rgba(0, 0, 0, 0.10), 0 24px 48px rgba(0, 0, 0, 0.10);
 
   /* 圆角 */
   --radius-sm: 8px;

@@ -11,6 +11,15 @@ import TripServicing from '@/components/TripServicing.vue'
 const router = useRouter()
 const { t } = useI18n()
 
+// 热门城市：显示名走 i18n（cities.*），点击时映射回中文契约值（后端地理编码用）
+const hotCityKeys = ['hangzhou', 'chengdu', 'beijing', 'shanghai', 'dali', 'xiamen']
+const hotCityValueMap = {
+  hangzhou: '杭州', chengdu: '成都', beijing: '北京', shanghai: '上海', dali: '大理', xiamen: '厦门',
+}
+function hotCityValue(key) {
+  return hotCityValueMap[key] || key
+}
+
 const formRef = ref(null)
 const submitting = ref(false)
 const result = ref(null)
@@ -522,9 +531,9 @@ function goDetail() {
                 <template #prefix><el-icon><Location /></el-icon></template>
               </el-input>
               <div class="hot-cities">
-                <button v-for="c in ['杭州', '成都', '北京', '上海', '大理', '厦门']" :key="c"
-                        type="button" class="chip" :class="{ picked: form.destination === c }" @click="form.destination = c">
-                  {{ c }}
+                <button v-for="c in hotCityKeys" :key="c" type="button" class="chip" :class="{ picked: form.destination === hotCityValue(c) }"
+                        @click="form.destination = hotCityValue(c)">
+                  {{ t('cities.' + c) }}
                 </button>
               </div>
             </div>
