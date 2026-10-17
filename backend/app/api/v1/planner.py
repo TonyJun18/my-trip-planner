@@ -9,12 +9,13 @@ GET  /planner/tasks/{task_id} → 轮询任务状态（pending/running/completed
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.core.exceptions import NotFoundError
+from app.i18n import normalize_locale
 from app.models import User
 from app.schemas import PlanRequest, PlanTaskOut
 from app.services import planning_service
@@ -30,10 +31,18 @@ router = APIRouter()
 )
 async def plan_trip(
     data: PlanRequest,
+    request: Request,
     db: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> PlanTaskOut:
-    """创建规划任务并立即返回 task_id；结果通过 GET /planner/tasks/{id} 查询。"""
+    """创建规划任务并立即返回 task_id；结果通过 GET /planner/tasks/{id} 查询。
+
+    语言契约：请求显式传 ``language`` 优先生效；未传时从
+    ``Accept-Language`` 头解析（normalize_locale 宽松归一，未知回退 zh-CN）。
+    """
+    if not data.language:
+        # 显式字段优先；否则按请求头解析（前端语言切换信号在此落到后端契约）
+        data.language = normalize_locale(request.headers.get("accept-language"))
     task = await planning_service.create_task(db, data, owner=user.id)
     return planning_service.task_to_out(task)
 

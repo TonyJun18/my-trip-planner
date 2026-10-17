@@ -24,6 +24,9 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from app.i18n import normalize_locale
+from app.i18n.translations import t
+
 # ── 阈值（自驾友好，可在调用处覆盖） ────────────────────────
 DEFAULT_AVG_KMH = 50.0  # 含市区/红绿灯/拥堵的平均车速
 MAX_LEG_KM = 120.0  # 相邻站点单段驾车距离上限（约 2.4h 车程）
@@ -120,6 +123,7 @@ def check_day_stops(
     max_leg_km: float = MAX_LEG_KM,
     max_leg_minutes: float = MAX_LEG_MINUTES,
     max_daily_km: float = MAX_DAILY_KM,
+    locale: str = "zh-CN",
 ) -> dict[str, Any]:
     """单日站点序列的驾车校验（默认球面估算，无外部依赖）。
 
@@ -137,7 +141,7 @@ def check_day_stops(
         stops, legs,
         day_number=day_number,
         max_leg_km=max_leg_km, max_leg_minutes=max_leg_minutes, max_daily_km=max_daily_km,
-        source="haversine",
+        source="haversine", locale=locale,
     )
 
 
@@ -150,6 +154,7 @@ def _run_day_checks(
     max_leg_minutes: float = MAX_LEG_MINUTES,
     max_daily_km: float = MAX_DAILY_KM,
     source: str = "haversine",
+    locale: str = "zh-CN",
 ) -> dict[str, Any]:
     """对给定 legs（已解析距离/时长，source=haversine|amap）执行单日校验与 issue 生成。
 
@@ -161,17 +166,18 @@ def _run_day_checks(
     """
     issues: list[dict[str, Any]] = []
     total_km = 0.0
+    locale = normalize_locale(locale)
 
     for i, stop in enumerate(stops):
         if not isinstance(stop, dict):
             continue
-        name = stop.get("name") or f"站点{i + 1}"
+        name = stop.get("name") or t(locale, "transit.fallback.from", i=i + 1)
         if _stop_coords(stop) is None:
             issues.append({
                 "severity": "warning",
                 "category": "logistics",
-                "message": f"Day {day_number} 站点「{name}」缺少坐标，无法校验驾驶距离",
-                "suggestion": "补全站点经纬度后可启用自驾距离校验",
+                "message": t(locale, "driving.msg.no_coords", day=day_number, name=name),
+                "suggestion": t(locale, "driving.suggest.no_coords"),
                 "day_number": day_number,
             })
 
@@ -183,35 +189,29 @@ def _run_day_checks(
 
         effective = d if d > 0 else 0.0
         if effective > max_leg_km:
-            suggestion = f"把「{name}」调整到另一天，或拆成两天行程"
+            suggestion = t(locale, "driving.suggest.move", name=name)
             if leg.get("rest_minutes") and leg.get("rest_km"):
-                suggestion = (
-                    f"建议在行驶约 {leg['rest_km']:.0f}km 后安排一次约 {leg['rest_minutes']} 分钟的经停休息，"
-                    f"或把「{name}」调整到另一天"
-                )
+                suggestion = t(locale, "driving.suggest.rest", km=leg["rest_km"], min=leg["rest_minutes"], name=name)
             issues.append({
                 "severity": "critical",
                 "category": "geography",
                 "message": (
-                    f"Day {day_number} 站点「{prev_name}」→「{name}」单段驾车约 {d:.0f}km，"
-                    f"超过 {max_leg_km:.0f}km 上限"
+                    t(locale, "driving.msg.leg_km", day=day_number, src=prev_name, to=name,
+                      km=round(d), max=round(max_leg_km))
                 ),
                 "suggestion": suggestion,
                 "day_number": day_number,
             })
         elif minutes > max_leg_minutes:
-            suggestion = f"把「{name}」调整到另一天，避免单日长途赶路"
+            suggestion = t(locale, "driving.suggest.move_avoid", name=name)
             if leg.get("rest_minutes") and leg.get("rest_km"):
-                suggestion = (
-                    f"建议在行驶约 {leg['rest_km']:.0f}km 后安排一次约 {leg['rest_minutes']} 分钟的经停休息，"
-                    f"或把「{name}」调整到另一天"
-                )
+                suggestion = t(locale, "driving.suggest.rest", km=leg["rest_km"], min=leg["rest_minutes"], name=name)
             issues.append({
                 "severity": "critical",
                 "category": "geography",
                 "message": (
-                    f"Day {day_number} 站点「{prev_name}」→「{name}」驾车约 {minutes} 分钟，"
-                    f"超过 {max_leg_minutes:.0f} 分钟上限"
+                    t(locale, "driving.msg.leg_min", day=day_number, src=prev_name, to=name,
+                      min=minutes, max=round(max_leg_minutes))
                 ),
                 "suggestion": suggestion,
                 "day_number": day_number,
@@ -222,9 +222,9 @@ def _run_day_checks(
             "severity": "critical",
             "category": "geography",
             "message": (
-                f"Day {day_number} 累计驾驶约 {total_km:.0f}km，超过单日 {max_daily_km:.0f}km 上限"
+                t(locale, "driving.msg.daily_km", day=day_number, km=round(total_km), max=round(max_daily_km))
             ),
-            "suggestion": "减少当日站点数，或把部分站点拆到相邻天",
+            "suggestion": t(locale, "driving.suggest.fewer"),
             "day_number": day_number,
         })
 
@@ -237,10 +237,10 @@ def _run_day_checks(
                 "severity": "warning",
                 "category": "geography",
                 "message": (
-                    f"Day {day_number} 路线「{a.get('name', '')}」→「{b.get('name', '')}」"
-                    f"→「{c.get('name', '')}」存在折返（绕回出发点方向）"
+                    t(locale, "driving.msg.backtrack", day=day_number,
+                      a=a.get("name", ""), b=b.get("name", ""), c=c.get("name", ""))
                 ),
-                "suggestion": "按地理位置排序站点，避免先走远再折回",
+                "suggestion": t(locale, "driving.suggest.order"),
                 "day_number": day_number,
             })
 
@@ -278,7 +278,7 @@ def check_plan_driving(
         report = check_day_stops(day.get("stops") or [], day_number=day.get("day_number", 0), **thresholds)
         per_day.append(report)
 
-    return _assemble_plan_report(per_day, force_source="haversine")
+    return _assemble_plan_report(per_day, force_source="haversine", locale=thresholds.get("locale", "zh-CN"))
 
 
 async def check_plan_driving_async(
@@ -295,6 +295,7 @@ async def check_plan_driving_async(
     """
     from app.services import amap_driving
 
+    locale = normalize_locale(thresholds.pop("locale", "zh-CN"))
     per_day: list[dict[str, Any]] = []
     for day in plan.get("days") or []:
         stops = day.get("stops") or []
@@ -302,24 +303,26 @@ async def check_plan_driving_async(
         legs = await amap_driving.fetch_driving_legs(stops)
         if legs is None:
             # 未启用/熔断 → 整日 haversine
-            report = check_day_stops(stops, day_number=day_number, **thresholds)
+            report = check_day_stops(stops, day_number=day_number, locale=locale, **thresholds)
         else:
             report = _run_day_checks(
                 stops, legs,
                 day_number=day_number,
                 **thresholds,
-                source="amap",
+                source="amap", locale=locale,
             )
         per_day.append(report)
-    return _assemble_plan_report(per_day)
+    return _assemble_plan_report(per_day, locale=locale)
 
 
 def _assemble_plan_report(
     per_day: list[dict[str, Any]],
     *,
     force_source: str | None = None,
+    locale: str = "zh-CN",
 ) -> dict[str, Any]:
     """把多日报告汇总为 plan 级报告（source 取最早非 haversine 的来源）。"""
+    locale = normalize_locale(locale)
     issues: list[dict[str, Any]] = []
     total_km = 0.0
     source = "haversine"
@@ -333,11 +336,11 @@ def _assemble_plan_report(
 
     critical_count = sum(1 for i in issues if i.get("severity") == "critical")
     if critical_count:
-        summary = f"自驾路线校验未通过：{critical_count} 个超距/超时问题"
+        summary = t(locale, "driving.summary.fail", n=critical_count)
     elif issues:
-        summary = f"自驾路线可用（{len(issues)} 条注意项）"
+        summary = t(locale, "driving.summary.warnings", n=len(issues))
     else:
-        summary = "自驾路线校验通过"
+        summary = t(locale, "driving.summary.pass")
 
     return {
         "mode": "driving",

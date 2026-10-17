@@ -39,6 +39,9 @@ from app.agent import tools as agent_tools
 from app.agent.providers import get_provider, invoke_with_resilience
 from app.common.config import settings
 from app.core.logging import get_logger
+from app.i18n import normalize_locale
+from app.i18n.prompts import get_prompt, plan_language_instruction, preference_keywords, preference_keys_to_keywords
+from app.i18n.translations import t
 from app.schemas.plan import validate_critique, validate_plan
 from app.services.discount_service import discount_rules_for_request
 from app.services.driving_service import check_plan_driving_async
@@ -153,77 +156,26 @@ TOOL_MAP: dict[str, Any] = {
 
 
 # ═══════════════════════════════════════════════════════════
-#  Agent 提示词（极简，单一职责）
+#  Agent 提示词（i18n：语言由 get_prompt() 按 locale 选择）
+#  ── 兼容层 ──
+#  以下常量保留旧版默认语种（zh-CN），供旧调用方/测试引用；
+#  新代码一律走 ``get_prompt(agent, locale)``（含输出语种指令）。
+#  WEATHER/HOTEL/FOOD/TRANSPORT/PLANNER/CRITIC/REVISE_CRITIC/REVISE
+#  的多行定义保留在下方，等价于 get_prompt(x, "zh-CN") 的正文部分。
 # ═══════════════════════════════════════════════════════════
-ATTRACTION_SYSTEM_PROMPT = """你是旅行规划团队中的【景点搜索专家】。你的唯一任务：根据用户的偏好关键词，搜索景点。
-
-规则：
-1. 用户会给你：目的地城市 + 偏好（如"历史文化"、"自然风光"、"亲子"、"博物馆"等）
-2. 把偏好转换为 2-4 个中文关键词（如偏好"历史文化" → "历史遗迹 博物馆 古建筑"）
-3. 调用工具 search_attractions(city, query=关键词, limit=8) 获取真实景点
-4. 不要编造景点数据；工具返回什么就用什么
-5. 最终输出：一个 JSON 数组，元素为 {name, type, lat, lng, estimated_cost, duration_minutes, description}
-   —— 直接提取工具返回 results 里的字段，不要添加或修改
-
-你只负责"找到并列出景点"，不做行程编排。"""
+ATTRACTION_SYSTEM_PROMPT = get_prompt("attraction", "zh-CN")
 
 
-WEATHER_SYSTEM_PROMPT = """你是旅行规划团队中的【天气查询专家】。你的唯一任务：查询目的地未来几天的天气。
-
-规则：
-1. 你会收到目的地城市名（可能有日期范围）
-2. 调用工具 query_weather(city, days=3) 获取天气预报
-3. 不要编造天气数据
-4. 最终输出：把工具返回的 JSON 原样返回（含 date / text_day / temp_max / temp_min / humidity）
-
-你只负责"查询并报告天气"，不做行程编排。"""
+WEATHER_SYSTEM_PROMPT = get_prompt("weather", "zh-CN")
 
 
-HOTEL_SYSTEM_PROMPT = """你是旅行规划团队中的【酒店推荐专家】。你的唯一任务：根据用户的住宿需求，搜索合适的酒店。
-
-规则：
-1. 用户会给你：目的地城市 + 住宿需求（如"经济型"、"豪华型"、"亲子"、"近市中心"等）
-2. 把住宿需求转换为 1-3 个中文关键词（如"经济型" → "经济 连锁 便宜"）
-3. 调用工具 search_hotels(city, query=关键词, limit=6) 获取真实酒店
-4. 不要编造酒店数据；工具返回什么就用什么
-5. 最终输出：一个 JSON 数组，元素为 {name, type:"hotel", lat, lng, estimated_cost, duration_minutes, description}
-
-你只负责"找到并列出酒店"，不做行程编排。"""
+HOTEL_SYSTEM_PROMPT = get_prompt("hotel", "zh-CN")
 
 
-FOOD_SYSTEM_PROMPT = """你是旅行规划团队中的【餐饮搜索专家】。你的唯一任务：根据用户的口味/菜系偏好，搜索当地值得吃的餐厅。
-
-规则：
-1. 用户会给你：目的地城市 + 口味/菜系偏好（如"川菜"、"海鲜"、"本地小吃"、"素食"等；没有偏好时用"必吃 美食 餐厅"）
-2. 把偏好转换为 1-2 个中文关键词（如"海鲜" → "海鲜"；"本地小吃" → "小吃 必吃"；无偏好 → "必吃 美食"）
-3. 调用工具 search_foods(city, query=关键词, limit=6) 获取真实餐厅
-4. 不要编造餐厅数据；工具返回什么就用什么
-5. 最终输出：一个 JSON 数组，元素为 {name, type:"food", lat, lng, estimated_cost, duration_minutes, description}
-6. 若工具结果为空或搜索失败，原样输出空数组，绝不编造餐厅名
-
-你只负责"找到并列出餐厅"，不做行程编排、不推荐非餐厅地点。"""
+FOOD_SYSTEM_PROMPT = get_prompt("food", "zh-CN")
 
 
-TRANSPORT_SYSTEM_PROMPT = """你是旅行规划团队中的【交通专家】。你的唯一任务：查询出发地到目的地的大交通方案（驾车/高铁/航班）。
-
-规则：
-1. 用户会给你：出发地 + 目的地（+ 日期）
-2. 调用工具 search_transport(departure, destination, date) 获取真实交通方案
-3. 不要编造班次/价格；工具返回什么就用什么；价格缺失就标 None
-4. 最终输出：一个 JSON 对象，结构为
-   {
-     "from": "出发地", "to": "目的地",
-     "options": [
-       {"mode": "driving|train|flight|bus|advice",
-        "duration_minutes": 数字或 null, "price_range": [min,max] 或 null,
-        "source": "amap|tavily", "source_url": "来源链接", "confidence": 0.9,
-        "note": "简短说明"}
-     ],
-     "summary": "一句话概括最推荐的方式"
-   }
-5. 只保留有 source_url 的条目；没有可信来源的不写进 options
-
-你只负责"查询并报告大交通"，不做行程编排。"""
+TRANSPORT_SYSTEM_PROMPT = get_prompt("transport", "zh-CN")
 
 
 DISCOUNT_COLLECTOR_SYSTEM_PROMPT = """你是旅行规划团队中的【优惠收集专家】。你的唯一任务：收集目的地城市相关的折扣与优惠规则。
@@ -248,96 +200,10 @@ async def collect_discount_rules(city: str) -> str:
 DISCOUNT_TOOLS = [collect_discount_rules]
 
 
-PLANNER_SYSTEM_PROMPT = """你是旅行规划团队中的【行程规划专家】。你负责整合团队产出，输出最终完整行程。
-
-你将收到（按顺序）：
-- 用户原始需求：目的地、日期、人数、预算、偏好
-- 景点列表（来自景点搜索专家）
-- 天气预报（来自天气查询专家）
-- 酒店列表（来自酒店推荐专家）
-- 餐饮信息（来自餐厅搜索，可选）
-
-你的规则：
-1. 不要调用任何工具，不要编造不在给定列表中的地点
-2. 只能在给定列表中选择景点/酒店；餐饮从餐厅列表选择；若没有餐厅列表，可用合理的通用描述（如"当地特色餐馆"），但不要编造具体餐厅名
-3. 按天编排：每天 2-4 个站点，含景点 + 餐饮，最后一天可含酒店（住宿）
-4. 日期必须是 YYYY-MM-DD，与用户给定日期范围一致；day_number 从 1 开始
-5. 预算：基于站点 estimated_cost 汇总出 total_estimated 与 by_type（attraction/food/hotel）
-6. 只输出一个 JSON 对象，不要任何多余文字（不要 ``` 代码块）
-
-最终 JSON 结构：
-{
-  "destination": "城市名",
-  "days": [
-    {
-      "day_number": 1,
-      "date": "YYYY-MM-DD",
-      "theme": "当日主题",
-      "stops": [
-        {"name": "...", "type": "attraction|food|hotel", "lat": 0.0, "lng": 0.0,
-         "estimated_cost": 0, "duration_minutes": 120, "description": "..."}
-      ]
-    }
-  ],
-  "budget": {
-    "total_estimated": 0.0,
-    "by_type": {"attraction": 0.0, "food": 0.0, "hotel": 0.0},
-    "currency": "CNY"
-  }
-}"""
+PLANNER_SYSTEM_PROMPT = get_prompt("planner", "zh-CN")
 
 
-CRITIC_SYSTEM_PROMPT = """你是旅行规划团队中的【行程质检专家·协作者】。你的唯一任务：审查 Planner 生成的行程 JSON，找出业务合理性问题；发现问题时，除了打分，还要产出精确的修订指令（diff），让 Planner 不必整段重写。
-
-你将收到：
-1. 用户原始需求（目的地/日期/人数/预算/偏好）
-2. Planner 生成的完整行程 JSON（含 days / budget / hotels）
-
-审查维度（按重要性排序）：
-1. schedule（日程合理性）：日期是否连续、与用户日期一致；站点时间是否冲突；每天是否过满（>6 个站点）；闭馆日/淡旺季常识性错误
-2. budget（预算）：total 是否与 by_type 吻合；是否超出用户预算；估算是否明显离谱
-3. geography（地理路线）：同一天站点是否在地理上严重绕路（跨城/相距极远）；坐标是否缺失或异常
-4. logistics（内容完整性）：是否有"编造"的、不在给定列表中的具体地点；酒店/餐厅是否缺失；关键字段是否为空
-
-输出规则：
-1. 只输出一个 JSON 对象，不要任何多余文字（不要 ``` 代码块）
-2. JSON 结构：
-{
-  "score": 82,
-  "passed": true,
-  "issues": [
-    {
-      "severity": "critical|warning|info",
-      "category": "schedule|budget|geography|logistics|info",
-      "message": "具体问题描述",
-      "suggestion": "建议的修改方向（可选）",
-      "day_number": 1
-    }
-  ],
-  "summary": "一句话总结",
-  "fix": {
-    "actions": [
-      {
-        "op": "replace|add|remove|reorder",
-        "day_number": 1,
-        "target": {"name": "站点名"} 或 {"index": 1},
-        "fields": {"name": "新名", "type": "food", "estimated_cost": 80, "duration_minutes": 90, "description": "..."},
-        "index": 2
-      }
-    ],
-    "summary": "这段修正会做什么"
-  }
-}
-3. fix 规则：
-   - passed=false 且问题可通过少数几个站点级动作修复 → 必须给出 fix（1-5 个动作）
-   - op 语义与修订服务一致：replace=改站点字段 / add=新增站点（fields 必须带 name 和 type）/ remove=删除站点 / reorder=调整顺序（index 为目标位置，1-based）
-   - fields 使用行程 JSON 字段名：name / type / lat / lng / description / estimated_cost / duration_minutes
-   - type 只能是 attraction / food / hotel
-   - 只对行程里真实存在的站点做 replace/remove/reorder；找不到就不做，不要编造
-   - 纯警告/信息类问题、或需要大改（>5 个动作、行程级重排）→ 不输出 fix（省略 fix 字段）
-4. severity 语义：critical=必须修改 / warning=建议修改 / info=提示
-5. 评分建议：>=80 为 passed=true 可通过；70-79 有 warning；<70 有 critical
-6. 只审查你实际看到的问题；没有就列空 issues，不要为了凑数编造问题"""
+CRITIC_SYSTEM_PROMPT = get_prompt("critic", "zh-CN")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -362,14 +228,19 @@ def _extract_json(text: str) -> dict | list | None:
         return None
 
 
-def _validation_feedback(exc: Exception) -> str:
+def _request_locale(request: dict[str, Any] | None) -> str:
+    """从请求快照取输出语种（语言信号已随 request_data 快照落库）。"""
+    return normalize_locale((request or {}).get("language"))
+
+
+def _validation_feedback(exc: Exception, locale: str = "zh-CN") -> str:
     """把 Pydantic ValidationError 转成给 LLM 的简短纠错提示。"""
     errors = getattr(exc, "errors", list)()
     lines = []
     for e in errors[:6]:
         loc = ".".join(str(x) for x in e.get("loc", []))
         lines.append(f"- {loc}: {e.get('msg', 'invalid')}")
-    return "你的最终行程 JSON 校验失败，请修正后重新输出完整的 JSON（不要解释）：\n" + "\n".join(lines)
+    return t(locale, "agent.ctx.validation_feedback") + "\n" + "\n".join(lines)
 
 
 def _questions_text(request: dict[str, Any]) -> str:
@@ -378,6 +249,7 @@ def _questions_text(request: dict[str, Any]) -> str:
     仅保留用户实际回答过的问题（answer 非空）；未回答的不注入，
     避免无意义占位污染 LLM 上下文。无回答时返回空串。
     """
+    locale = _request_locale(request)
     questions = request.get("questions") or []
     answered = [
         q for q in questions
@@ -385,15 +257,15 @@ def _questions_text(request: dict[str, Any]) -> str:
     ]
     if not answered:
         return ""
-    lines = ["【需求澄清 · 用户追问答复】（规划必须尊重以下答复，与偏好冲突时以答复为准）"]
+    lines = [t(locale, "agent.ctx.qa_block")]
     for i, q in enumerate(answered, start=1):
-        q_text = (q.get("question") or "").strip() or f"追问 {i}"
+        q_text = (q.get("question") or "").strip() or t(locale, "agent.ctx.qa_fallback_question", i=i)
         ans = (q.get("answer") or "").strip()
         lines.append(f"{i}. {q_text}：{ans}")
     return "\n".join(lines)
 
 
-def _pace_constraint(pace: str | None) -> str:
+def _pace_constraint(pace: str | None, locale: str = "zh-CN") -> str:
     """节奏档 → 确定性排程约束（task-pacing-leisure 结构化排程约束）。
 
     与 TimeGate 的过饱和阈值同口径（MAX_STOPS_PER_DAY=5 / 480 分钟），
@@ -401,12 +273,9 @@ def _pace_constraint(pace: str | None) -> str:
     PlanB 又把它挪松」的来回拉锯。未知档返回空串（不注入噪音）。
     """
     if pace == "compact":
-        return ("节奏档=紧凑：每天可安排 4-5 个站点（景点+餐饮），在用户不反感的前提下"
-                "优先体验密度；但**不要超过 5 个/天**（TypeGate 校验上限），也不要让单日"
-                "游玩时长超过 480 分钟。")
+        return t(locale, "agent.ctx.pace.compact")
     if pace == "relaxed":
-        return ("节奏档=松弛：每天站点控制在 2-3 个，至少保留一段自由活动/休息的留白，"
-                "不要让行程看起来像赶场。单日站点不要超过 4 个。")
+        return t(locale, "agent.ctx.pace.relaxed")
     return ""  # balanced / 未指定 → 不注入（默认由 LLM 权衡）
 
 
@@ -416,27 +285,27 @@ def _profile_text(request: dict[str, Any]) -> str:
     画像来自用户历史偏好（traveler_type/pace/budget_tier/favorite_cities 等），
     规划时优先尊重；与本次请求冲突时以本次请求为准。无画像返回空串。
     """
+    locale = _request_locale(request)
     profile = request.get("profile_text") or ""
     if not isinstance(profile, str) or not profile.strip():
         return ""
-    return "【跨会话用户画像】（来自该用户历史偏好，规划时请优先尊重；与本次请求冲突时以本次请求为准）\n" + profile.strip()
+    return t(locale, "agent.ctx.profile_block") + "\n" + profile.strip()
 
 
-def _trip_type_hint(trip_type: str) -> str:
+def _trip_type_hint(trip_type: str, locale: str = "zh-CN") -> str:
     """出行性质 → 规划约束提示（确定性规则，仅指导 LLM 侧重点，不硬编码站点）。
 
     未知/自定义性质时给出通用基调，避免误导 LLM。
     """
+    prefix = "agent.ctx.triptype."
     hints = {
-        "商务出差": "节奏紧凑高效，优先商务区/交通枢纽周边酒店与符合工作行程的餐饮；"
-                    "保留必要的会务/休息时间；可含少量当地特色体验但不宜拖沓。",
-        "亲子出游": "节奏放缓，优先亲子友好景点与家庭房酒店；每日站点不宜过多；"
-                    "餐饮选择适合儿童；预留机动时间。",
-        "蜜月度假": "浪漫氛围优先，节奏松弛，住宿与景点侧重私密/景观/纪念意义；少赶路多体验。",
-        "探亲访友": "以亲友相聚时间为中心，住宿建议靠近亲友住处；景点安排灵活，"
-                    "优先本地人推荐与团聚便利的餐饮。",
+        "商务出差": prefix + "business",
+        "亲子出游": prefix + "family",
+        "蜜月度假": prefix + "honeymoon",
+        "探亲访友": prefix + "visiting",
     }
-    return hints.get(trip_type, "以用户整体需求为基调合理安排节奏、住宿与景点，行程务实可行。")
+    key = hints.get(trip_type, prefix + "default")
+    return t(locale, key)
 
 
 def _collect_list_output(state: dict[str, Any]) -> dict[str, Any] | None:
@@ -503,15 +372,16 @@ async def attraction_agent(
 
     async def _node(state: dict[str, Any]) -> dict[str, Any]:
         prov = get_provider(state.get("provider", "auto"))
-        messages = [SystemMessage(content=ATTRACTION_SYSTEM_PROMPT)]
+        locale = normalize_locale(state.get("locale"))
+        messages = [SystemMessage(content=get_prompt("attraction", locale))]
         messages.append(
             HumanMessage(
                 content=(
-                    f"目的地城市：{state['city']}\n"
-                    f"用户偏好：{', '.join(state.get('preferences') or []) or '无特别偏好'}\n"
+                    f"{t(locale, 'agent.ctx.city', value=state['city'])}\n"
+                    f"{t(locale, 'agent.ctx.pref', value=', '.join(state.get('preferences') or []) or t(locale, 'agent.ctx.none'))}\n"
                     f"{_questions_text(state.get('request') or {})}\n"
                     f"{_profile_text(state.get('request') or {})}\n"
-                    "请选择合适的搜索关键词，调用 search_attractions 工具获取景点列表。"
+                    f"{t(locale, 'agent.ctx.choose_keywords_attr')}"
                 )
             )
         )
@@ -550,12 +420,12 @@ async def attraction_agent(
 
     state: dict[str, Any] = {
         "city": city, "preferences": preferences, "provider": provider,
-        "request": request, "messages": [],
+        "request": request, "locale": _request_locale(request), "messages": [],
     }
     try:
         result = await _node(state)
         if result.get("status") != "completed":
-            return {"status": "failed", "error": result.get("error", "景点搜索失败"), "pois": []}
+            return {"status": "failed", "error": result.get("error", t(_request_locale(request), "agent.ctx.attraction_search_failed")), "pois": []}
         # 校验 POI 是否含 name
         pois = [p for p in result.get("pois", []) if p.get("name")]
         return {"status": "completed", "pois": pois}
@@ -600,15 +470,16 @@ async def hotel_agent(
 
     async def _node(state: dict[str, Any]) -> dict[str, Any]:
         prov = get_provider(state.get("provider", "auto"))
-        messages = [SystemMessage(content=HOTEL_SYSTEM_PROMPT)]
+        locale = normalize_locale(state.get("locale"))
+        messages = [SystemMessage(content=get_prompt("hotel", locale))]
         messages.append(
             HumanMessage(
                 content=(
-                    f"目的地城市：{state['city']}\n"
-                    f"住宿需求：{', '.join(state.get('accommodation') or []) or '无特别需求（默认推荐评分较高的酒店）'}\n"
+                    f"{t(locale, 'agent.ctx.city', value=state['city'])}\n"
+                    f"{t(locale, 'agent.ctx.accommodation', value=', '.join(state.get('accommodation') or []) or t(locale, 'agent.ctx.stay_no_pref'))}\n"
                     f"{_questions_text(state.get('request') or {})}\n"
                     f"{_profile_text(state.get('request') or {})}\n"
-                    "请选择合适的搜索关键词，调用 search_hotels 工具获取酒店列表。"
+                    f"{t(locale, 'agent.ctx.choose_keywords_hotel')}"
                 )
             )
         )
@@ -645,12 +516,12 @@ async def hotel_agent(
 
     state: dict[str, Any] = {
         "city": city, "accommodation": accommodation, "provider": provider,
-        "request": request, "messages": [],
+        "request": request, "locale": _request_locale(request), "messages": [],
     }
     try:
         result = await _node(state)
         if result.get("status") != "completed":
-            return {"status": "failed", "error": result.get("error", "酒店搜索失败"), "pois": []}
+            return {"status": "failed", "error": result.get("error", t(_request_locale(request), "agent.ctx.hotel_search_failed")), "pois": []}
         pois = [p for p in result.get("pois", []) if p.get("name")]
         return {"status": "completed", "pois": pois}
     except Exception as exc:  # noqa: BLE001
@@ -678,15 +549,16 @@ async def food_agent(
 
     async def _node(state: dict[str, Any]) -> dict[str, Any]:
         prov = get_provider(state.get("provider", "auto"))
-        messages = [SystemMessage(content=FOOD_SYSTEM_PROMPT)]
+        locale = normalize_locale(state.get("locale"))
+        messages = [SystemMessage(content=get_prompt("food", locale))]
         messages.append(
             HumanMessage(
                 content=(
-                    f"目的地城市：{state['city']}\n"
-                    f"口味/菜系偏好：{', '.join(state.get('food_preferences') or []) or '无特别偏好'}\n"
+                    f"{t(locale, 'agent.ctx.city', value=state['city'])}\n"
+                    f"{t(locale, 'agent.ctx.taste', value=', '.join(state.get('food_preferences') or []) or t(locale, 'agent.ctx.none'))}\n"
                     f"{_questions_text(state.get('request') or {})}\n"
                     f"{_profile_text(state.get('request') or {})}\n"
-                    "请选择合适的搜索关键词，调用 search_foods 工具获取餐厅列表。"
+                    f"{t(locale, 'agent.ctx.choose_keywords_food')}"
                 )
             )
         )
@@ -723,12 +595,12 @@ async def food_agent(
 
     state: dict[str, Any] = {
         "city": city, "food_preferences": food_preferences, "provider": provider,
-        "request": request, "messages": [],
+        "request": request, "locale": _request_locale(request), "messages": [],
     }
     try:
         result = await _node(state)
         if result.get("status") != "completed":
-            return {"status": "failed", "error": result.get("error", "餐厅搜索失败"), "pois": []}
+            return {"status": "failed", "error": result.get("error", t(_request_locale(request), "agent.ctx.food_search_failed")), "pois": []}
         pois = [p for p in result.get("pois", []) if p.get("name")]
         return {"status": "completed", "pois": pois}
     except Exception as exc:  # noqa: BLE001
@@ -746,6 +618,7 @@ async def transport_agent(
     date: str | None = None,
     provider: str = "auto",
     max_iterations: int | None = None,
+    locale: str = "zh-CN",
 ) -> dict[str, Any]:
     """出发地 → 目的地 的大交通方案采集。
 
@@ -753,19 +626,21 @@ async def transport_agent(
     否则调用 search_transport 获取真实方案，输出 plan.transport 结构。
     绝不编造价格：无可信来源的条目不返回（由工具层硬闸门保证）。
     """
+    locale = normalize_locale(locale)
     if not departure or not departure.strip():
-        return {"status": "skipped", "transport": None, "error": "未提供出发地"}
+        return {"status": "skipped", "transport": None, "error": t(locale, "agent.ctx.no_departure")}
 
     async def _node(state: dict[str, Any]) -> dict[str, Any]:
         prov = get_provider(state.get("provider", "auto"))
-        messages: list[Any] = [SystemMessage(content=TRANSPORT_SYSTEM_PROMPT)]
+        locale = normalize_locale(state.get("locale"))
+        messages: list[Any] = [SystemMessage(content=get_prompt("transport", locale))]
         messages.append(
             HumanMessage(
                 content=(
-                    f"出发地：{state['departure']}\n"
-                    f"目的地：{state['destination']}\n"
-                    f"日期：{state.get('date') or '未指定'}\n"
-                    "请调用 search_transport 获取大交通方案。"
+                    f"{t(locale, 'agent.ctx.departure_short', value=state['departure'])}\n"
+                    f"{t(locale, 'agent.ctx.destination_short', value=state['destination'])}\n"
+                    f"{t(locale, 'agent.ctx.date_short', value=state.get('date') or t(locale, 'agent.ctx.date_unspecified'))}\n"
+                    f"{t(locale, 'agent.ctx.call_transport')}"
                 )
             )
         )
@@ -775,13 +650,13 @@ async def transport_agent(
             parsed = _extract_json(str(getattr(response, "content", "")))
             if isinstance(parsed, dict) and parsed.get("options"):
                 return {"messages": [response], "status": "completed", "transport": parsed}
-            return {"messages": [response], "status": "failed", "error": "Agent 未调用交通工具"}
+            return {"messages": [response], "status": "failed", "error": t(locale, "agent.ctx.agent_no_transport_tool")}
         tool_calls = tool_calls[: max_iterations if max_iterations is not None else settings.AGENT_MAX_ITERATIONS]
         tool_msgs = []
         for tc in tool_calls:
             fn = TOOL_MAP.get(tc.get("name") or "")
             if fn is None:
-                return {"messages": [response], "status": "failed", "error": f"未知工具 {tc.get('name')}"}
+                return {"messages": [response], "status": "failed", "error": t(locale, "agent.ctx.unknown_tool", name=tc.get("name"))}
             try:
                 result = await fn.ainvoke(tc.get("args") or {})
             except Exception as exc:  # noqa: BLE001
@@ -813,17 +688,17 @@ async def transport_agent(
                     }
                     break
         if transport is None:
-            return {"messages": state["messages"], "status": "failed", "error": "无法解析交通方案"}
+            return {"messages": state["messages"], "status": "failed", "error": t(locale, "agent.ctx.transport_parse_failed")}
         return {"messages": state["messages"], "status": "completed", "transport": transport}
 
     state: dict[str, Any] = {
         "departure": departure.strip(), "destination": destination,
-        "date": date, "provider": provider, "messages": [],
+        "date": date, "provider": provider, "locale": locale, "messages": [],
     }
     try:
         result = await _node(state)
         if result.get("status") != "completed":
-            return {"status": "failed", "error": result.get("error", "交通查询失败"), "transport": None}
+            return {"status": "failed", "error": result.get("error", t(locale, "agent.ctx.transport_query_failed")), "transport": None}
         # 硬闸门：过滤掉缺 source_url / confidence<0.5 的条目（不编造）
         options = [
             o for o in (result.get("transport") or {}).get("options", [])
@@ -878,8 +753,9 @@ async def planner_agent(
                      为空表示首次生成。
     """
     prov = get_provider(provider)
-    messages: list[Any] = [SystemMessage(content=PLANNER_SYSTEM_PROMPT)]
-    messages.append(HumanMessage(content=_planner_user_text(request, materials)))
+    locale = _request_locale(request)
+    messages: list[Any] = [SystemMessage(content=get_prompt("planner", locale))]
+    messages.append(HumanMessage(content=_planner_user_text(request, materials, locale=locale)))
     if review_feedback:
         messages.append(SystemMessage(content=review_feedback))
 
@@ -892,7 +768,7 @@ async def planner_agent(
         if not isinstance(final, dict):
             corrections += 1
             last_error = "未找到合法 JSON"
-            messages.append(SystemMessage(content="你的输出中未找到合法的行程 JSON。请只输出一个 JSON 对象，不要解释。"))
+            messages.append(SystemMessage(content=t(locale, "agent.ctx.msg_no_json_plan")))
             continue
         try:
             clean = validate_plan(final)
@@ -901,38 +777,48 @@ async def planner_agent(
             corrections += 1
             last_error = str(exc)
             logger.info("Planner 校验失败 (correction=%d): %s", corrections, exc)
-            messages.append(SystemMessage(content=_validation_feedback(exc)))
+            messages.append(SystemMessage(content=_validation_feedback(exc, locale)))
     return {"status": "failed", "error": f"Planner 多次校验失败: {last_error}", "plan": None}
 
 
-def _planner_user_text(request: dict[str, Any], materials: dict[str, Any]) -> str:
+def _planner_user_text(request: dict[str, Any], materials: dict[str, Any], *, locale: str = "zh-CN") -> str:
     """把用户需求 + 团队材料组装成给 Planner 的完整上下文。
 
     注意：规划往返期间的往返提示（评审反馈）由外层 caller 负责拼进消息，
     本函数只负责"第一版"的上下文（不含评审历史）。
     """
+    locale = normalize_locale(locale)
     lines: list[str] = []
-    lines.append("【用户原始需求】")
+    lines.append(t(locale, "agent.ctx.user_request"))
     departure = request.get("departure") or ""
-    dep_text = f"出发地：{departure}；" if departure else ""
+    dep_text = t(locale, "agent.ctx.departure", value=departure) if departure else ""
     # 出行性质（trip_type）：影响节奏/住宿/景点取舍；无则按默认休闲理解
     trip_type = (request.get("trip_type") or "").strip()
-    tt_text = f"出行性质：{trip_type}；" if trip_type else "出行性质：休闲旅游（未指定）；"
+    tt_text = (
+        t(locale, "agent.ctx.trip_type", value=trip_type) if trip_type
+        else t(locale, "agent.ctx.trip_type", value=t(locale, "agent.ctx.trip_type.leisure"))
+    )
+    budget = request.get("budget")
+    budget_text = (
+        t(locale, "agent.ctx.budget", value=f"{budget} {t(locale, 'agent.ctx.currency.yuan')}")
+        if budget is not None else t(locale, "agent.ctx.budget", value=t(locale, "agent.ctx.budget.unspecified"))
+    )
     lines.append(
-        f"{dep_text}目的地：{request.get('destination', '')}；日期：{request.get('start_date', '')} 至 {request.get('end_date', '')}；"
-        f"人数：{request.get('travelers', 1)}；预算：{request.get('budget', '未指定')} 元；"
-        f"{tt_text}偏好：{', '.join(request.get('preferences') or []) or '无'}"
+        f"{dep_text}{t(locale, 'agent.ctx.destination_short', value=request.get('destination', ''))}；"
+        f"{t(locale, 'agent.ctx.dates', start=request.get('start_date', ''), end=request.get('end_date', ''))}；"
+        f"{t(locale, 'agent.ctx.travelers', value=request.get('travelers', 1))}；{budget_text}；"
+        f"{tt_text}{t(locale, 'agent.ctx.preferences', value=', '.join(request.get('preferences') or []) or t(locale, 'agent.ctx.none'))}"
     )
     # 出行性质 → 规划约束（仅在有明确性质时追加；让 LLM 更易遵循）
     if trip_type:
-        hint = _trip_type_hint(trip_type)
-        lines.append(f"【出行性质约束】{hint}")
+        hint = _trip_type_hint(trip_type, locale)
+        lines.append(f"{t(locale, 'agent.ctx.trip_type_constraint')}{hint}")
 
     # 节奏档 → 确定性排程约束（与 TimeGate 同口径；relaxed/compact 才注入）
     pace = (request.get("pace") or "").strip() or None
-    pace_text = _pace_constraint(pace)
+    pace_text = _pace_constraint(pace, locale)
     if pace_text:
-        lines.append(f"【节奏档约束】{pace_text}")
+        lines.append(f"{t(locale, 'agent.ctx.pace_constraint')}{pace_text}")
 
     # 主动提问 Q&A（需求澄清）：有回答才注入，未回答的问题忽略
     qa_text = _questions_text(request)
@@ -947,44 +833,44 @@ def _planner_user_text(request: dict[str, Any], materials: dict[str, Any]) -> st
     # 采集失败的源：明确告知 Planner，让它仍然能编排（部分失败 → 优雅降级）
     failed_sources = materials.get("failed_sources") or []
     if failed_sources:
-        lines.append("\n【采集告警】以下信息来源失败（不要编造替代数据，但可以给出合理通用描述，并在对应位置标注降级）：")
+        lines.append("\n" + t(locale, "agent.ctx.collect_warning"))
         lines.append("、".join(failed_sources))
 
     attractions = materials.get("attractions") or []
-    lines.append(f"\n【景点列表】（{len(attractions)} 个，来自景点搜索专家）")
+    lines.append(f"\n{t(locale, 'agent.ctx.attraction_list', n=len(attractions))}")
     if attractions:
         lines.append(json.dumps(attractions, ensure_ascii=False)[:4000])
     else:
-        lines.append("（空：景点搜索失败或未返回结果）")
+        lines.append(t(locale, "agent.ctx.attraction_empty"))
 
     weather = materials.get("weather") or {}
-    lines.append("\n【天气预报】（来自天气查询专家）")
+    lines.append("\n" + t(locale, "agent.ctx.weather_report"))
     lines.append(json.dumps(weather, ensure_ascii=False)[:1500])
 
     hotels = materials.get("hotels") or []
-    lines.append(f"\n【酒店列表】（{len(hotels)} 个，来自酒店推荐专家）")
+    lines.append(f"\n{t(locale, 'agent.ctx.hotel_list', n=len(hotels))}")
     if hotels:
         lines.append(json.dumps(hotels, ensure_ascii=False)[:4000])
     else:
-        lines.append("（空：酒店搜索失败或未返回结果，可给出通用住宿建议）")
+        lines.append(t(locale, "agent.ctx.hotel_empty"))
 
     foods = materials.get("foods") or []
     if foods:
-        lines.append(f"\n【餐厅列表】（{len(foods)} 个，来自餐厅搜索）")
+        lines.append(f"\n{t(locale, 'agent.ctx.restaurant_list', n=len(foods))}")
         lines.append(json.dumps(foods, ensure_ascii=False)[:4000])
 
     transport = materials.get("transport") or None
     if transport:
-        lines.append("\n【大交通方案】（来自交通专家）")
+        lines.append("\n" + t(locale, "agent.ctx.transport_options"))
         lines.append(json.dumps(transport, ensure_ascii=False)[:2500])
-        lines.append("提示：首日到达时间/末日离开时间应参考大交通方案，避免行程与班次冲突。")
+        lines.append(t(locale, "agent.ctx.transport_hint"))
 
     discount_rules = materials.get("discount_rules") or []
     if discount_rules:
-        lines.append(f"\n【折扣规则】（{len(discount_rules)} 条，来自优惠收集专家，估算预算时可参考）")
+        lines.append(f"\n{t(locale, 'agent.ctx.discount_rules', n=len(discount_rules))}")
         lines.append(json.dumps(discount_rules, ensure_ascii=False)[:2000])
 
-    lines.append("\n请整合以上全部信息，输出完整行程 JSON。")
+    lines.append("\n" + t(locale, "agent.ctx.integrate"))
     return "\n".join(lines)
 
 
@@ -1010,20 +896,28 @@ async def critic_agent(
     保证调用方永远能得到一份可消费的报告——质检绝不能阻断主流程。
     """
     prov = get_provider(provider)
-    messages: list[Any] = [SystemMessage(content=CRITIC_SYSTEM_PROMPT)]
+    locale = _request_locale(request)
+    messages: list[Any] = [SystemMessage(content=get_prompt("critic", locale))]
+    budget_val = request.get("budget")
+    budget_text = (
+        f"{budget_val} {t(locale, 'agent.ctx.currency.yuan')}"
+        if budget_val is not None else t(locale, "agent.ctx.budget.unspecified")
+    )
     critic_req = (
-        f"【用户原始需求】目的地：{request.get('destination', '')}；"
-        f"日期：{request.get('start_date', '')} 至 {request.get('end_date', '')}；"
-        f"人数：{request.get('travelers', 1)}；预算：{request.get('budget', '未指定')} 元；"
-        f"偏好：{', '.join(request.get('preferences') or []) or '无'}"
+        f"{t(locale, 'agent.ctx.user_request')}"
+        f"{t(locale, 'agent.ctx.destination_short', value=request.get('destination', ''))}；"
+        f"{t(locale, 'agent.ctx.dates', start=request.get('start_date', ''), end=request.get('end_date', ''))}；"
+        f"{t(locale, 'agent.ctx.travelers', value=request.get('travelers', 1))}；"
+        f"{t(locale, 'agent.ctx.budget', value=budget_text)}；"
+        f"{t(locale, 'agent.ctx.preferences', value=', '.join(request.get('preferences') or []) or t(locale, 'agent.ctx.none'))}"
     )
     qa_text = _questions_text(request)
     if qa_text:
         critic_req += f"\n{qa_text}"
     pace = (request.get("pace") or "").strip() or None
-    pace_text = _pace_constraint(pace)
+    pace_text = _pace_constraint(pace, locale)
     if pace_text:
-        critic_req += f"\n【节奏档约束】{pace_text}"
+        critic_req += f"\n{t(locale, 'agent.ctx.pace_constraint')}{pace_text}"
     profile_text = _profile_text(request)
     if profile_text:
         critic_req += f"\n{profile_text}"
@@ -1031,8 +925,8 @@ async def critic_agent(
         HumanMessage(
             content=(
                 f"{critic_req}\n\n"
-                f"【待审查行程 JSON】\n{json.dumps(plan, ensure_ascii=False)[:6000]}\n\n"
-                "请审查并输出质检报告 JSON。"
+                f"{t(locale, 'agent.ctx.critic_under_review')}\n{json.dumps(plan, ensure_ascii=False)[:6000]}\n\n"
+                f"{t(locale, 'agent.ctx.critic_review_prompt')}"
             )
         )
     )
@@ -1047,13 +941,13 @@ async def critic_agent(
             response = await invoke_with_resilience(prov, messages, providers=[prov])
         except Exception as exc:  # noqa: BLE001 — LLM 调用失败也要降级，绝不阻断主流程
             logger.warning("Critic 调用失败，降级放行: %s", exc)
-            return {"status": "degraded", "critique": _pass_critique("质检调用失败，按通过处理"), "corrections": corrections}
+            return {"status": "degraded", "critique": _pass_critique(t(locale, "agent.ctx.qa_pass_summary")), "corrections": corrections}
         content = str(getattr(response, "content", ""))
         parsed = _extract_json(content)
         if not isinstance(parsed, dict):
             corrections += 1
             last_error = "未找到合法 JSON"
-            messages.append(SystemMessage(content="你的输出中未找到合法的质检 JSON。请只输出一个 JSON 对象，不要解释。"))
+            messages.append(SystemMessage(content=t(locale, "agent.ctx.msg_no_json_qa")))
             continue
         try:
             clean = validate_critique(parsed)
@@ -1064,10 +958,10 @@ async def critic_agent(
             corrections += 1
             last_error = str(exc)
             logger.info("Critic 校验失败 (correction=%d): %s", corrections, exc)
-            messages.append(SystemMessage(content=_validation_feedback(exc)))
+            messages.append(SystemMessage(content=_validation_feedback(exc, locale)))
 
     logger.warning("Critic 多次校验失败，降级放行: %s", last_error)
-    return {"status": "degraded", "critique": _pass_critique("质检报告生成失败，按通过处理"), "corrections": corrections}
+    return {"status": "degraded", "critique": _pass_critique(t(locale, "agent.ctx.qa_report_failed")), "corrections": corrections}
 
 
 def _pass_critique(summary: str) -> dict[str, Any]:
@@ -1087,26 +981,7 @@ def _pass_critique(summary: str) -> dict[str, Any]:
 # 审查重点 = 本次修改是否忠实满足用户请求 + 是否引入新的业务问题。
 # 未通过且问题可精确修复时附带 fix（CriticFixSchema），修订闭环把它转成
 # 可执行 diff 应用后继续下一轮复审（Evaluator-Optimizer 循环）。
-REVISE_CRITIC_SYSTEM_PROMPT = """你是旅行规划团队中的【行程质检专家·修订复核】。你的唯一任务：在用户对已生成行程发起一次修订后，复核修订结果。
-
-你将收到：
-1. 用户原始需求（目的地 / 预算）
-2. 用户本次修订请求（用户想让 AI 改什么）
-3. AI 已执行的修订摘要（diff 的 summary）
-4. 修订后的完整行程 JSON
-
-审查维度（按重要性排序）：
-1. 修订是否忠实满足用户请求（最重要）：用户要改的改了吗？用户没让动的被无故改了吗？
-2. 修订是否引入新的业务合理性问题（schedule 日程 / budget 预算 / geography 地理 / logistics 完整性）
-3. 修订后行程是否自相矛盾
-
-输出规则：
-1. 只输出一个 JSON 对象，不要任何多余文字（不要 ``` 代码块）
-2. JSON 结构与质检报告一致：{"score": 0-100, "passed": bool, "issues": [...], "summary": "...", "fix": {...}}
-3. passed=false 且问题可通过少数精确动作修复 → 必须给出 fix（1-3 个动作；op 语义与修订一致：replace=改站点字段 / add=新增站点（fields 带 name+type）/ remove=删除 / reorder=调序，type 只能 attraction|food|hotel，只对真实存在的站点操作）
-4. 纯警告/信息类问题、或需要大改（>3 个动作）→ 省略 fix 字段
-5. score >= 80 为 passed=true；issue severity：critical=必须修改 / warning=建议修改 / info=提示
-6. 只审查实际看到的问题；没有就列空 issues，不要为了凑数编造问题"""
+REVISE_CRITIC_SYSTEM_PROMPT = get_prompt("revise_critic", "zh-CN")
 
 
 async def revise_critic_agent(
@@ -1124,22 +999,30 @@ async def revise_critic_agent(
     永远得到可消费报告——质检绝不阻断已落库的合法修订。
     """
     prov = get_provider(provider)
-    messages: list[Any] = [SystemMessage(content=REVISE_CRITIC_SYSTEM_PROMPT)]
+    locale = _request_locale(request)
+    messages: list[Any] = [SystemMessage(content=get_prompt("revise_critic", locale))]
+    budget_val = request.get("budget")
+    budget_text = (
+        f"{budget_val} {t(locale, 'agent.ctx.currency.yuan')}"
+        if budget_val is not None else t(locale, "agent.ctx.budget.unspecified")
+    )
     critic_req = (
-        f"【用户原始需求】目的地：{request.get('destination', '')}；"
-        f"人数：{request.get('travelers', 1)}；预算：{request.get('budget', '未指定')} 元；"
-        f"偏好：{', '.join(request.get('preferences') or []) or '无'}"
+        f"{t(locale, 'agent.ctx.user_request')}"
+        f"{t(locale, 'agent.ctx.destination_short', value=request.get('destination', ''))}；"
+        f"{t(locale, 'agent.ctx.travelers', value=request.get('travelers', 1))}；"
+        f"{t(locale, 'agent.ctx.budget', value=budget_text)}；"
+        f"{t(locale, 'agent.ctx.preferences', value=', '.join(request.get('preferences') or []) or t(locale, 'agent.ctx.none'))}"
     )
     if request.get("message"):
-        critic_req += f"\n【用户本次修订请求】{request['message']}"
+        critic_req += f"\n{t(locale, 'agent.ctx.critic_modify_request')}{request['message']}"
     if request.get("revise_summary"):
-        critic_req += f"\n【AI 已执行的修订摘要】{request['revise_summary']}"
+        critic_req += f"\n{t(locale, 'agent.ctx.critic_summary_done')}{request['revise_summary']}"
     messages.append(
         HumanMessage(
             content=(
                 f"{critic_req}\n\n"
-                f"【修订后行程 JSON】\n{json.dumps(plan, ensure_ascii=False)[:6000]}\n\n"
-                "请审查并输出质检报告 JSON。"
+                f"{t(locale, 'agent.ctx.critic_revised_json')}\n{json.dumps(plan, ensure_ascii=False)[:6000]}\n\n"
+                f"{t(locale, 'agent.ctx.critic_review_prompt')}"
             )
         )
     )
@@ -1154,7 +1037,7 @@ async def revise_critic_agent(
             logger.warning("ReviseCritic 调用失败，降级放行: %s", exc)
             return {
                 "status": "degraded",
-                "critique": _pass_critique("修订复核调用失败，按通过处理"),
+                "critique": _pass_critique(t(locale, "agent.ctx.qa_revise_call_failed")),
                 "corrections": corrections,
             }
         content = str(getattr(response, "content", ""))
@@ -1162,7 +1045,7 @@ async def revise_critic_agent(
         if not isinstance(parsed, dict):
             corrections += 1
             last_error = "未找到合法 JSON"
-            messages.append(SystemMessage(content="你的输出中未找到合法的质检 JSON。请只输出一个 JSON 对象，不要解释。"))
+            messages.append(SystemMessage(content=t(locale, "agent.ctx.msg_no_json_qa")))
             continue
         try:
             clean = validate_critique(parsed)
@@ -1173,12 +1056,12 @@ async def revise_critic_agent(
             corrections += 1
             last_error = str(exc)
             logger.info("ReviseCritic 校验失败 (correction=%d): %s", corrections, exc)
-            messages.append(SystemMessage(content=_validation_feedback(exc)))
+            messages.append(SystemMessage(content=_validation_feedback(exc, locale)))
 
     logger.warning("ReviseCritic 多次校验失败，降级放行: %s", last_error)
     return {
         "status": "degraded",
-        "critique": _pass_critique("修订复核报告生成失败，按通过处理"),
+        "critique": _pass_critique(t(locale, "agent.ctx.qa_revise_report_failed")),
         "corrections": corrections,
     }
 
@@ -1186,39 +1069,7 @@ async def revise_critic_agent(
 # ═══════════════════════════════════════════════════════════
 #  PlanReviseAgent —— 行程修订专家（方案 B：对话改行程）
 # ═══════════════════════════════════════════════════════════
-REVISE_SYSTEM_PROMPT = """你是旅行规划团队中的【行程修订专家】。你的唯一任务：把用户对已生成行程的修改请求，转成结构化的变更指令（diff）。
-
-你将收到：
-1. 用户原始需求（目的地 / 预算）+ 新的修改消息
-2. 当前行程 JSON（days / budget）
-
-规则：
-1. 不要直接修改行程，只输出变更指令（diff）—— 由编排层代码执行
-2. 只对「当前行程里真实存在」的目标做操作；找不到就报错，不要编造
-3. 支持的操作：
-   - replace：修改某个现有站点的字段（target 用 name 或 index）
-   - add：新增一个站点（day_number + fields.name + 可选 index）
-   - remove：删除一个站点（target 用 name 或 index）
-   - reorder：调整站点顺序（target + index）
-4. 字段白名单：name / stop_type / lat / lng / description / estimated_cost / estimated_duration_minutes
-5. stop_type 只能是 attraction / food / hotel
-6. 一次消息里有多件事 → 生成多个 actions；无法理解 → 输出空 actions + 说明
-7. 日期、人数、预算等行程级变更 → 用 replace 改 day 或整体（暂不支持改行程元信息，说明不支持即可）
-8. summary：一句给用户看的变更摘要
-
-输出 JSON（不要 ``` 代码块）：
-{
-  "actions": [
-    {
-      "op": "replace|add|remove|reorder",
-      "day_number": 1,
-      "target": {"name": "西湖"} 或 {"index": 1},
-      "fields": {"name": "...", "stop_type": "food", "estimated_cost": 80, "estimated_duration_minutes": 90},
-      "index": 2
-    }
-  ],
-  "summary": "已把第三天西湖调整为半天，新增楼外楼晚餐"
-}"""
+REVISE_SYSTEM_PROMPT = get_prompt("revise", "zh-CN")
 
 
 async def plan_revise_agent(
@@ -1236,15 +1087,22 @@ async def plan_revise_agent(
     from app.schemas import ReviseDiff
 
     prov = get_provider(provider)
-    messages: list[Any] = [SystemMessage(content=REVISE_SYSTEM_PROMPT)]
+    locale = _request_locale(request)
+    messages: list[Any] = [SystemMessage(content=get_prompt("revise", locale))]
+    budget_val = request.get("budget")
+    budget_text = (
+        f"{budget_val} {t(locale, 'agent.ctx.currency.yuan')}"
+        if budget_val is not None else t(locale, "agent.ctx.budget.unspecified")
+    )
     messages.append(
         HumanMessage(
             content=(
-                f"【用户原始需求】目的地：{request.get('destination', '')}；"
-                f"预算：{request.get('budget', '未指定')} 元\n"
-                f"【用户本次修改请求】{request.get('message', '')}\n\n"
-                f"【当前行程 JSON】\n{json.dumps(plan, ensure_ascii=False)[:5000]}\n\n"
-                "请输出修订 diff JSON。"
+                f"{t(locale, 'agent.ctx.user_request')}"
+                f"{t(locale, 'agent.ctx.destination_short', value=request.get('destination', ''))}；"
+                f"{t(locale, 'agent.ctx.budget', value=budget_text)}\n"
+                f"{t(locale, 'agent.ctx.critic_modify_request')}{request.get('message', '')}\n\n"
+                f"{t(locale, 'agent.ctx.revise_current_json')}\n{json.dumps(plan, ensure_ascii=False)[:5000]}\n\n"
+                f"{t(locale, 'agent.ctx.revise_prompt')}"
             )
         )
     )
@@ -1258,7 +1116,7 @@ async def plan_revise_agent(
         if not isinstance(parsed, dict):
             corrections += 1
             last_error = "未找到合法 JSON"
-            messages.append(SystemMessage(content="你的输出中未找到合法的修订 JSON。请只输出一个 JSON 对象，不要解释。"))
+            messages.append(SystemMessage(content=t(locale, "agent.ctx.msg_no_json_revise")))
             continue
         try:
             clean = ReviseDiff.model_validate(parsed).model_dump(mode="json")
@@ -1269,7 +1127,7 @@ async def plan_revise_agent(
                 "trace": [{
                     "agent": "PlanReviseAgent",
                     "action": "revise",
-                    "observation": f"{len(clean.get('actions') or [])} 条变更指令 · {clean.get('summary') or ''}",
+                    "observation": f"{len(clean.get('actions') or [])} actions · {clean.get('summary') or ''}",
                     "status": "completed",
                 }],
                 "provider": prov.name,
@@ -1279,19 +1137,19 @@ async def plan_revise_agent(
             corrections += 1
             last_error = str(exc)
             logger.info("ReviseAgent 校验失败 (correction=%d): %s", corrections, exc)
-            messages.append(SystemMessage(content=_validation_feedback(exc)))
+            messages.append(SystemMessage(content=_validation_feedback(exc, locale)))
 
     return {"status": "failed", "error": f"修订指令解析多次失败: {last_error}", "diff": None}
 
 
-def _critic_feedback(critique: dict[str, Any]) -> str:
+def _critic_feedback(critique: dict[str, Any], locale: str = "zh-CN") -> str:
     """把质检报告转成给 Planner 的修改指令（只含未通过项，避免信息过载）。"""
     issues = critique.get("issues") or []
     actionable = [i for i in issues if i.get("severity") in ("critical", "warning")]
     if not actionable:
-        return "质检通过，无需修改。"
+        return t(locale, "agent.ctx.review_pass")
 
-    lines = ["【行程质检报告】以下问题需要你修改后重新输出完整行程 JSON（不要解释，只输出新的 JSON）："]
+    lines = [t(locale, "agent.ctx.critic_feedback_title")]
     for i, issue in enumerate(actionable, start=1):
         loc = f"（Day {issue.get('day_number')}）" if issue.get("day_number") else ""
         lines.append(
@@ -1299,8 +1157,8 @@ def _critic_feedback(critique: dict[str, Any]) -> str:
             f"{issue.get('message', '')}"
         )
         if issue.get("suggestion"):
-            lines.append(f"   建议：{issue['suggestion']}")
-    lines.append("请基于以上反馈修正行程并重新输出完整 JSON，不要解释。")
+            lines.append(t(locale, "agent.ctx.critic_feedback_suggestion", value=issue["suggestion"]))
+    lines.append(t(locale, "agent.ctx.critic_feedback_fix"))
     return "\n".join(lines)
 
 
@@ -1334,6 +1192,10 @@ async def run_planning_agents(
     """
     city = request.get("destination", "")
     prefs = request.get("preferences") or []
+    locale = _request_locale(request)
+    # 偏好解析：前端可能传「稳定 key」（food/nature）或「当前语言 label」；
+    # 统一转成搜索关键词（语言无关契约），采集 Agent 不再依赖 UI 语言。
+    pref_keywords = preference_keys_to_keywords(locale, prefs)
     trace: list[dict[str, Any]] = []
     review_history: list[dict[str, Any]] = []  # 每次评审的报告（给 Planner 作为上下文）
 
@@ -1344,10 +1206,10 @@ async def run_planning_agents(
     #    采集 agent 内部最多调用工具一次，无 LLM 迭代循环，但通过参数显式带上限。
     #    FoodAgent 主路径（口味偏好 → search_foods）；失败由下方降级补位代码兜底。
     agent_max_iter = max_iterations if max_iterations is not None else settings.AGENT_MAX_ITERATIONS
-    attraction_task = attraction_agent(city, prefs, request=request, provider=provider, max_iterations=agent_max_iter)
+    attraction_task = attraction_agent(city, pref_keywords, request=request, provider=provider, max_iterations=agent_max_iter)
     weather_task = weather_agent(city)
     hotel_task = hotel_agent(city, _accommodation_hints(request), request=request, provider=provider, max_iterations=agent_max_iter)
-    food_task = food_agent(city, _food_hints(prefs), request=request, provider=provider, max_iterations=agent_max_iter)
+    food_task = food_agent(city, _food_hints(pref_keywords), request=request, provider=provider, max_iterations=agent_max_iter)
     transport_task = transport_agent(
         request.get("departure"), city,
         date=request.get("start_date"), provider=provider, max_iterations=agent_max_iter,
@@ -1364,25 +1226,26 @@ async def run_planning_agents(
         asyncio.create_task(_emit_plan_event({"type": "trace", "trace": entry}))
 
     _append_trace({"agent": "AttractionSearchAgent", "action": "search_attractions",
-                  "observation": f"{city} 景点 {len(a_res.get('pois', []))} 个",
+                  "observation": t(locale, "plan.trace.collecting.attractions", city=city, n=len(a_res.get("pois", []))),
                   "status": a_res.get("status")})
     _append_trace({"agent": "WeatherQueryAgent", "action": "query_weather",
-                  "observation": f"{city} 未来天气（source={w_res.get('weather', {}).get('source', '?')}）",
+                  "observation": t(locale, "plan.trace.collecting.weather", city=city, source=w_res.get("weather", {}).get("source", "?")),
                   "status": w_res.get("status")})
     _append_trace({"agent": "HotelAgent", "action": "search_hotels",
-                  "observation": f"{city} 酒店 {len(h_res.get('pois', []))} 个",
+                  "observation": t(locale, "plan.trace.collecting.hotels", city=city, n=len(h_res.get("pois", []))),
                   "status": h_res.get("status")})
     _append_trace({"agent": "FoodAgent", "action": "search_foods",
-                  "observation": f"{city} 餐厅 {len(food_res.get('pois', []))} 个",
+                  "observation": t(locale, "plan.trace.collecting.foods", city=city, n=len(food_res.get("pois", []))),
                   "status": food_res.get("status")})
     _append_trace({"agent": "TransportAgent", "action": "search_transport",
                   "observation": (
-                      f"{request.get('departure') or '未提供出发地'}→{city} 交通方案 "
-                      f"{len((t_res.get('transport') or {}).get('options', []))} 条"
+                      t(locale, "plan.trace.collecting.transport",
+                        departure=request.get("departure") or t(locale, "plan.trace.collecting.transport.skipped"),
+                        city=city, n=len((t_res.get("transport") or {}).get("options", [])))
                   ),
                   "status": t_res.get("status")})
     _append_trace({"agent": "DiscountAgent", "action": "collect_discount_rules",
-                  "observation": f"{city} 折扣规则 {len(d_res.get('rules', []))} 条",
+                  "observation": t(locale, "plan.trace.collecting.discounts", city=city, n=len(d_res.get("rules", []))),
                   "status": d_res.get("status")})
 
     # 2) 餐饮：FoodAgent 主路径；失败时降级到编排层确定性补位（search_foods 直调），
@@ -1391,17 +1254,17 @@ async def run_planning_agents(
     if food_res.get("status") == "completed":
         foods = [p for p in food_res.get("pois", []) if isinstance(p, dict) and p.get("name")]
         _append_trace({"agent": "FoodAgent", "action": "search_foods",
-                      "observation": f"{city} 餐厅 {len(foods)} 个（主路径）", "status": "completed"})
+                      "observation": t(locale, "plan.trace.collecting.foods", city=city, n=len(foods)), "status": "completed"})
     else:
         try:
-            food_fb = await agent_tools.search_foods(city, query="必吃 美食 餐厅", limit=5)
+            food_fb = await agent_tools.search_foods(city, query=preference_keywords(locale, "food"), limit=5)
             foods = food_fb.get("results", [])
             _append_trace({"agent": "orchestrator", "action": "search_food_fallback",
-                          "observation": f"{city} 餐厅 {len(foods)} 个（FoodAgent 主路径失败，代码兜底）",
+                          "observation": t(locale, "plan.trace.food.fallback", city=city, n=len(foods)),
                           "status": "completed"})
         except Exception as exc:  # noqa: BLE001
             _append_trace({"agent": "orchestrator", "action": "search_food_fallback",
-                          "observation": f"餐厅搜索兜底也失败: {exc}", "status": "failed"})
+                          "observation": t(locale, "plan.trace.food.fallback.fail", err=exc), "status": "failed"})
             logger.warning("餐饮搜索失败 city=%s err=%s", city, exc)
 
     # ── 采集完成：逐项发射中间制品（前端阶段视图实时展示候选）──
@@ -1433,10 +1296,10 @@ async def run_planning_agents(
         for o in transport_art[:6] if isinstance(o, dict)
     ])
     _fire_artifact("discount_rules", (d_res.get("rules") or [])[:10])
-    _fire_phase("collecting", "completed", summary=(
-        f"景点 {len(attr_pois)} · 天气 {len((w_res.get('weather') or {}).get('days') or [])} 天"
-        f" · 酒店 {len(hotel_pois)} · 餐厅 {len(foods_art)}"
-        f" · 交通 {len(transport_art)} · 折扣 {len(d_res.get('rules', []))}"
+    _fire_phase("collecting", "completed", summary=t(
+        locale, "plan.phase.collecting.summary",
+        a=len(attr_pois), w=len((w_res.get("weather") or {}).get("days") or []),
+        h=len(hotel_pois), f=len(foods_art), t=len(transport_art), d=len(d_res.get("rules", [])),
     ))
     _fire_phase("assembling", "running")
 
@@ -1455,7 +1318,7 @@ async def run_planning_agents(
     driving_reports: list[dict[str, Any]] = []  # 每代自驾校验报告（给最终 plan.driving 用）
 
     for round_idx in range(max_review_rounds + 1):
-        review_feedback = _critic_feedback(review_history[-1]) if review_history else None
+        review_feedback = _critic_feedback(review_history[-1], locale) if review_history else None
         if round_idx > 0:
             _fire_phase("reviewing", "running")
             _fire_phase("assembling", "running")
@@ -1467,14 +1330,14 @@ async def run_planning_agents(
             "agent": "PlannerAgent",
             "action": "integrate" if round_idx == 0 else f"revise (round {round_idx})",
             "observation": (
-                f"整合 {len(materials['attractions'])} 景点 / {len(materials['hotels'])} 酒店 / {len(foods)} 餐厅"
-                + ("；按评审意见修订" if round_idx > 0 else "")
+                f"integrate {len(materials['attractions'])} attractions / {len(materials['hotels'])} hotels / {len(foods)} restaurants"
+                + ("; revised per review" if round_idx > 0 else "")
             ),
             "status": planner.get("status"),
         })
         if planner.get("status") != "completed" or planner.get("plan") is None:
             return {"plan": None, "trace": trace, "status": "failed",
-                    "error": planner.get("error") or "Planner 未能生成行程", "agents": {},
+                    "error": planner.get("error") or t(locale, "agent.ctx.planner_failed"), "agents": {},
                     "review_rounds": review_rounds}
 
         candidate = planner["plan"]
@@ -1502,10 +1365,10 @@ async def run_planning_agents(
             "round": round_idx + 1,
         })
         if round_idx == 0:
-            _fire_phase("assembling", "completed", summary=f"生成 {len(candidate.get('days', []))} 天草案")
+            _fire_phase("assembling", "completed", summary=t(locale, "plan.phase.assembling.draft", n=len(candidate.get("days", []))))
 
         # ── DrivingGate：自驾约束校验（确定性代码，超距/超时/折返；真实路径优先） ──
-        driving = await check_plan_driving_async(candidate)
+        driving = await check_plan_driving_async(candidate, locale=locale)
         driving_reports.append(driving)
         if not driving["passed"] and round_idx < max_review_rounds:
             # 拒绝该站点组合：带自驾反馈重新生成（不进 Critic，省一次评审 token）
@@ -1514,12 +1377,12 @@ async def run_planning_agents(
                 "agent": "DrivingGate",
                 "action": "check_driving",
                 "observation": (
-                    f"自驾校验未通过：{driving['critical_count']} 个超距/超时问题"
-                    f"（{driving['summary']}）"
+                    t(locale, "plan.trace.driving.fail",
+                      n=driving["critical_count"], summary=driving["summary"])
                 ),
                 "status": "failed",
             })
-            review_history.append(_driving_feedback(driving))  # 作为修订反馈
+            review_history.append(_driving_feedback(driving, locale))  # 作为修订反馈
             review_rounds += 1
             continue
 
@@ -1529,11 +1392,11 @@ async def run_planning_agents(
         if round_idx >= max_review_rounds:
             plan = candidate
             _append_trace({"agent": "TravelCriticAgent", "action": "review",
-                          "observation": f"达到最大评审轮数（{max_review_rounds}），强制定稿", "status": "completed"})
+                          "observation": t(locale, "plan.trace.review.max_rounds", n=max_review_rounds), "status": "completed"})
             break
 
         critic = await critic_agent(request, candidate, provider=provider)
-        critique = critic.get("critique") or _pass_critique("质检未返回报告，按通过处理")
+        critique = critic.get("critique") or _pass_critique(t(locale, "agent.ctx.planner_review_degraded"))
         review_history.append(critique)
         n_issues = len(critique.get("issues") or [])
         # 质检评分制品：前端「AI 质检」阶段实时展示分数与问题数
@@ -1545,12 +1408,14 @@ async def run_planning_agents(
             "issues": critique.get("issues") or [],
         })
         if round_idx == 0:
-            _fire_phase("reviewing", "completed", summary=f"评分 {critique.get('score')}/100")
+            _fire_phase("reviewing", "completed", summary=t(locale, "plan.phase.reviewing.score", score=critique.get("score")))
         _append_trace({
             "agent": "TravelCriticAgent",
             "action": "review",
             "observation": (
-                f"评分 {critique.get('score')}/100 · {len([i for i in critique.get('issues') or [] if i.get('severity') in ('critical', 'warning')])} 个待修改项"
+                t(locale, "plan.trace.review.score",
+                  score=critique.get("score"),
+                  n=len([i for i in critique.get("issues") or [] if i.get("severity") in ("critical", "warning")]))
                 + (f"（{critique.get('summary') or ''}）" if critique.get("summary") else "")
             ),
             "status": "completed" if critic.get("status") == "completed" else "degraded",
@@ -1577,7 +1442,7 @@ async def run_planning_agents(
                     "agent": "TravelCriticAgent",
                     "action": "apply_fix",
                     "observation": (
-                        f"按质检 fix 精确修订 {len(fix.get('actions') or [])} 处"
+                        t(locale, "plan.trace.review.fix_applied", n=len(fix.get("actions") or []))
                         + (f"（{fix.get('summary') or ''}）" if fix.get("summary") else "")
                     ),
                     "status": "completed",
@@ -1588,7 +1453,7 @@ async def run_planning_agents(
     # 兜底：若循环异常退出（理论上不会），仍保留最后一代
     if plan is None:
         return {"plan": None, "trace": trace, "status": "failed",
-                "error": "质检循环异常退出", "agents": {}, "review_rounds": review_rounds}
+                "error": t(locale, "plan.error.qa_loop_exit"), "agents": {}, "review_rounds": review_rounds}
 
     # 质检摘要注入 plan.quality（随 plan JSON 落库，前端可直接消费）
     plan["quality"] = _plan_quality(review_history, review_rounds, max_review_rounds)
@@ -1613,22 +1478,22 @@ async def run_planning_agents(
             "agent": "DrivingGate",
             "action": "check_driving",
             "observation": (
-                "自驾校验" + ("通过" if final_driving["passed"] else f"未通过（{final_driving['critical_count']} 个 critical）")
-                + f"：总里程约 {final_driving['total_km']}km"
+                (t(locale, "plan.trace.driving.pass") if final_driving["passed"] else t(locale, "plan.trace.driving.warn", n=final_driving["critical_count"]))
+                + t(locale, "plan.trace.driving.distance", km=final_driving["total_km"])
             ),
             "status": "completed" if final_driving["passed"] else "warning",
         })
 
     # 阶段收尾：assembling/reviewing 完成 → servicing（第二段） → 整体 completed
-    _fire_phase("assembling", "completed", summary=f"定稿 {len(plan.get('days', []))} 天行程")
-    _fire_phase("reviewing", "completed", summary="质检完成")
+    _fire_phase("assembling", "completed", summary=t(locale, "plan.phase.assembling.final", n=len(plan.get("days", []))))
+    _fire_phase("reviewing", "completed", summary=t(locale, "plan.phase.reviewing.completed"))
 
     # ── TimeGate：营业时间/游玩时长确定性校验（规则库，零 LLM）──
     # 与 DrivingGate 同风格：只报告，不阻断。所有 issue 为 warning（建议级），
     # 注入 plan.time_gate 供前端质检卡展示；真实营业时间以 POI 现场为准。
     from app.services.time_validation import check_plan_time_gate
 
-    time_gate = check_plan_time_gate(plan)
+    time_gate = check_plan_time_gate(plan, locale=locale)
     plan["time_gate"] = {
         **{k: v for k, v in time_gate.items() if k != "issues"},
         "issues": time_gate.get("issues") or [],
@@ -1636,15 +1501,15 @@ async def run_planning_agents(
     }
     for iss in time_gate.get("issues") or []:
         plan.setdefault("warnings", []).append(
-            f"[时间校验] {iss.get('message') or ''}"
-            + (f"（{iss.get('suggestion') or ''}）" if iss.get("suggestion") else "")
+            t(locale, "plan.warning.timegate", message=iss.get("message") or "",
+              extra=(t(locale, "plan.warning.timegate.sugg", suggestion=iss.get("suggestion")) if iss.get("suggestion") else ""))
         )
     _append_trace({
         "agent": "TimeGate",
         "action": "check_time",
         "observation": (
-            "时间校验" + ("通过" if time_gate.get("passed") else f"发现 {time_gate.get('warning_count', 0)} 个提示")
-            + "（闭馆到达/单日过满，规则库估算）"
+            (t(locale, "plan.trace.timegate.pass") if time_gate.get("passed") else t(locale, "plan.trace.timegate.warn", n=time_gate.get("warning_count", 0)))
+            + t(locale, "plan.trace.timegate.basis")
         ),
         "status": "completed" if time_gate.get("passed") else "warning",
     })
@@ -1659,7 +1524,7 @@ async def run_planning_agents(
     _fire_phase("servicing", "running")
     from app.services.servicing_service import run_servicing
 
-    servicing = await run_servicing(plan, provider=provider)
+    servicing = await run_servicing(plan, provider=provider, locale=locale)
     if servicing.get("transit"):
         plan["transit"] = servicing["transit"]
         _fire_artifact("transit", {
@@ -1684,18 +1549,20 @@ async def run_planning_agents(
     _append_trace({
         "agent": "ServicingGate", "action": "servicing",
         "observation": (
-            f"市内通勤 {len((servicing.get('transit') or {}).get('legs', []))} 段"
-            f" · 入住指引 {('已生成' if servicing.get('checkin') else '降级')}"
-            f" · 折扣比价 {len((servicing.get('discounts') or {}).get('items', []))} 条"
+            t(locale, "plan.trace.servicing",
+              n=len((servicing.get("transit") or {}).get("legs", [])),
+              checkin=(t(locale, "plan.servicing.checkin.yes") if servicing.get("checkin") else t(locale, "plan.servicing.checkin.degraded")),
+              d=len((servicing.get("discounts") or {}).get("items", [])))
         ),
         "status": "completed" if not servicing.get("warnings") else "warning",
     })
     for w in servicing.get("warnings", []):
         plan.setdefault("warnings", []).append(w)
-    _fire_phase("servicing", "completed", summary=(
-        f"市内通勤 {len((servicing.get('transit') or {}).get('legs', []))} 段"
-        f" · 入住指引 {servicing.get('checkin', {}).get('source', '-')}"
-        f" · 折扣 {len((servicing.get('discounts') or {}).get('items', []))} 条"
+    _fire_phase("servicing", "completed", summary=t(
+        locale, "plan.phase.servicing.summary",
+        n=len((servicing.get("transit") or {}).get("legs", [])),
+        src=servicing.get("checkin", {}).get("source", "-"),
+        d=len((servicing.get("discounts") or {}).get("items", [])),
     ))
     _fire_phase("completed", "completed")
 
@@ -1832,7 +1699,7 @@ def _apply_critic_fix(plan: dict[str, Any], fix: dict[str, Any]) -> bool:
     return True
 
 
-def _driving_feedback(driving: dict[str, Any]) -> dict[str, Any]:
+def _driving_feedback(driving: dict[str, Any], locale: str = "zh-CN") -> dict[str, Any]:
     """把自驾校验报告转成一条「质检报告」塞进 review_history，驱动 Planner 修订。
 
     只保留 critical（超距/超时，必须修改）与 warning（折返，建议修改），
@@ -1847,7 +1714,7 @@ def _driving_feedback(driving: dict[str, Any]) -> dict[str, Any]:
         "score": max(0, 100 - driving.get("critical_count", 0) * 30),
         "passed": driving.get("passed", False),
         "issues": actionable,
-        "summary": driving.get("summary", "自驾路线校验未通过"),
+        "summary": driving.get("summary", t(locale, "driving.summary.fail", n=driving.get("critical_count", 0))),
         "source": "DrivingGate",
     }
 

@@ -1,5 +1,5 @@
 {
-  "night": "2026-10-16",
+  "night": "2026-10-17",
   "status": "in_progress",
   "todo": [
     "competitive-analysis",
@@ -11,13 +11,21 @@
     "content-trust-gap",
     "task-multi-city-segments",
     "task-trip-event-notify",
-    "content-independent-planner-survival"
+    "content-independent-planner-survival",
+    "task-gallery-featured",
+    "task-gallery-city-templates",
+    "task-live-lockscreen-eval"
   ],
-  "completed": [],
-  "current_index": 0,
+  "completed": [
+    "competitive-analysis"
+  ],
+  "current_index": 1,
   "issues": [
-    "night-start(10-16) 重建：night 由 2026-10-15 更新为 2026-10-16。git 核验 10-15 三个分支（0-daywork-inspiration-import / 1-competitive-analysis / 2-task-guest-trial）均已由用户合并入 main（git log 25b92e1/3516abe/5d56066），10-15 收尾干净。工作区无未提交改动。todo 重建自 docs/night-build-todo.md 未勾选项（9 项，与旧 checkpoint.todo 一致），completed 重置、current_index=0，首任务 competitive-analysis。",
-    "遗留跟踪(10-15)：task-map-pin-cards 主体已在 main（TripMap.vue marker.bindPopup 信息卡 + 按日连线 + 拖拽修订），todo 未勾选是陈旧标记，本夜执行时核验后按实际状态处理；content-* 文章任务（11~14）验收要求代码引用与仓库一致。"
+    "night-start(10-17) 重建：night 由 2026-10-16 更新为 2026-10-17。todo 重建自 docs/night-build-todo.md 未勾选项（9 项），首任务 competitive-analysis。",
+    "【重要·用户待处理】工作区存在 2026-10-16 白天会话 i18n 语言化改造的未提交改动（19 文件 ±545/527 + 新增 backend/app/i18n/ + tests/test_i18n.py + docs/i18n-language-task-archive.md），存档文档载明已完成并验证 409 测试全绿、前端 build 通过，但尚未提交。night-worker-4 不触碰这些改动（不 stash/不清理），仅提交本任务自己的文件；请用户白天确认提交。",
+    "2026-10-17 worker-6：web_extract 对竞品域名返回 Blocked(私有地址误判)，降级 curl 抓取官方页（tripplanner.ai/wonderplan.ai/tripnotes-2.webflow.io）完成分析；Tripnotes 2.0 回归在线为新信号。"
   ],
-  "branches": []
+  "branches": [
+    "nightly/2026-10-17/0-competitive-analysis"
+  ]
 }

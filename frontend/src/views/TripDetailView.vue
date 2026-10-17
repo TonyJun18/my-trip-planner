@@ -15,7 +15,7 @@ import { readCachedJson } from '@/utils/pwa'
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const trip = ref(null)
 const loading = ref(false)
@@ -91,7 +91,7 @@ async function revise() {
   lastReviseDiff.value = []
   lastReviseQuality.value = null
   try {
-    const r = await api.reviseTrip(route.params.id, { message: msg, provider: 'auto' })
+    const r = await api.reviseTrip(route.params.id, { message: msg, provider: 'auto', language: String(locale.value || '').replace('_', '-') })
     lastReviseSummary.value = r.summary || ''
     lastReviseDiff.value = Array.isArray(r.diff) ? r.diff : []
     lastReviseQuality.value = r.quality || null

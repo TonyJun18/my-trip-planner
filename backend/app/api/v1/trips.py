@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.core.exceptions import NotFoundError
+from app.i18n import normalize_locale
 from app.models import Trip, User
 from app.schemas import (
     DayIn,
@@ -572,18 +573,27 @@ async def get_trip_plan(
 async def revise_trip(
     trip_id: str,
     data: ReviseRequest,
+    request: Request,
     db: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> ReviseOut:
-    """把用户对行程的自然语言修改请求转成结构化变更并原子应用。"""
+    """把用户对行程的自然语言修改请求转成结构化变更并原子应用。
+
+    语言契约（与 /planner/plan 一致）：显式 ``language`` 优先，
+    未传时按 ``Accept-Language`` 头解析；修订 diff summary / 质检报告
+    按此语种输出。
+    """
     from app.services import revise_service
 
+    if not data.language:
+        data.language = normalize_locale(request.headers.get("accept-language"))
     result = await revise_service.revise_trip(
         db,
         trip_id,
         data.message,
         owner=user.id,
         provider=data.provider,
+        language=data.language,
         max_review_rounds=2,
     )
     return ReviseOut(**result)
