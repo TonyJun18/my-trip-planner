@@ -17,15 +17,20 @@
     "task-live-lockscreen-eval"
   ],
   "completed": [
-    "competitive-analysis"
+    "competitive-analysis",
+    "task-map-pin-cards",
+    "content-inspiration-first"
   ],
-  "current_index": 1,
+  "current_index": 3,
   "issues": [
     "night-start(10-17) 重建：night 由 2026-10-16 更新为 2026-10-17。todo 重建自 docs/night-build-todo.md 未勾选项（9 项），首任务 competitive-analysis。",
-    "【重要·用户待处理】工作区存在 2026-10-16 白天会话 i18n 语言化改造的未提交改动（19 文件 ±545/527 + 新增 backend/app/i18n/ + tests/test_i18n.py + docs/i18n-language-task-archive.md），存档文档载明已完成并验证 409 测试全绿、前端 build 通过，但尚未提交。night-worker-4 不触碰这些改动（不 stash/不清理），仅提交本任务自己的文件；请用户白天确认提交。",
-    "2026-10-17 worker-6：web_extract 对竞品域名返回 Blocked(私有地址误判)，降级 curl 抓取官方页（tripplanner.ai/wonderplan.ai/tripnotes-2.webflow.io）完成分析；Tripnotes 2.0 回归在线为新信号。"
+    "【重要·用户待处理】工作区曾存在 2026-10-16 白天会话 i18n 语言化改造的未提交改动（19 文件 ±545/527 + 新增 backend/app/i18n/ + tests/test_i18n.py + docs/i18n-language-task-archive.md）——已于白天合并入 main（commit aaa0fa2 + merge 01d9a38），worker-7 开工时工作区已干净，无需处理。",
+    "2026-10-17 worker-6：web_extract 对竞品域名返回 Blocked(私有地址误判)，降级 curl 抓取官方页（tripplanner.ai/wonderplan.ai/tripnotes-2.webflow.io）完成分析；Tripnotes 2.0 回归在线为新信号。",
+    "2026-10-17 worker-7：task-map-pin-cards 完成于其分支 nightly/2026-10-17/1-task-map-pin-cards（commit 9056fb1 + ae404b9，前端 build 3.27s 通过）但未合并 main，main checkpoint 未登记。worker-8 核验其分支登记后补录 completed；清晨合并该分支时若 checkpoint 冲突以 main 本版本为准。",
+    "2026-10-17 worker-8：content-inspiration-first 完成——docs/articles/11-inspiration-first.md（164 行：三范式对比 + 四层入口策略 + 可复用模式 + 检查清单）+ publish-list.md 补文章⑪卡片 + 速查表扩为 9-11。代码引用逐条与 main 实码核验一致（inspiration_service.recommend_destinations 实际 23 个目的地、PlanWizard tierPresetMap/applyInspiration、agents._questions_text、note/email/screenshot/link 四 parser、GET /trips/inspiration、guest-trial 评估文件存在）。纯 docs，无 pytest/build。分支 nightly/2026-10-17/2-content-inspiration-first（commit a7d1789）。"
   ],
   "branches": [
-    "nightly/2026-10-17/0-competitive-analysis"
+    "nightly/2026-10-17/0-competitive-analysis",
+    "nightly/2026-10-17/2-content-inspiration-first"
   ]
 }
