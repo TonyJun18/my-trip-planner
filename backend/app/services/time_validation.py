@@ -31,6 +31,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.i18n import normalize_locale
+from app.i18n.translations import t
+
 # ── 类目基准表（规则库）────────────────────────────────────────
 # 文化/历史/公园类：09:00-18:00 是主流；博物馆/展馆常见 09:00-17:00；
 # 购物中心/夜市更晚。真实营业时间以现场为准（basis=rule_based 诚实标注）。
@@ -137,7 +140,7 @@ def _day_start_clock(day: dict[str, Any]) -> tuple[int, int]:
     return DAY_START
 
 
-def check_plan_time_gate(plan: dict[str, Any]) -> dict[str, Any]:
+def check_plan_time_gate(plan: dict[str, Any], locale: str = "zh-CN") -> dict[str, Any]:
     """行程级时间校验（TimeGate）：闭馆到达 + 单日过饱和。
 
     与 driving_service.check_plan_driving 同风格返回：
@@ -149,6 +152,7 @@ def check_plan_time_gate(plan: dict[str, Any]) -> dict[str, Any]:
       "summary": str,
     }
     """
+    locale = normalize_locale(locale)
     issues: list[dict[str, Any]] = []
     days = plan.get("days") or []
 
@@ -166,10 +170,10 @@ def check_plan_time_gate(plan: dict[str, Any]) -> dict[str, Any]:
                 "severity": "warning",
                 "category": "schedule",
                 "message": (
-                    f"Day {day_no} 安排了 {len(stops)} 个站点，超过建议上限 "
-                    f"{MAX_STOPS_PER_DAY} 个，节奏可能过满"
+                    t(locale, "timegate.msg.too_many",
+                      day=day_no, n=len(stops), max=MAX_STOPS_PER_DAY)
                 ),
-                "suggestion": f"考虑把其中 {len(stops) - MAX_STOPS_PER_DAY} 个站点移到相邻日或精简",
+                "suggestion": t(locale, "timegate.suggest.too_many", n=len(stops) - MAX_STOPS_PER_DAY),
                 "day_number": day_no,
             })
 
@@ -184,10 +188,10 @@ def check_plan_time_gate(plan: dict[str, Any]) -> dict[str, Any]:
                 "severity": "warning",
                 "category": "schedule",
                 "message": (
-                    f"Day {day_no} 景点游玩时长合计约 {play_total} 分钟，"
-                    f"超过建议上限 {MAX_PLAY_MINUTES_PER_DAY} 分钟（约 8 小时）"
+                    t(locale, "timegate.msg.play_long",
+                      day=day_no, min=play_total, max=MAX_PLAY_MINUTES_PER_DAY)
                 ),
-                "suggestion": f"压缩或移出约 {over} 分钟（约 {round(over / 60, 1)} 小时）的站点",
+                "suggestion": t(locale, "timegate.suggest.play_long", min=over, h=round(over / 60, 1)),
                 "day_number": day_no,
             })
 
@@ -212,15 +216,22 @@ def check_plan_time_gate(plan: dict[str, Any]) -> dict[str, Any]:
             if hours is not None:
                 close = _minutes(hours[1])
                 if arrival >= close - CLOSING_BUFFER_MINUTES:
+                    extra = (
+                        t(locale, "timegate.msg.arrive_close.play", min=duration)
+                        if duration else ""
+                    )
                     issues.append({
                         "severity": "warning",
                         "category": "schedule",
                         "message": (
-                            f"「{stop.get('name') or '站点'}」到达约 {arrival // 60:02d}:{arrival % 60:02d}"
-                            f"，距闭馆 {hours[1][0]:02d}:{hours[1][1]:02d} 不足 {CLOSING_BUFFER_MINUTES} 分钟"
-                            + (f"（建议游玩约 {duration} 分钟）" if duration else "")
+                            t(locale, "timegate.msg.arrive_close",
+                              name=stop.get("name") or t(locale, "timegate.stop.fallback"),
+                              arrive=f"{arrival // 60:02d}:{arrival % 60:02d}",
+                              close=f"{hours[1][0]:02d}:{hours[1][1]:02d}",
+                              buffer=CLOSING_BUFFER_MINUTES,
+                              extra=extra)
                         ),
-                        "suggestion": "建议把该站点安排在当天更早时段，或换到营业时间更晚的同类地点",
+                        "suggestion": t(locale, "timegate.suggest.arrive_close"),
                         "day_number": day_no,
                     })
 
@@ -234,7 +245,7 @@ def check_plan_time_gate(plan: dict[str, Any]) -> dict[str, Any]:
         "critical_count": 0,
         "warning_count": len(issues),
         "summary": (
-            "时间校验通过（营业时间/节奏）" if not issues
-            else f"时间校验发现 {len(issues)} 个提示（闭馆到达/单日过满）"
+            t(locale, "timegate.summary.pass") if not issues
+            else t(locale, "timegate.summary.warn", n=len(issues))
         ),
     }

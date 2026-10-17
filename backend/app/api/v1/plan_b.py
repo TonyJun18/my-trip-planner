@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -15,6 +15,8 @@ from sqlalchemy.orm import selectinload
 from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.core.exceptions import NotFoundError
+from app.i18n import normalize_locale
+from app.i18n.translations import t
 from app.models import Trip, TripDay, User
 from app.schemas.plan_b import PlanBOut, PlanBVariantOut
 from app.services.plan_b import generate_plan_b_variant
@@ -60,6 +62,7 @@ def _days_from_trip(trip: Trip) -> list[dict]:
 )
 async def get_plan_b(
     trip_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> PlanBOut:
@@ -68,8 +71,10 @@ async def get_plan_b(
     - 纯规则生成：无 LLM、无外部 API、无 API key（与 note-import 同风格）；
     - 只读派生：不落库、不改 trips 表，产生任何副作用；
     - 行程无站点 → variant=None + note 说明（前端隐藏入口）；
-    - 鉴权：与行程管理一致（owner 才能查看）。
+    - 鉴权：与行程管理一致（owner 才能查看）；
+    - 文案语言：Accept-Language 头归一（i18n 方案 A）。
     """
+    locale = normalize_locale(request.headers.get("accept-language"))
     stmt = (
         select(Trip)
         .options(selectinload(Trip.days).selectinload(TripDay.stops))
@@ -80,11 +85,11 @@ async def get_plan_b(
         raise NotFoundError("行程不存在", code="trip_not_found")
 
     days = _days_from_trip(trip)
-    variant = generate_plan_b_variant(days)
+    variant = generate_plan_b_variant(days, locale=locale)
 
     note = ""
     if variant is None:
-        note = "行程还没有可生成备选的站点"
+        note = t(locale, "planb.note.empty")
     return PlanBOut(
         trip_id=trip.id,
         variant=PlanBVariantOut(

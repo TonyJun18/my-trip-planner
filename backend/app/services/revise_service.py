@@ -23,6 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.agents import CRITIC_PASS_SCORE, plan_revise_agent
 from app.core.exceptions import AppError
 from app.core.logging import get_logger
+from app.i18n import normalize_locale
+from app.i18n.translations import t
 from app.models import Stop, Trip, TripDay, TripPlan
 from app.schemas import critic_fix_to_revise_diff
 from app.services._common import TRIP_LOADS as _TRIP_LOADS
@@ -38,6 +40,7 @@ async def revise_trip(
     *,
     owner: str | None = None,
     provider: str = "auto",
+    language: str | None = None,
     max_review_rounds: int = 2,
 ) -> dict[str, Any]:
     """执行一次行程修订，返回 {plan, summary, trace, provider, model, quality}。
@@ -57,11 +60,12 @@ async def revise_trip(
     失败时抛 AppError（调用方转成 4xx 响应）。
     """
     trip = await _load_trip(db, trip_id, owner=owner)
+    locale = normalize_locale(language)
 
     # 1) AI 生成 diff（无工具；失败可自纠正）
     current_plan = _plan_snapshot(trip)
     revise = await plan_revise_agent(
-        {"message": message, "destination": trip.destination, "budget": trip.budget},
+        {"message": message, "destination": trip.destination, "budget": trip.budget, "language": locale},
         current_plan,
         provider=provider,
     )
@@ -79,7 +83,7 @@ async def revise_trip(
         raise AppError(f"行程修订应用失败: {exc}", code="revise_apply_failed") from exc
 
     # 2.5) 自驾约束门（DrivingGate）：修订后站点组合超距/超时 → 整体拒绝
-    await _enforce_driving_constraints(trip)
+    await _enforce_driving_constraints(trip, locale=locale)
 
     # 3) 主修订落库（独立小事务）——用户请求的修订一定生效。
     #    后续质检 fix 各自独立提交，任何 fix 失败都只回滚 fix，不回滚主修订。
@@ -98,6 +102,7 @@ async def revise_trip(
             "preferences": [],
             "message": message,
             "revise_summary": diff.get("summary") or "",
+            "language": locale,
         },
         owner=owner,
         provider=provider,
@@ -128,9 +133,9 @@ async def revise_trip(
     new_plan = _plan_snapshot(final_trip)
     return {
         "trip_id": trip.id,
-        "summary": diff.get("summary") or "行程已更新",
+        "summary": diff.get("summary") or t(locale, "revise.summary.default"),
         "plan": new_plan,
-        "diff": _describe_actions(diff),
+        "diff": _describe_actions(diff, locale=locale),
         "trace": _normalize_trace(revise.get("trace") or []),
         "provider": revise.get("provider"),
         "model": revise.get("model"),
@@ -162,6 +167,7 @@ async def _revise_qa_loop(
     if max_rounds <= 0:
         return None  # 未开启修订复核（调用方显式关闭）
 
+    locale = normalize_locale(request.get("language"))
     applied_fix_count = 0
     last_fix_actions: list[tuple[Any, ...]] = []
     quality: dict[str, Any] = {
@@ -187,7 +193,7 @@ async def _revise_qa_loop(
                 "score": CRITIC_PASS_SCORE,
                 "passed": True,
                 "issues": [],
-                "summary": critique.get("summary") or "修订复核降级：质检调用失败，按通过处理",
+                "summary": critique.get("summary") or t(locale, "revise.summary.qa.degraded"),
                 "degraded": True,
                 "fix_applied": applied_fix_count > 0,
             }
@@ -199,7 +205,7 @@ async def _revise_qa_loop(
                 "score": critique.get("score", CRITIC_PASS_SCORE),
                 "passed": True,
                 "issues": critique.get("issues") or [],
-                "summary": critique.get("summary") or "修订复核通过",
+                "summary": critique.get("summary") or t(locale, "revise.summary.qa.pass"),
                 "rounds": applied_fix_count + 1,
                 "fix_applied": applied_fix_count > 0,
             }
@@ -213,7 +219,7 @@ async def _revise_qa_loop(
                 "score": critique.get("score", 0),
                 "passed": False,
                 "issues": critique.get("issues") or [],
-                "summary": critique.get("summary") or "修订复核未通过（无精确修正建议）",
+                "summary": critique.get("summary") or t(locale, "revise.summary.qa.no_fix"),
                 "rounds": applied_fix_count + 1,
                 "fix_applied": applied_fix_count > 0,
             }
@@ -231,7 +237,7 @@ async def _revise_qa_loop(
                 "score": critique.get("score", 0),
                 "passed": False,
                 "issues": critique.get("issues") or [],
-                "summary": "修订复核未通过（修正建议未产生变化，已停止重试）",
+                "summary": t(locale, "revise.summary.qa.stalled"),
                 "rounds": applied_fix_count + 1,
                 "fix_applied": applied_fix_count > 0,
             }
@@ -246,7 +252,7 @@ async def _revise_qa_loop(
                 "score": critique.get("score", 0),
                 "passed": False,
                 "issues": critique.get("issues") or [],
-                "summary": "修订复核未通过（精确修正无法应用）",
+                "summary": t(locale, "revise.summary.qa.apply_fail"),
                 "rounds": applied_fix_count + 1,
                 "fix_applied": applied_fix_count > 0,
             }
@@ -254,14 +260,14 @@ async def _revise_qa_loop(
 
         # 自驾约束门：修正后若产生超距/超时 → 回滚本轮 fix 并停止（不引入新问题）
         try:
-            await _enforce_driving_constraints(trip)
+            await _enforce_driving_constraints(trip, locale=locale)
         except AppError as exc:
             await db.rollback()  # 丢弃未提交的 fix（trip 回到主修订状态）
             quality = {
                 "score": critique.get("score", 0),
                 "passed": False,
                 "issues": critique.get("issues") or [],
-                "summary": f"修订复核未通过：精确修正被自驾约束拒绝（{getattr(exc, 'detail', exc)}）",
+                "summary": t(locale, "revise.summary.qa.driving_rejected", detail=getattr(exc, "detail", exc)),
                 "rounds": applied_fix_count + 1,
                 "fix_applied": False,
             }
@@ -325,20 +331,18 @@ def _plan_snapshot(trip: Trip) -> dict[str, Any]:
 
 
 # ── 内部：应用 diff（原子） ─────────────────────────────────
-_OP_LABEL = {
-    "replace": "修改",
-    "add": "新增",
-    "remove": "删除",
-    "reorder": "调整顺序",
-}
+def _op_label(op: str, locale: str = "zh-CN") -> str:
+    """动作的人类可读 label（随语种）。"""
+    return t(normalize_locale(locale), f"revise.op.{op}", **{}) if op in ("replace", "add", "remove", "reorder") else op
 
 
-def _describe_actions(diff: dict[str, Any]) -> list[dict[str, Any]]:
+def _describe_actions(diff: dict[str, Any], *, locale: str = "zh-CN") -> list[dict[str, Any]]:
     """把 AI 生成的 diff.actions 转成人类可读的预览列表（供前端展示）。
 
     每个动作保留结构化字段（op / day / 目标 / 新值），前端可用图标 + 文案渲染；
     不做任何落库副作用。
     """
+    locale = normalize_locale(locale)
     out: list[dict[str, Any]] = []
     for action in diff.get("actions") or []:
         op = action.get("op", "")
@@ -348,7 +352,7 @@ def _describe_actions(diff: dict[str, Any]) -> list[dict[str, Any]]:
         name = target.get("name") or fields.get("name") or ""
         item: dict[str, Any] = {
             "op": op,
-            "op_label": _OP_LABEL.get(op, op),
+            "op_label": _op_label(op, locale),
             "day_number": day_number,
             "target_name": name,
             "fields": fields,
@@ -508,7 +512,7 @@ def _renumber(day: TripDay) -> None:
 
 
 # ── 内部：预算重算 ──────────────────────────────────────────
-async def _enforce_driving_constraints(trip: Trip) -> None:
+async def _enforce_driving_constraints(trip: Trip, *, locale: str = "zh-CN") -> None:
     """自驾约束门：修订后的行程若产生超距/超时的站点组合，整体拒绝。
 
     与规划编排的 DrivingGate 使用同一套确定性校验（driving_service），
@@ -519,13 +523,14 @@ async def _enforce_driving_constraints(trip: Trip) -> None:
     """
     from app.services.driving_service import check_plan_driving_async
 
+    locale = normalize_locale(locale)
     plan_snapshot = _plan_snapshot(trip)
-    driving = await check_plan_driving_async(plan_snapshot)
+    driving = await check_plan_driving_async(plan_snapshot, locale=locale)
     if driving["passed"]:
         return
     messages = [i.get("message", "") for i in driving["issues"] if i.get("severity") == "critical"]
     raise AppError(
-        "修订后的行程存在自驾路线问题（超距/超时），已拒绝本次修改",
+        t(locale, "revise.err.driving_violation"),
         code="revise_driving_violation",
         detail={"issues": messages[:5], "driving": driving},
     )

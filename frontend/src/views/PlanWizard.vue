@@ -9,7 +9,7 @@ import QualityCard from '@/components/QualityCard.vue'
 import TripServicing from '@/components/TripServicing.vue'
 
 const router = useRouter()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 // 热门城市：显示名走 i18n（cities.*），点击时映射回中文契约值（后端地理编码用）
 const hotCityKeys = ['hangzhou', 'chengdu', 'beijing', 'shanghai', 'dali', 'xiamen']
@@ -313,9 +313,13 @@ async function submit() {
       ...form,
       // 出行性质 key → 稳定中文契约值（后端按此约束规划）
       trip_type: tripTypeKeyMap[form.trip_type] || '休闲旅游',
-      // 偏好 key → 当前语言 label（默认中文，保持后端契约）
-      preferences: form.preferences.map((k) => prefLabel(k)),
+      // 偏好传稳定 key（i18n 方案 A：后端 preference_keys_to_keywords 按 key 解析，
+      // 不再依赖当前语言 label，语言切换不破坏提交契约）
+      preferences: form.preferences,
       questions: answeredQuestions(),
+      // 显式传当前界面语言（i18n 方案 A：后端按此生成对应语种行程文案；
+      // 不传时由 Accept-Language 兜底）
+      language: String(locale.value || '').replace('_', '-'),
     }
     const task = await api.planTrip(payload)
     startRealtime(task.task_id)

@@ -584,6 +584,12 @@ def test_get_provider_auto_no_key_raises(monkeypatch):
 
     monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", None)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    # 本机可能运行着 Ollama（_probe_available_providers 恒把 ollama 列为可用），
+    # 会让 auto 不抛错 → 显式排除 ollama，使本测试与本地环境无关。
+    monkeypatch.setattr(
+        "app.agent.providers._probe_available_providers",
+        lambda: [],
+    )
 
     with pytest.raises(LLMProviderError):
         get_provider("auto")

@@ -11,7 +11,9 @@
 - 三个子任务完全独立，任一失败都不影响另外两个；
 - 全部是可选的增强：调用方（run_planning_agents）把本模块放在
   定稿之后，失败只写 warnings，绝不回滚/阻断主流程；
-- 产物结构固定，直接挂 plan.transit / plan.checkin / plan.discounts。
+- 产物结构固定，直接挂 plan.transit / plan.checkin / plan.discounts；
+- 文案语言化：run_servicing 接收 locale（i18n 方案 A），内部 transit
+  mode/note 与 discounts note 全部经 t() 取当前语种文案。
 
 === 城市内部通勤策略（确定性代码，无 LLM） ===
 对相邻站点对，按直线距离启发式给出「公共交通/步行/打车」建议：
@@ -25,6 +27,8 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.logging import get_logger
+from app.i18n import normalize_locale
+from app.i18n.translations import t
 from app.services.checkin_service import generate_checkin_guide
 from app.services.driving_service import leg_distance_km
 
@@ -32,16 +36,17 @@ logger = get_logger(__name__)
 
 
 # ── 市内通勤（确定性规则） ─────────────────────────────────
-def _transit_mode_for_distance(distance_km: float) -> str:
+def _transit_mode_for_distance(distance_km: float, locale: str = "zh-CN") -> str:
     """按直线距离启发式给交通方式建议。"""
+    locale = normalize_locale(locale)
     if distance_km <= 1.5:
-        return "步行"
+        return t(locale, "transit.mode.walk")
     if distance_km <= 8:
-        return "公共交通（地铁/公交）"
-    return "打车/自驾"
+        return t(locale, "transit.mode.public")
+    return t(locale, "transit.mode.drive")
 
 
-async def build_transit_view(plan: dict[str, Any]) -> dict[str, Any]:
+async def build_transit_view(plan: dict[str, Any], *, locale: str = "zh-CN") -> dict[str, Any]:
     """为定稿行程生成市内通勤视图（相邻站点间怎么走）。
 
     返回：
@@ -56,6 +61,7 @@ async def build_transit_view(plan: dict[str, Any]) -> dict[str, Any]:
     }
     缺坐标的相邻对跳过（不编造）。
     """
+    locale = normalize_locale(locale)
     legs: list[dict[str, Any]] = []
     for day in plan.get("days") or []:
         stops = day.get("stops") or []
@@ -67,11 +73,11 @@ async def build_transit_view(plan: dict[str, Any]) -> dict[str, Any]:
             if d is None:
                 continue
             legs.append({
-                "from": prev.get("name") or f"站点{i}",
-                "to": stop.get("name") or f"站点{i + 1}",
+                "from": prev.get("name") or t(locale, "transit.fallback.from", i=i),
+                "to": stop.get("name") or t(locale, "transit.fallback.from", i=i + 1),
                 "distance_km": round(d, 1),
-                "mode": _transit_mode_for_distance(d),
-                "note": f"直线距离约 {d:.1f}km（实际路线以导航为准）",
+                "mode": _transit_mode_for_distance(d, locale),
+                "note": t(locale, "transit.note", km=f"{d:.1f}"),
             })
             if len(legs) >= 60:  # 上限保护：不因超长行程膨胀
                 break
@@ -112,6 +118,7 @@ async def build_discounts_view(
     plan: dict[str, Any],
     *,
     max_targets: int = 5,
+    locale: str = "zh-CN",
 ) -> dict[str, Any]:
     """对已选定站点做折扣/优惠比价（可审计，绝不编造）。
 
@@ -127,6 +134,7 @@ async def build_discounts_view(
       "note": str | None
     }
     """
+    locale = normalize_locale(locale)
     # 1) 选出费用最高的站点作为目标（至少 1 个；无站点则空）
     scored: list[tuple[float, dict[str, Any]]] = []
     for day in plan.get("days") or []:
@@ -146,15 +154,17 @@ async def build_discounts_view(
 
     city = plan.get("destination", "")
     items: list[dict[str, Any]] = []
-    for t in targets:
-        item = await _discount_search(city, t)
+    for tg in targets:
+        item = await _discount_search(city, tg)
         if item is not None:
             items.append(item)
     return {
         "source": "tavily",
         "items": items,
         "count": len(items),
-        "note": "实时比价来自公开搜索，价格/优惠以官方渠道为准" if items else "暂未找到可靠的实时折扣信息（仅展示确定性规则）",
+        "note": (
+            t(locale, "discounts.note") if items else t(locale, "discounts.note.empty")
+        ),
     }
 
 
@@ -163,13 +173,17 @@ async def run_servicing(
     plan: dict[str, Any],
     *,
     provider: str = "auto",
+    locale: str = "zh-CN",
 ) -> dict[str, Any]:
     """对定稿 plan 执行三段 servicing，返回注入 plan 的字段补丁。
 
     绝不抛异常：任一阶段失败只记录，其余照常。返回
     {"transit": dict|None, "checkin": dict|None, "discounts": dict|None,
      "warnings": [str]}
+
+    locale（i18n 方案 A）：文案语言；unknown 回退默认语种。
     """
+    locale = normalize_locale(locale)
     warnings: list[str] = []
     transit: dict[str, Any] | None = None
     checkin: dict[str, Any] | None = None
@@ -177,24 +191,24 @@ async def run_servicing(
 
     # 1) 市内通勤（确定性）
     try:
-        transit = await build_transit_view(plan)
+        transit = await build_transit_view(plan, locale=locale)
     except Exception as exc:  # noqa: BLE001
         logger.warning("市内通勤生成失败: %s", exc)
-        warnings.append("市内通勤建议生成失败")
+        warnings.append(t(locale, "plan.servicing.fail.transit"))
 
     # 2) 酒店入住指引（模板 + LLM 润色，失败模板兜底）
     try:
-        checkin = await generate_checkin_guide(plan, provider=provider)
+        checkin = await generate_checkin_guide(plan, provider=provider, locale=locale)
     except Exception as exc:  # noqa: BLE001
         logger.warning("入住指引生成失败: %s", exc)
-        warnings.append("酒店入住指引生成失败")
+        warnings.append(t(locale, "plan.servicing.fail.checkin"))
 
     # 3) 折扣比价（Tavily + 硬闸门，失败保留规则区）
     try:
-        discounts = await build_discounts_view(plan)
+        discounts = await build_discounts_view(plan, locale=locale)
     except Exception as exc:  # noqa: BLE001
         logger.warning("折扣比价生成失败: %s", exc)
-        warnings.append("折扣比价生成失败（仅展示确定性规则）")
+        warnings.append(t(locale, "plan.servicing.fail.discounts"))
 
     return {
         "transit": transit,

@@ -12,15 +12,14 @@
   兴趣标签 / 最佳季节 / 预估日均预算 / 建议天数 / 一句话理由 / 参考玩法；
 - 兴趣标签词表与 PlanWizard 偏好 chips 对齐（food/nature/history/shopping/
   family/hiking/museum/nightlife/photo/hotspring），前端选什么这里就能匹配什么；
-- 匹配逻辑：兴趣交集计数 → 季节标注（当季最佳 +1 优先、"all" 平权不提示、
-  非最佳季节 -0.5 降权不排除）→ 预算可负担过滤
-  （超过请求档位的目的地不推荐，诚实口径：推荐消费得起的地方）→ 确定性排序；
+- 匹配逻辑：兴趣交集计数 → 季节评分（当季 +1.0 / 四季皆宜 0 / 非最佳 -0.5 降权不排除）
+  → 预算可负担过滤（超出请求档位不推荐，诚实口径）→ 热度兜底 → 确定性排序；
 - 全部产物带 basis=rule_based 诚实标注；预估日均预算为基准推断，以实际为准。
 """
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 # ── 档位定义（与 PlanWizard budgetPresets 对齐：1500/3000/6000/12000 元档）──
 BUDGET_TIERS: dict[str, int] = {"economy": 0, "comfort": 1, "quality": 2, "luxury": 3}
@@ -225,15 +224,21 @@ def recommend_destinations(
         score += 0.05 if dest.get("budget_tier") == budget_tier else 0.0
 
         scored.append({
-            **{k: v for k, v in dest.items() if k not in ("hotness",)},
+            **dict(dest),
             "match_score": round(score, 2),
             "matched_tags": hit,
             "season_note": (
-                "" if not needs_note
+                ""
+                if not needs_note
                 else f"最佳季节为{_SEASON_LABEL.get(str(dest.get('best_season') or ''), '')}，当前并非最佳体验期"
             ),
             "basis": "rule_based",
         })
 
+    # 排序：match_score 降序 → hotness 降序（热度兜底）→ 名称升序
     scored.sort(key=lambda x: (-x["match_score"], -x.get("hotness", 0), x["name"]))
-    return scored[: max(1, min(limit, 5))]
+    # hotness 是内部字段（排序用），对外只输出卡片可见字段
+    return [
+        {k: v for k, v in x.items() if k != "hotness"}
+        for x in scored[: max(1, min(limit, 5))]
+    ]

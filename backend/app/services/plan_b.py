@@ -25,6 +25,9 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from app.i18n import normalize_locale
+from app.i18n.translations import t
+
 # 过满阈值：站点数 >= MAX_STOPS_PER_DAY 或预估时长合计 > MAX_MINUTES_PER_DAY
 MAX_STOPS_PER_DAY = 5
 MAX_MINUTES_PER_DAY = 480
@@ -33,9 +36,22 @@ BUDGET_TIER_MULTIPLIER = 0.7
 # 每日最大移除站点数（取舍变体防过度删减）
 MAX_REMOVED_PER_DAY = 1
 
+# ── 兼容层 ──
+# 旧测试/调用方引用这些常量；新代码一律走 t(locale, "planb.*.label")。
 VARIANT_RELAXED = "节奏优化版"
 VARIANT_BUDGET = "预算优化版"
 VARIANT_CURATED = "精简取舍版"
+
+
+def _join_names(names: list[str], locale: str) -> str:
+    """站点名连接符随语种：中文用顿号，英文用逗号。"""
+    sep = "、" if locale == "zh-CN" else ", "
+    return sep.join(names)
+
+
+def _money(amount: float) -> str:
+    """金额显示：去掉多余尾零（¥800 → ¥800，¥800.5 → ¥800.5）。"""
+    return f"{amount:g}"
 
 
 def _stop_to_dict(stop: dict[str, Any]) -> dict[str, Any]:
@@ -98,11 +114,12 @@ def _clone_days(days: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [_day_to_dict(d) for d in days]
 
 
-def _relaxed_variant(days: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _relaxed_variant(days: list[dict[str, Any]], locale: str = "zh-CN") -> dict[str, Any] | None:
     """节奏变体：把过满日末尾的站点移到次日开头。
 
     失败条件：没有过满日 / 只有一天（无处可移）→ 返回 None（调用方降级）。
     """
+    locale = normalize_locale(locale)
     if len(days) < 2:
         return None
     overfull_idx = next((i for i, d in enumerate(days) if _is_overfull(d)), None)
@@ -120,29 +137,34 @@ def _relaxed_variant(days: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not moves:
         return None
 
-    moved_names = "、".join(m["name"] for m in moves)
+    moved_names = _join_names([m["name"] for m in moves], locale)
     dst["stops"] = moves + dst["stops"]
     deltas = [
-        f"第 {src['day_number']} 天站点偏多（{len(src['stops']) + len(moves)} 站），"
-        f"把「{moved_names}」移到第 {dst['day_number']} 天早上，节奏更松弛。"
+        t(
+            locale, "planb.relaxed.delta",
+            src=src["day_number"], n=len(src["stops"]) + len(moves),
+            names=moved_names, dst=dst["day_number"],
+        )
     ]
     return {
-        "label": VARIANT_RELAXED,
-        "description": "把过满的一天拆分到相邻一天，整体节奏更松弛，适合不想赶场的出行。",
+        "label": t(locale, "planb.relaxed.label"),
+        "description": t(locale, "planb.relaxed.description"),
         "deltas": deltas,
         "days": result,
         "budget": _sum_budget(result),
     }
 
 
-def _budget_variant(days: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _budget_variant(days: list[dict[str, Any]], locale: str = "zh-CN") -> dict[str, Any] | None:
     """预算档变体：全部酒店按经济档 ×0.7 下调，预算重算。
 
     失败条件：行程里没有酒店站点 → 返回 None（调用方降级）。
     """
+    locale = normalize_locale(locale)
     result = _clone_days(days)
     hotel_diffs: list[str] = []
     total_saved = 0.0
+    currency = "¥" if locale == "zh-CN" else "$"
     for day in result:
         for stop in day.get("stops") or []:
             if stop.get("stop_type") == "hotel":
@@ -151,27 +173,31 @@ def _budget_variant(days: list[dict[str, Any]]) -> dict[str, Any] | None:
                 stop["estimated_cost"] = new
                 saved = round(old - new, 2)
                 total_saved += saved
-                hotel_diffs.append(f"「{stop['name']}」按经济档调整：约 ¥{old} → ¥{new}")
+                hotel_diffs.append(
+                    t(locale, "planb.budget.delta.hotel", name=stop["name"],
+                      old=f"{currency}{_money(old)}", new=f"{currency}{_money(new)}")
+                )
 
     if not hotel_diffs:
         return None
 
-    deltas = hotel_diffs + [f"预算合计约节省 ¥{round(total_saved, 2)}（{VARIANT_BUDGET}）。"]
+    deltas = hotel_diffs + [t(locale, "planb.budget.delta.total", saved=f"{currency}{_money(round(total_saved, 2))}")]
     return {
-        "label": VARIANT_BUDGET,
-        "description": "住宿整体换成经济档（约 -30%），适合预算敏感出行，行程站点不变。",
+        "label": t(locale, "planb.budget.label"),
+        "description": t(locale, "planb.budget.description"),
         "deltas": deltas,
         "days": result,
         "budget": _sum_budget(result),
     }
 
 
-def _curated_variant(days: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _curated_variant(days: list[dict[str, Any]], locale: str = "zh-CN") -> dict[str, Any] | None:
     """取舍变体：每天去掉最后一个 food 站；无 food 则去掉该日时长最短的站。
 
     任何有站点的行程都能生成（兜底）；每天最多移除 MAX_REMOVED_PER_DAY 个，
     每天至少保留 1 个站点（防删空）。
     """
+    locale = normalize_locale(locale)
     result = _clone_days(days)
     total_stops = sum(len(d.get("stops") or []) for d in result)
     if total_stops == 0:
@@ -188,31 +214,34 @@ def _curated_variant(days: list[dict[str, Any]]) -> dict[str, Any] | None:
         )
         if food_idx is not None:
             target = food_idx
-            reason = "餐饮站"
+            reason = t(locale, "planb.curated.reason.food")
         else:
             # 去掉该日预估时长最短的站（时间有限时的取舍）
             target = min(
                 range(len(stops)),
                 key=lambda i: (stops[i].get("estimated_duration_minutes") or 0, i),
             )
-            reason = "时长最短的站点"
-        removed.append(f"第 {day['day_number']} 天去掉「{stops[target]['name']}」（{reason}）")
+            reason = t(locale, "planb.curated.reason.shortest")
+        removed.append(
+            t(locale, "planb.curated.delta", day=day["day_number"],
+              name=stops[target]["name"], reason=reason)
+        )
         del stops[target]
 
     if not removed:
         return None
 
-    deltas = removed + ["整体更精简：保留核心站点，适合时间有限或想走慢一点的出行。"]
+    deltas = removed + [t(locale, "planb.curated.delta.total")]
     return {
-        "label": VARIANT_CURATED,
-        "description": "砍掉可取舍的站点（餐饮冗余/耗时最长），保留核心行程，整体更精简。",
+        "label": t(locale, "planb.curated.label"),
+        "description": t(locale, "planb.curated.description"),
         "deltas": deltas,
         "days": result,
         "budget": _sum_budget(result),
     }
 
 
-def generate_plan_b_variant(days: list[dict[str, Any]]) -> dict[str, Any] | None:
+def generate_plan_b_variant(days: list[dict[str, Any]], locale: str = "zh-CN") -> dict[str, Any] | None:
     """为行程天数列表生成一个备选方案变体（纯函数，确定性）。
 
     days: [{"day_number": 1, "date": "2026-10-01", "theme": "西湖经典",
@@ -221,16 +250,19 @@ def generate_plan_b_variant(days: list[dict[str, Any]]) -> dict[str, Any] | None
 
     变体选择优先级（确定性）：
       过满且可移 → 节奏；否则有酒店 → 预算档；否则 → 取舍。
+
+    locale（i18n 方案 A）：文案语言；unknown 回退默认语种。
     """
+    locale = normalize_locale(locale)
     normalized = [_day_to_dict(d) for d in days if (d.get("stops") or [])]
     if not normalized:
         return None
 
-    variant = _relaxed_variant(normalized)
+    variant = _relaxed_variant(normalized, locale)
     if variant is None:
-        variant = _budget_variant(normalized)
+        variant = _budget_variant(normalized, locale)
     if variant is None:
-        variant = _curated_variant(normalized)
+        variant = _curated_variant(normalized, locale)
     return variant
 
 

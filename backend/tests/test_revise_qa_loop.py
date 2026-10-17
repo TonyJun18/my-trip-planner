@@ -283,9 +283,9 @@ async def test_revise_qa_driving_rollback(client, auth_user, monkeypatch, revise
     original = rs._enforce_driving_constraints
     gate_calls = {"n": 0}
 
-    async def _driving_gate(trip):
+    async def _driving_gate(trip, *, locale="zh-CN"):
         gate_calls["n"] += 1
-        await original(trip)  # 先真实校验（主修订与两站行程都合法）
+        await original(trip, locale=locale)  # 先真实校验（主修订与两站行程都合法）
         if gate_calls["n"] >= 2:
             raise rs.AppError("超距", code="revise_driving_violation")
 

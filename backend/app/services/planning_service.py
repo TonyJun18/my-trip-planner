@@ -23,6 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.agent.agents import run_planning_agents, set_plan_event_callback
 from app.common.config import settings
 from app.core.logging import get_logger
+from app.i18n import normalize_locale
+from app.i18n.translations import t
 from app.models import PlanTask, Stop, Trip, TripDay, TripPlan
 from app.schemas import PlanRequest, PlanTaskOut
 from app.services._common import normalize_trace as _normalize_trace
@@ -160,7 +162,10 @@ class PlanningExecutor:
                 for task in stale:
                     state = task.status
                     task.status = "failed"
-                    task.error_message = "进程重启，任务未完成（running/pending 超时，标记为失败）"
+                    task.error_message = t(
+                        normalize_locale((task.request_data or {}).get("language")),
+                        "plan.task.error_stale",
+                    )
                     task.finished_at = now
                     logger.warning("恢复扫描：任务 %s 标记为失败（状态=%s 超时遗留）", task.id, state)
                 if stale:
@@ -188,6 +193,7 @@ class PlanningExecutor:
 
             request_data = task.request_data or {}
             provider = request_data.get("provider", "auto")
+            locale = normalize_locale(request_data.get("language"))
 
             # 注入事件桥：agent 层每次 trace 回调，带上本任务 id
             set_plan_event_callback(lambda evt, tid=task_id: _plan_event_bridge(tid, evt))
@@ -205,7 +211,7 @@ class PlanningExecutor:
             except TimeoutError:
                 logger.warning("规划任务超时 task_id=%s timeout=%s", task_id, settings.TASK_EXECUTION_TIMEOUT)
                 task.status = "failed"
-                task.error_message = "规划任务执行超时"
+                task.error_message = t(locale, "plan.task.error_timeout")
                 task.finished_at = datetime.now(UTC)
                 await db.commit()
                 _publish_status(task)
@@ -221,7 +227,7 @@ class PlanningExecutor:
 
             if result.get("status") != "completed" or result.get("plan") is None:
                 task.status = "failed"
-                task.error_message = result.get("error") or "AI 未能生成完整行程计划"
+                task.error_message = result.get("error") or t(locale, "plan.task.error_generic")
                 task.finished_at = datetime.now(UTC)
                 await db.commit()
                 _publish_status(task)
@@ -234,7 +240,7 @@ class PlanningExecutor:
             except Exception as exc:
                 logger.exception("行程回写失败 task_id=%s", task_id)
                 task.status = "failed"
-                task.error_message = f"行程落库失败: {exc}"
+                task.error_message = f"{t(locale, 'plan.task.error_persist')}: {exc}"
                 task.finished_at = datetime.now(UTC)
                 await db.commit()
                 _publish_status(task)
@@ -262,9 +268,10 @@ async def _persist_trip(
     result: dict[str, Any],
 ) -> str:
     """把 Agent 生成的 plan 回写成 Trip / TripDay / Stop 骨架，返回 trip_id。"""
+    locale = normalize_locale(request.get("language"))
     trip = Trip(
         owner=request.get("owner"),
-        title=f"{request.get('destination', '')}行程",
+        title=t(locale, "plan.trip.title", destination=request.get("destination", "")),
         destination=request.get("destination", ""),
         departure=request.get("departure"),
         trip_type=request.get("trip_type"),

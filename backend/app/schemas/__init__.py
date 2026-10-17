@@ -254,6 +254,15 @@ class PlanRequest(BaseModel):
         description="行程节奏档：compact=紧凑（每日站点偏多）/ balanced=均衡（默认）/ relaxed=松弛（每日站点上限收紧+强制留白）",
     )
     provider: Literal["auto", "openai", "deepseek", "ollama"] = "auto"
+    # 输出语种（主链路语言改造：前端 i18n locale 显式传入；未传时由
+    # API 层从 Accept-Language 头解析并注入。normalize_locale 宽松归一，
+    # 未知语种回退 zh-CN。注：该字段随 request_data 快照落库，Agent 所有
+    # 自然语言输出（theme/description/warnings/summary 等）按此语种生成；
+    # POI 名称/描述保留数据源原文，不翻译。）
+    language: str | None = Field(
+        default=None, max_length=32,
+        description="输出语种（zh-CN / en-US；未传时后端按 Accept-Language 解析）",
+    )
 
 
 # ── 行程修订（方案 B：对话改行程） ─────────────────────────────
@@ -262,6 +271,12 @@ class ReviseRequest(BaseModel):
 
     message: str = Field(min_length=2, max_length=500, description="修改意图，如「第三天太赶了，西湖只留半天，晚上想吃楼外楼」")
     provider: Literal["auto", "openai", "deepseek", "ollama"] = "auto"
+    # 输出语种（与 PlanRequest.language 同契约：修订 diff 的 summary、
+    # 质检报告按此语种输出；未传时 API 层按 Accept-Language 解析）
+    language: str | None = Field(
+        default=None, max_length=32,
+        description="输出语种（zh-CN / en-US；未传时后端按 Accept-Language 解析）",
+    )
 
 
 class ReviseAction(BaseModel):

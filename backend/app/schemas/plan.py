@@ -87,6 +87,8 @@ class PlanSchema(BaseModel):
     checkin: dict | None = None
     # 定稿后 servicing 产物：选定站点折扣/优惠比价（Tavily，无来源硬闸门丢弃）
     discounts: dict | None = None
+    # 规划的请求语种快照（i18n 方案 A：前端可读、落库可追踪；由编排层代码回填）
+    language: str | None = Field(default=None, max_length=32)
 
 
 class CritiqueIssueSchema(BaseModel):

@@ -5,7 +5,9 @@
 - 绝不收集、不存储任何证件号码（身份证/护照等）——指引只说明「需要带什么」，
   不要求用户提供敏感信息；
 - LLM 失败（或未配置）→ 纯模板兜底照常输出，绝不会让该能力静默失效；
-- 输出结构固定，前端可直接渲染。
+- 输出结构固定，前端可直接渲染；
+- 文案语言化（i18n 方案 A）：模板文案（docs/steps/disclaimer/transit/时间）
+  全部经 t(locale, ...) 取当前语种；LLM 润色 prompt 也按 locale 输出。
 
 输出结构（与 PlanSchema.checkin 兼容）：
 {
@@ -24,16 +26,23 @@ from __future__ import annotations
 
 from typing import Any
 
-# 固定模板（确定性，不依赖 LLM）
-_DEFAULT_DOCS = ["本人有效身份证原件（大陆居民）", "入住人实名登记所需证件（护照/港澳台通行证等，按身份选择）"]
-_DEFAULT_STEPS = [
-    "在酒店前台出示预订信息（姓名/订单号）与有效证件",
-    "按酒店要求完成实名登记（未成年人需监护人陪同或按酒店政策）",
-    "确认房型、入住人数与离店日期，领取房卡",
-    "如需押金/预授权，确认金额与退还方式",
-    "了解早餐时间、Wi-Fi 密码、退房时间等酒店服务信息",
-]
-_DEFAULT_DISCLAIMER = "以上为通用办理指引，实际以酒店前台公示规则为准（入住/退房时间、证件要求各酒店略有差异）。"
+from app.i18n import normalize_locale
+from app.i18n.translations import t
+
+
+def _default_docs(locale: str = "zh-CN") -> list[str]:
+    return [
+        t(locale, "checkin.docs.default.1"),
+        t(locale, "checkin.docs.default.2"),
+    ]
+
+
+def _default_steps(locale: str = "zh-CN") -> list[str]:
+    return [t(locale, f"checkin.steps.{i}") for i in range(1, 6)]
+
+
+def _default_disclaimer(locale: str = "zh-CN") -> str:
+    return t(locale, "checkin.disclaimer")
 
 
 def _template_checkin(
@@ -41,17 +50,19 @@ def _template_checkin(
     *,
     address: str | None = None,
     transit_hints: list[str] | None = None,
+    locale: str = "zh-CN",
 ) -> dict[str, Any]:
     """纯模板入住指引（LLM 不可用时兜底）。"""
+    locale = normalize_locale(locale)
     return {
         "hotel_name": hotel_name,
         "hotel_address": address,
-        "check_in_time": "通常 14:00 后",
-        "check_out_time": "通常 12:00 前",
-        "docs_required": list(_DEFAULT_DOCS),
-        "steps": list(_DEFAULT_STEPS),
-        "transit": transit_hints or ["从目的地交通枢纽打车/地铁前往酒店（以前端市内通勤建议为准）"],
-        "disclaimer": _DEFAULT_DISCLAIMER,
+        "check_in_time": t(locale, "checkin.check_in_time"),
+        "check_out_time": t(locale, "checkin.check_out_time"),
+        "docs_required": _default_docs(locale),
+        "steps": _default_steps(locale),
+        "transit": transit_hints or [t(locale, "checkin.transit.generic")],
+        "disclaimer": _default_disclaimer(locale),
         "source": "template",
     }
 
@@ -61,6 +72,7 @@ async def generate_checkin_guide(
     *,
     provider: str = "auto",
     llm_timeout: float = 15.0,
+    locale: str = "zh-CN",
 ) -> dict[str, Any]:
     """为定稿行程生成入住办理指引（模板基座 + LLM 可选润色）。
 
@@ -69,21 +81,25 @@ async def generate_checkin_guide(
       没有具体酒店，回退到 plan.hotels（酒店候选列表）第一家；再没有则用
       plan.destination 生成通用指引。
     - LLM 润色全程 try/except：任何失败都回退纯模板，绝不抛异常。
+    - locale（i18n 方案 A）：模板文案语言；LLM 润色 prompt 亦按此语种。
     """
+    locale = normalize_locale(locale)
     hotel = _pick_checkin_hotel(plan)
     if hotel is None:
         # 没有具体酒店：生成目的地级通用指引
         return {
-            **_template_checkin(f"{plan.get('destination', '目的地')}住宿"),
+            **_template_checkin(
+                t(locale, "checkin.stay.name", destination=plan.get("destination", "")),
+                locale=locale,
+            ),
             "hotel_address": None,
-            "disclaimer": _DEFAULT_DISCLAIMER,
         }
 
     hotel_name = hotel.get("name", "")
     address = hotel.get("address") or hotel.get("description") or None
-    transit_hints = _transit_hints(plan, hotel)
+    transit_hints = _transit_hints(plan, hotel, locale)
 
-    base = _template_checkin(hotel_name, address=address, transit_hints=transit_hints)
+    base = _template_checkin(hotel_name, address=address, transit_hints=transit_hints, locale=locale)
 
     # LLM 润色：可选增强（失败回退模板）。超时/异常/无 provider 全部静默降级。
     try:
@@ -92,6 +108,11 @@ async def generate_checkin_guide(
         prov = get_provider(provider)
         from langchain_core.messages import HumanMessage, SystemMessage
 
+        language_note = (
+            "请用中文输出。"
+            if locale == "zh-CN"
+            else "Respond in English."
+        )
         messages = [
             SystemMessage(
                 content=(
@@ -101,7 +122,8 @@ async def generate_checkin_guide(
                     "2. 不得要求用户提供或输入证件号码等敏感信息，只说明需要携带什么\n"
                     "3. 只输出 JSON 对象，字段：hotel_name, hotel_address, check_in_time, "
                     "check_out_time, docs_required(list), steps(list), transit(list), disclaimer\n"
-                    "4. 简短精炼，每项 1 句话"
+                    "4. 简短精炼，每项 1 句话\n"
+                    f"5. {language_note}"
                 )
             ),
             HumanMessage(
@@ -119,7 +141,7 @@ async def generate_checkin_guide(
         parsed = _extract_json(content)
         if isinstance(parsed, dict) and parsed.get("hotel_name"):
             # 合并：以 LLM 输出为主，但强制保留免责声明与来源标注
-            parsed["disclaimer"] = _DEFAULT_DISCLAIMER
+            parsed["disclaimer"] = _default_disclaimer(locale)
             parsed["source"] = "llm"
             return parsed
     except Exception:  # noqa: BLE001,S110 — LLM 润色失败静默降级模板（有意设计）
@@ -153,12 +175,13 @@ def _pick_checkin_hotel(plan: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def _transit_hints(plan: dict[str, Any], hotel: dict[str, Any]) -> list[str]:
+def _transit_hints(plan: dict[str, Any], hotel: dict[str, Any], locale: str = "zh-CN") -> list[str]:
     """基于定稿计划生成到酒店的交通建议（确定性规则）。
 
     简单启发式：若行程含机场/火车站站点（名称含「机场/站/高铁」），
     提示从枢纽到酒店；否则给通用建议。
     """
+    locale = normalize_locale(locale)
     hubs: list[str] = []
     for day in plan.get("days") or []:
         for stop in day.get("stops") or []:
@@ -166,8 +189,8 @@ def _transit_hints(plan: dict[str, Any], hotel: dict[str, Any]) -> list[str]:
             if any(k in name for k in ("机场", "高铁站", "火车站", "汽车站")):
                 hubs.append(name)
     if hubs:
-        return [f"从「{hubs[0]}」打车/地铁前往酒店，约 20-60 分钟（以实时路况为准）"]
-    return ["从目的地交通枢纽打车/地铁前往酒店（以前端市内通勤建议为准）"]
+        return [t(locale, "checkin.transit.hub", hub=hubs[0])]
+    return [t(locale, "checkin.transit.generic")]
 
 
 import json as _json
