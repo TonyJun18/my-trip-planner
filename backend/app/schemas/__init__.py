@@ -274,6 +274,11 @@ class PlanRequest(BaseModel):
         default=None,
         description="行程节奏档：compact=紧凑（每日站点偏多）/ balanced=均衡（默认）/ relaxed=松弛（每日站点上限收紧+强制留白）",
     )
+    # 多城市段（task-multi-city-segments）：有序城市列表，给定时按段排程并插入段间交通占位
+    cities: list[str] | None = Field(
+        default=None, max_length=5,
+        description="多城市目的地（按行程顺序，最多 5 个）；给定时启用多段排程 + 段间交通占位 + 衔接校验",
+    )
     provider: Literal["auto", "openai", "deepseek", "ollama"] = "auto"
     # 输出语种（主链路语言改造：前端 i18n locale 显式传入；未传时由
     # API 层从 Accept-Language 头解析并注入。normalize_locale 宽松归一，

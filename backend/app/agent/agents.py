@@ -820,6 +820,14 @@ def _planner_user_text(request: dict[str, Any], materials: dict[str, Any], *, lo
     if pace_text:
         lines.append(f"{t(locale, 'agent.ctx.pace_constraint')}{pace_text}")
 
+    # 多城市段（task-multi-city-segments）：城市顺序约束注入
+    cities = request.get("cities") or []
+    if isinstance(cities, list) and len(cities) >= 2:
+        lines.append(
+            t(locale, "agent.ctx.multi_city",
+              cities=" → ".join(str(c) for c in cities[:5]))
+        )
+
     # 主动提问 Q&A（需求澄清）：有回答才注入，未回答的问题忽略
     qa_text = _questions_text(request)
     if qa_text:
@@ -1487,6 +1495,35 @@ async def run_planning_agents(
     # 阶段收尾：assembling/reviewing 完成 → servicing（第二段） → 整体 completed
     _fire_phase("assembling", "completed", summary=t(locale, "plan.phase.assembling.final", n=len(plan.get("days", []))))
     _fire_phase("reviewing", "completed", summary=t(locale, "plan.phase.reviewing.completed"))
+
+    # ── MultiCity：多城市分段 + 段间交通占位 + 衔接校验（规则估算，零 LLM）──
+    # 与 TimeGate 同风格：只报告不阻断；占位站点让「什么时候在赶路」进入排程。
+    multi_city = None
+    _cities = request.get("cities") or []
+    if isinstance(_cities, list) and len(_cities) >= 2:
+        from app.services.multi_city import apply_multi_city
+
+        multi_city = apply_multi_city(plan, _cities, locale=locale)
+        plan["multi_city"] = {
+            **{k: v for k, v in multi_city.items() if k != "issues"},
+            "issues": multi_city.get("issues") or [],
+            "basis": "rule_based",
+        }
+        for iss in multi_city.get("issues") or []:
+            plan.setdefault("warnings", []).append(
+                f"[{t(locale, 'multicity.summary.warn', n=multi_city.get('warning_count', 0))}] {iss.get('message')}"
+            )
+        _append_trace({
+            "agent": "MultiCity",
+            "action": "apply_segments",
+            "observation": multi_city.get("summary") or "",
+            "status": "completed" if multi_city.get("passed") else "warning",
+        })
+        _fire_artifact("multi_city", {
+            "enabled": multi_city.get("enabled"),
+            "segments": multi_city.get("segments") or [],
+            "warning_count": multi_city.get("warning_count", 0),
+        })
 
     # ── TimeGate：营业时间/游玩时长确定性校验（规则库，零 LLM）──
     # 与 DrivingGate 同风格：只报告，不阻断。所有 issue 为 warning（建议级），

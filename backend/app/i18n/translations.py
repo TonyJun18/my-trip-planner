@@ -108,6 +108,16 @@ MESSAGES: dict[str, dict[str, str]] = {
         "dynfacts.suggest.free.hit": "免费开放日人流量较大，建议提前预约",
         "dynfacts.suggest.holiday": "建议出行前核对官方节假日开放安排",
         "dynfacts.suggest.holiday.hit": "节假日窗口建议提前预约并核对开放时间",
+        # ── multicity 多城市衔接（task-multi-city-segments）────
+        "multicity.summary.single": "单城市行程，无需分段衔接",
+        "multicity.summary.pass": "多城市分段 {n} 段，段间交通已插入排程",
+        "multicity.summary.warn": "多城市分段 {n} 个衔接提示（段间缓冲不足）",
+        "multicity.transfer.name": "前往{city}（交通占位）",
+        "multicity.transfer.desc.km": "城际交通约 {km}km / {minutes} 分钟（球面距离按均速估算，实际以导航为准）",
+        "multicity.transfer.desc.hint": "城际交通约 {minutes} 分钟（无坐标，按经验估算，实际以导航为准）",
+        "multicity.msg.tight": "前往{city}到港约 {arrive}，首个站点 {start} 开始，缓冲不足 {buffer} 分钟",
+        "multicity.suggest.tight": "把「{name}」后移，或选择更早的城际班次，留足入城/接驳时间",
+        "agent.ctx.multi_city": "【多城市段】按以下顺序分段排程（每段城市连续安排，段间预留城际交通时间）：{cities}",
         # ── revise 修订 ─────────────────────────────────
         "revise.op.replace": "修改",
         "revise.op.add": "新增",
@@ -335,6 +345,16 @@ MESSAGES: dict[str, dict[str, str]] = {
         "dynfacts.suggest.free.hit": "Free days draw crowds — book ahead",
         "dynfacts.suggest.holiday": "Check official holiday hours before you go",
         "dynfacts.suggest.holiday.hit": "Book ahead and confirm hours during the holiday window",
+        # ── multicity ───────────────────────────────────
+        "multicity.summary.single": "Single-city trip — no inter-city segments needed",
+        "multicity.summary.pass": "Multi-city trip split into {n} segments; transfers added to the schedule",
+        "multicity.summary.warn": "Multi-city check found {n} tight connections",
+        "multicity.transfer.name": "Travel to {city} (transfer)",
+        "multicity.transfer.desc.km": "Inter-city transfer about {km}km / {minutes} min (straight-line estimate; follow navigation)",
+        "multicity.transfer.desc.hint": "Inter-city transfer about {minutes} min (no coordinates; experience-based estimate)",
+        "multicity.msg.tight": "Arriving in {city} around {arrive}, but the first stop starts at {start} — less than {buffer} min buffer",
+        "multicity.suggest.tight": "Move \"{name}\" later, or take an earlier inter-city train/flight to allow transfer time",
+        "agent.ctx.multi_city": "[MULTI-CITY SEGMENTS] Plan in this order, keeping each city contiguous and reserving inter-city transfer time: {cities}",
         # ── revise ──────────────────────────────────────
         "revise.op.replace": "Modify",
         "revise.op.add": "Add",
