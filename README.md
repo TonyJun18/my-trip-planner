@@ -15,7 +15,7 @@
 >   校验失败把错误摘要喂回 LLM 最多自纠正 3 次——LLM 输出不可信，schema 才可信
 > - **系统级容错**：LLM 调用统一指数退避重试 + 进程内熔断器（滑动窗口），保护下游 LLM 不被打爆
 > - **真实数据，不造假**：高德 POI/天气（未配置自动降级 Tavily + wttr.in），没有硬编码假数据
-> - **可测试性当一等公民**：FakeLLM 测试替身让 **325 个测试**不耗 token、不依赖网络
+> - **可测试性当一等公民**：FakeLLM 测试替身让 **409 个测试**不耗 token、不依赖网络
 > - **全链路可观测**：异步规划任务 + 前端实时 T-A-O（Thought-Action-Observation）轨迹
 
 ## 核心功能
@@ -45,7 +45,7 @@
 14. **自驾模式校验（DrivingGate）**：同一天相邻站点单段驾车距离/时长上限（120km / 150min）与单日累计里程上限（300km）确定性校验，超限标记 critical 反馈 Planner 带问题重生成；对话式修订同样受该门约束。
 15. **手动细粒度编辑**：站点行内编辑（PATCH）+ 整日站点顺序重排（PUT，幂等），与 AI 对话式修订并存、互不覆盖。
 16. **主动提问 + 用户画像记忆**：规划请求可携带 Questions Q&A（人群/节奏/避峰/备选方案），答案并入规划上下文；跨会话用户画像（GET/PUT `/profile`）自动注入规划上下文。
-17. **Google 登录 + 多语言壳层**：Google ID Token 登录（`POST /auth/google`，前端 `VITE_GOOGLE_CLIENT_ID` 留空则隐藏按钮）；vue-i18n 9 + zh-CN/en-US + 顶栏切换器 + Element Plus locale 联动（三大业务视图文案迁移进行中）。
+17. **Google 登录 + 多语言壳层**：Google ID Token 登录（`POST /auth/google`，前端 `VITE_GOOGLE_CLIENT_ID` 留空则隐藏按钮）；vue-i18n 9 + zh-CN/en-US + 顶栏切换器 + Element Plus locale 联动（三大业务视图文案已迁移，643+ i18n 键）。
 18. **攻略/截图/链接/邮件导入（OCR + 分享链接）**：上传小红书截图 → macOS Vision OCR → 站点候选；粘贴社交分享链接（小红书/马蜂窝/携程/大众点评等）→ 提取结构化信息（失败静默降级为链接收藏）；邮件转发导入；统一走 `note-import` 管线（敌意输入剥离、类型/价格/时长推断）。
 19. **确定性 Plan B 备选方案**：`GET /trips/{id}/plan-b` 基于规则引擎生成另一套行程（无 LLM 成本、毫秒返回），与 AI 方案对照选择。
 20. **地图拖拽修订**：`POST /trips/{id}/map-edit` 拖动地图 marker 改坐标 → 最小 diff 原子应用（复用 revise 原子内核，受 DrivingGate 约束）。
@@ -84,7 +84,7 @@ backend/
 │   ├── agent/               # 多 Agent（agents.py 编排 / tools.py 高德·Tavily·天气 / providers.py LLM / graph.py LangGraph 原型）
 │   └── api/v1/              # 路由（health / auth / trips / planner / profile）
 ├── alembic/                 # 数据库迁移
-├── tests/                   # pytest 测试（325 个：FakeLLM 替身，覆盖协作/自驾/画像/编辑/恢复/时间校验等）
+├── tests/                   # pytest 测试（409 个：FakeLLM 替身，覆盖协作/自驾/画像/编辑/恢复/时间校验等）
 ├── pyproject.toml           # uv 工程配置
 ├── .env / .env.example      # 环境变量
 └── uv.lock
@@ -482,7 +482,7 @@ uv run alembic downgrade -1                        # 回滚
 | 自驾校验基于球面距离估算，不使用导航 API | 实际道路/拥堵/过路费与估算有偏差（默认均速 50km/h） | 可选改进：接高德路径规划 API（需 key 配额） |
 | 营业时间/游玩时长是规则库基准，非真实 POI 营业时间 | 「闭馆到达」提示基于类目基准（如景区 09:00-18:00），与个别 POI 实际营业时间可能有出入 | ✅ **已缓解（TimeGate）**：显式 `open_hours` 字段优先于规则库；规则库只对已知类目推断，未知类目保持沉默（绝不编造）；真实营业时间以 POI 现场为准 |
 | 移动端体验未专门优化 | 前端面向桌面 Web 设计，小屏适配一般 | 可选改进：响应式布局打磨 |
-| 多语言覆盖尚在进行 | 三大业务视图文案迁移未完成，en-US 下部分硬编码中文 | ✅ 进行中：task-i18n-views（PlanWizard / TripDetailView / ShareView） |
+| 多语言覆盖 | 已完成：三大业务视图文案全部迁移，zh/en 643+ 键，Element Plus locale 联动 | ✅ 已完成（val: task-i18n 系列） |
 | Google 登录需要用户自备 OAuth Client ID | `VITE_GOOGLE_CLIENT_ID` 未配置时隐藏按钮；ID Token 校验依赖 Google 公钥 | 部署方需在 Google Cloud Console 创建 Web OAuth 凭据 |
 | 无 7×24 人工兜底（OTA 有定制师/指路人） | 极端边缘场景没有真人介入，用户自助 | ✅ **差异化缓解（工程化兜底）**：降级链（重试 → 熔断 → provider/数据源兜底 → Critic 降级放行）+ 可回溯质检 trace + 确定性代码兜底（详见「质量与兜底」小节）；自托管者也可自行加人工评审 |
 
