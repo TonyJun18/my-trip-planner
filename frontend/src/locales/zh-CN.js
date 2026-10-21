@@ -466,6 +466,13 @@ export default {
     liveDelayConfirmMsg: '将今天及之后的行程整体顺延一天（结束日期同步 +1）。确定？',
     // ── 分享令牌生命周期（TTL / 吊销 / 审计） ──
     shareSettings: '分享设置',
+    galleryPublish: '发布到画廊',
+    galleryBlurbPrompt: '给这条行程一句卖点（可选，最多 200 字）',
+    galleryBlurbPlaceholder: '如：西湖环湖骑行 + 灵隐半日，人均 800',
+    galleryBlurbTooLong: '卖点最多 200 字',
+    galleryPublishOk: '发布',
+    galleryPublished: '已发布到灵感画廊',
+    galleryPublishFail: '发布失败，请稍后再试',
     shareSettingsTitle: '分享与链接管理',
     shareSettingsHint: '管理只读分享与受邀编辑链接的有效期、状态和访问记录',
     shareLinkFetchFail: '获取分享状态失败',

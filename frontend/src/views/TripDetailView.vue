@@ -516,6 +516,26 @@ async function doShare() {
   }
 }
 
+// ── 发布到灵感画廊（task-gallery-featured）──────────────────
+const publishingGallery = ref(false)
+async function publishGallery() {
+  try {
+    const { value } = await ElMessageBox.prompt(t('tripDetail.galleryBlurbPrompt'), t('tripDetail.galleryPublish'), {
+      confirmButtonText: t('tripDetail.galleryPublishOk'),
+      cancelButtonText: t('common.cancel'),
+      inputPlaceholder: t('tripDetail.galleryBlurbPlaceholder'),
+      inputValidator: (v) => (v || '').length <= 200 || t('tripDetail.galleryBlurbTooLong'),
+    })
+    publishingGallery.value = true
+    await api.publishToGallery(trip.value.id, { blurb: value || '' })
+    ElMessage.success(t('tripDetail.galleryPublished'))
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(t('tripDetail.galleryPublishFail'))
+  } finally {
+    publishingGallery.value = false
+  }
+}
+
 // ── 受邀编辑权（owner 开放/收回；与只读分享分离） ──────────
 const editSharing = ref(false)
 const editRevoking = ref(false)
@@ -824,6 +844,9 @@ onBeforeUnmount(() => {
         </el-button>
         <el-button type="success" plain :loading="sharing" @click="doShare">
           <el-icon style="margin-right: 4px"><Share /></el-icon>{{ $t('tripDetail.shareTrip') }}
+        </el-button>
+        <el-button plain :loading="publishingGallery" @click="publishGallery">
+          <el-icon style="margin-right: 4px"><Star /></el-icon>{{ $t('tripDetail.galleryPublish') }}
         </el-button>
         <el-button type="primary" plain @click="importVisible = true">
           <el-icon style="margin-right: 4px"><Upload /></el-icon>{{ $t('tripDetail.importContent') }}

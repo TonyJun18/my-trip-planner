@@ -231,6 +231,19 @@ export const importLink = (data) => http.post('/trips/link/import', data).then((
 //              reason/play/match_score/matched_tags/season_note/basis}], counts, note }
 export const getInspiration = (params = {}) => http.get('/trips/inspiration', { params }).then((r) => r.data)
 
+// ── 灵感画廊 + 城市模板（task-gallery-featured / city-templates） ──
+// GET /trips/gallery（公开精选） / GET /trips/gallery/templates（城市模板卡）
+// POST /trips/gallery/{id}/clone（复制到我的账号） / POST /trips/{id}/gallery/publish
+export const getGallery = (params = {}) => http.get('/trips/gallery', { params }).then((r) => r.data)
+export const getCityTemplates = (params = {}) =>
+  http.get('/trips/gallery/templates', { params }).then((r) => r.data)
+export const cloneGalleryTrip = (sourceId) =>
+  http.post(`/trips/gallery/${sourceId}/clone`).then((r) => r.data)
+export const publishToGallery = (tripId, data = {}) =>
+  http.post(`/trips/${tripId}/gallery/publish`, data).then((r) => r.data)
+export const unpublishFromGallery = (tripId) =>
+  http.delete(`/trips/${tripId}/gallery/publish`).then((r) => r.data)
+
 // ── 行程事件流（task-trip-event-notify：主动通知最小版） ─────────
 // 后端契约：GET /trips/{id}/events（owner）/ GET /trips/share/{token}/events（免登录只读）
 // → { items: [{id, trip_id, event_type, payload, created_at}], total }

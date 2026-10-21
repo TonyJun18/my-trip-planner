@@ -58,6 +58,11 @@ class Trip(Base):
       后才生成 edit_token；受邀者凭 edit_token 可读 + 受限编辑（站点备注/勾选/顺序）。
     - owner 可随时清空（收回），不影响只读分享。
     """
+    # ── 公开灵感画廊（task-gallery-featured）──────────────────
+    is_featured: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    """是否发布到公开灵感画廊（运营/owner 主动标记；默认 False 不公开）。"""
+    gallery_blurb: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    """画廊一句话卖点（如「西湖环湖骑行 + 灵隐寺半日」）；发布时填写。"""
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

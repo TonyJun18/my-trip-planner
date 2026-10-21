@@ -466,6 +466,13 @@ export default {
     liveDelayConfirmMsg: 'Shift today and all remaining days back by one day (end date +1). Continue?',
     // ── Share token lifecycle (TTL / revoke / audit) ──
     shareSettings: 'Share Settings',
+    galleryPublish: 'Publish to gallery',
+    galleryBlurbPrompt: 'One-line pitch for this trip (optional, max 200 chars)',
+    galleryBlurbPlaceholder: 'e.g. Lakeside cycling + half-day temple, ¥800 per person',
+    galleryBlurbTooLong: 'Pitch must be 200 characters or fewer',
+    galleryPublishOk: 'Publish',
+    galleryPublished: 'Published to the inspiration gallery',
+    galleryPublishFail: 'Publish failed, please try again',
     shareSettingsTitle: 'Sharing & Link Management',
     shareSettingsHint: 'Manage validity, status and access records of read-only share and invited-edit links',
     shareLinkFetchFail: 'Failed to load share status',
