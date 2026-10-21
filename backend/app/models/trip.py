@@ -219,3 +219,22 @@ class TripFavorite(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     trip_id: Mapped[str] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TripEvent(Base):
+    """行程事件日志（task-trip-event-notify）：修订/打卡/投票/评论等业务动作的事件流。
+
+    - 用途：行程内「主动通知」最小版——owner 与受邀者订阅事件流，前端轮询或 WS 实时消费；
+    - 事件是事实记录（append-only），不做状态承载（权威状态仍在 trip/stop 自身）；
+    - ``event_type``：revise / check / skip / delay / comment / vote / edit / share；
+    - ``payload``：可读摘要（含 i18n 文案 key 或直接文案 + 参数），前端可直接展示；
+    - ``trip_id`` 索引 + ``created_at`` 排序：按行程查最近事件。
+    """
+
+    __tablename__ = "trip_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
