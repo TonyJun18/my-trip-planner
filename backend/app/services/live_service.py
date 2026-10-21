@@ -197,6 +197,12 @@ async def _check_stop_core(
         "name": stop.name,
         "day_number": day.day_number,
     })
+    # 事件流记录（append-only，失败静默）
+    await _record_event(
+        db, trip.id, "check",
+        {"stop_id": stop.id, "name": stop.name, "day_number": day.day_number,
+         "checked": checked},
+    )
     return {"stop": {"id": stop.id, "name": stop.name, "checked": stop.checked}, "live": live_snapshot(trip, today=today)}
 
 
@@ -248,6 +254,10 @@ async def _skip_stop_core(
         "name": stop.name,
         "day_number": day.day_number,
     })
+    await _record_event(
+        db, trip.id, "skip",
+        {"stop_id": stop.id, "name": stop.name, "day_number": day.day_number},
+    )
     return {"live": live_snapshot(trip, today=today)}
 
 
@@ -310,6 +320,10 @@ async def _delay_today_core(
         "days_shifted": 1,
         "new_end_date": trip.end_date.isoformat(),
     })
+    await _record_event(
+        db, trip.id, "delay",
+        {"days_shifted": 1, "new_end_date": trip.end_date.isoformat()},
+    )
     return {"live": live_snapshot(trip, today=today)}
 
 
@@ -321,3 +335,19 @@ def _publish(trip_id: str, event_type: str, data: dict[str, Any]) -> None:
         publish_collab(trip_id, {"type": event_type, **data})
     except Exception:  # noqa: BLE001 — 事件推送失败绝不影响行中操作
         logger.debug("collab feed 事件推送失败: %s", event_type, exc_info=True)
+
+
+async def _record_event(
+    db: AsyncSession,
+    trip_id: str,
+    event_type: str,
+    payload: dict[str, Any],
+) -> None:
+    """记录行程事件（append-only，失败静默降级，绝不阻断行中操作）。"""
+    try:
+        from app.services.event_service import record_event
+
+        await record_event(db, trip_id=trip_id, event_type=event_type,
+                           payload=payload, commit=False)
+    except Exception:  # noqa: BLE001
+        logger.debug("行程事件记录失败: %s/%s", trip_id, event_type, exc_info=True)

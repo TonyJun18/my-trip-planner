@@ -8,8 +8,27 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
+from app.core.logging import get_logger
 from app.models import Stop, StopVote, Trip, TripComment, TripDay
 from app.schemas.collab import CommentIn, InvitedStopUpdate, VoteIn
+
+logger = get_logger(__name__)
+
+
+async def _record_event(
+    db: AsyncSession,
+    trip_id: str,
+    event_type: str,
+    payload: dict[str, Any],
+) -> None:
+    """记录行程事件（append-only，失败静默降级，绝不阻断协作操作）。"""
+    try:
+        from app.services.event_service import record_event
+
+        await record_event(db, trip_id=trip_id, event_type=event_type,
+                           payload=payload, commit=False)
+    except Exception:  # noqa: BLE001
+        logger.debug("行程事件记录失败: %s/%s", trip_id, event_type, exc_info=True)
 
 
 # ── 协作实时广播（WS） ─────────────────────────────────────────
@@ -95,6 +114,12 @@ async def create_comment(db: AsyncSession, token: str, data: CommentIn) -> TripC
     db.add(comment)
     await db.flush()
     await db.refresh(comment)
+    # 事件流记录（append-only，失败静默）
+    await _record_event(
+        db, trip.id, "comment",
+        {"comment_id": comment.id, "author": comment.author_name or "",
+         "content": comment.content[:100]},
+    )
     return comment
 
 
@@ -221,6 +246,12 @@ async def cast_vote(
 
     counts = await _counts_for_stop(db, stop_id)
 
+    # 事件流记录（append-only，失败静默）
+    await _record_event(
+        db, trip.id, "vote",
+        {"stop_id": stop_id, "value": data.value, "up": counts["up"], "down": counts["down"]},
+    )
+
     # 渐进式推进：过半成员表态且赞成多于反对 → 「小组一致」（未响应不阻塞）
     group_size = await _trip_group_size(db, trip)
     threshold = _consensus_threshold(group_size)
@@ -248,6 +279,11 @@ async def update_invited_stop(
             setattr(stop, field, value)
     await db.flush()
     await db.refresh(stop)
+    # 事件流记录（append-only，失败静默）
+    await _record_event(
+        db, trip.id, "edit",
+        {"stop_id": stop.id, "name": stop.name, "fields": list(data.model_dump(exclude_unset=True).keys())},
+    )
     return stop
 
 

@@ -33,6 +33,22 @@ from app.services._common import normalize_trace as _normalize_trace
 logger = get_logger(__name__)
 
 
+async def _record_event(
+    db: AsyncSession,
+    trip_id: str,
+    event_type: str,
+    payload: dict[str, Any],
+) -> None:
+    """记录行程事件（append-only，失败静默降级，绝不阻断修订）。"""
+    try:
+        from app.services.event_service import record_event
+
+        await record_event(db, trip_id=trip_id, event_type=event_type,
+                           payload=payload, commit=False)
+    except Exception:  # noqa: BLE001
+        logger.debug("行程事件记录失败: %s/%s", trip_id, event_type, exc_info=True)
+
+
 async def revise_trip(
     db: AsyncSession,
     trip_id: str,
@@ -90,6 +106,14 @@ async def revise_trip(
     await db.flush()
     await _recompute_budget(db, trip)
     await db.commit()
+
+    # 3.5) 事件流记录（append-only，失败静默）：修订动作进入行程事件流
+    await _record_event(
+        db, trip.id, "revise",
+        {"message": message[:200],
+         "summary": diff.get("summary") or "",
+         "ops": len(diff.get("actions") or diff.get("ops") or [])},
+    )
 
     # 4) 修订质控闭环：Critic 复审（最多 max_review_rounds 轮；fix 独立小事务）
     quality = await _revise_qa_loop(

@@ -29,6 +29,8 @@ from app.schemas import (
     StopUpdate,
     TripBudgetOut,
     TripCreate,
+    TripEventListOut,
+    TripEventOut,
     TripListOut,
     TripOut,
     TripUpdate,
@@ -657,6 +659,66 @@ async def delay_live_trip(
 
     result = await live_service.delay_today(db, trip_id, owner=user.id)
     return LiveSnapshotOut(**result["live"])
+
+
+# ── 行程事件流（task-trip-event-notify：主动通知最小版） ─────────────
+# 修订/打卡/跳过/顺延/评论/投票等业务动作 append-only 记录到 trip_events，
+# 事件流是「事实记录」不做状态承载；owner（JWT）与受邀者（share/edit token）
+# 均可在自己的权限范围内读取事件（免登录双路径与 live 快照同构）。
+@router.get("/{trip_id}/events", response_model=TripEventListOut, summary="行程事件流（owner，最新在前，分页）")
+async def list_trip_events(
+    trip_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> TripEventListOut:
+    """owner 查看行程事件流（修订/打卡/跳过/顺延/评论/投票）。"""
+    from app.services import event_service
+
+    # owner 归属校验（复用 trip_service 的隔离语义）
+    await trip_service.get_trip(db, trip_id, owner=user.id)
+    events = await event_service.list_events(db, trip_id, limit=limit, offset=offset)
+    return TripEventListOut(
+        items=[TripEventOut(**event_service.event_out(e)) for e in events],
+        total=len(events),
+    )
+
+
+@router.get("/share/{token}/events", response_model=TripEventListOut, summary="行程事件流（免登录，凭 share_token 只读）")
+async def list_shared_trip_events(
+    token: str,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_session),
+) -> TripEventListOut:
+    """分享页查看事件流（只读语义，凭 share_token 免登录）。"""
+    from app.services import event_service
+
+    trip = await trip_service.get_trip_by_share_token(db, token)
+    events = await event_service.list_events(db, trip.id, limit=limit, offset=offset)
+    return TripEventListOut(
+        items=[TripEventOut(**event_service.event_out(e)) for e in events],
+        total=len(events),
+    )
+
+
+@router.get("/edit/{token}/events", response_model=TripEventListOut, summary="行程事件流（免登录，凭 edit_token）")
+async def list_editable_trip_events(
+    token: str,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_session),
+) -> TripEventListOut:
+    """受邀编辑者查看事件流（凭 edit_token 免登录）。"""
+    from app.services import event_service
+
+    trip = await trip_service.get_trip_by_edit_token(db, token)
+    events = await event_service.list_events(db, trip.id, limit=limit, offset=offset)
+    return TripEventListOut(
+        items=[TripEventOut(**event_service.event_out(e)) for e in events],
+        total=len(events),
+    )
 
 
 # ── 行中「今日视图」受邀编辑版（免登录，凭 edit_token；ShareView 同伴操作） ──
