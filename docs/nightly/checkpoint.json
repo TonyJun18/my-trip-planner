@@ -1,5 +1,5 @@
 {
-  "night": "2026-10-17",
+  "night": "2026-10-21",
   "status": "in_progress",
   "todo": [
     "competitive-analysis",
@@ -14,18 +14,21 @@
     "content-independent-planner-survival",
     "task-gallery-featured",
     "task-gallery-city-templates",
-    "task-live-lockscreen-eval"
+    "task-live-lockscreen-eval",
+    "task-collab-democracy-eval",
+    "task-exertion-check",
+    "content-zh-market-evidence",
+    "task-link-import-zh-eval"
   ],
   "completed": [
     "competitive-analysis"
   ],
   "current_index": 1,
   "issues": [
-    "night-start(10-17) 重建：night 由 2026-10-16 更新为 2026-10-17。todo 重建自 docs/night-build-todo.md 未勾选项（9 项），首任务 competitive-analysis。",
-    "【重要·用户待处理】工作区存在 2026-10-16 白天会话 i18n 语言化改造的未提交改动（19 文件 ±545/527 + 新增 backend/app/i18n/ + tests/test_i18n.py + docs/i18n-language-task-archive.md），存档文档载明已完成并验证 409 测试全绿、前端 build 通过，但尚未提交。night-worker-4 不触碰这些改动（不 stash/不清理），仅提交本任务自己的文件；请用户白天确认提交。",
-    "2026-10-17 worker-6：web_extract 对竞品域名返回 Blocked(私有地址误判)，降级 curl 抓取官方页（tripplanner.ai/wonderplan.ai/tripnotes-2.webflow.io）完成分析；Tripnotes 2.0 回归在线为新信号。"
+    "night-start(10-21) 重建：night 由 2026-10-17 更新为 2026-10-21。todo 重建自 docs/night-build-todo.md 未勾选项（12 项），首任务 competitive-analysis。工作区存在 2 个 untracked 报告文件（docs/nightly/reports/2026-10-17.md、2026-10-19.md），不触碰。",
+    "2026-10-21 worker-7：竞品分析完成（branch nightly/2026-10-21/0-competitive-analysis）。web_extract 对 tripplanner.ai/tripnotes-2.webflow.io 仍 Blocked（私有地址误判，与 10-17 同），全部信息来自 web_search 多源摘要（含中文源），已标注来源。新增 4 行动项（task-collab-democracy-eval / task-exertion-check / content-zh-market-evidence / task-link-import-zh-eval）已追加 todo 与 docs/night-build-todo.md。"
   ],
   "branches": [
-    "nightly/2026-10-17/0-competitive-analysis"
+    "nightly/2026-10-21/0-competitive-analysis"
   ]
 }
