@@ -15,8 +15,12 @@ start trips 启发；截图 OCR 仍是主路径，链接提取是「社交分享
     169.254./::1），防止把服务端当跳板打内网；
   * 提取只读 og:title/og:description/<title> 纯文本，经 schema 强校验
     截断长度，绝不把抓取内容当指令执行；
-- 站点候选：标题+描述喂给 note_import.parse_note——敌意输入剥离、类型/
-  价格/时长推断全复用，同一输入同一输出；
+- 站点候选：标题+描述（+深度正文，P1-5）喂给 note_import.parse_note——敌意输入
+  剥离、类型/价格/时长推断全复用，同一输入同一输出；
+- 深度抽取（task-link-import-zh-eval）：马蜂窝/穷游/携程/去哪儿/大众点评等中文
+  攻略页额外抽取「POI 链接锚文本 + 正文块文本」→ 结构化候选（对齐圆周旅迹
+  攻略转行程的核心场景）；小红书反爬壳页面无正文，明确不尝试深度抽取（保持
+  og:meta 降级，不回退已可用能力）；
 - 降级链：URL 非法 → 结构化错误（4xx）；抓取/解析失败 → 静默降级为
   链接收藏（200 + extracted=false），与验收「失败静默降级」一致。
 """
@@ -44,6 +48,7 @@ MAX_URL_LENGTH = 2048
 _PLATFORM_RULES: list[tuple[re.Pattern, str, str]] = [
     (re.compile(r"xiaohongshu\.com|xhslink\.com"), "xiaohongshu", "小红书"),
     (re.compile(r"mafengwo\.(cn|com)"), "mafengwo", "马蜂窝"),
+    (re.compile(r"qyer\.com"), "qyer", "穷游"),
     (re.compile(r"ctrip\.com|trip\.com"), "ctrip", "携程"),
     (re.compile(r"qunar\.com"), "qunar", "去哪儿"),
     (re.compile(r"dianping\.com"), "dianping", "大众点评"),
@@ -51,6 +56,33 @@ _PLATFORM_RULES: list[tuple[re.Pattern, str, str]] = [
     (re.compile(r"weibo\.com|weibo\.cn"), "weibo", "微博"),
     (re.compile(r"bilibili\.com|b23\.tv"), "bilibili", "B站"),
 ]
+
+# ── 深度抽取平台（task-link-import-zh-eval）─────────────────────
+# 圆周旅迹核心能力 = 粘贴中文攻略链接 → 景点结构化（85%+ 解析率）。
+# 我们零凭证路线：抓正文 + POI 链接文本 → note_import.parse_note（敌意剥离复用）。
+# 小红书反爬大概率挡（实测返回壳页面/空正文）→ 明确不尝试深度抽取，保持现有
+# og:meta 降级（链接收藏），不回退已可用能力。
+_DEEP_EXTRACT_PLATFORMS = {"mafengwo", "qyer", "ctrip", "qunar", "dianping", "generic"}
+# 深度抽取正文长度上限（字符）：喂给 parse_note，防超长页面。
+_DEEP_TEXT_MAX_CHARS = 6000
+
+# 正文块标签 → 换行（保留段落/列表结构，供 parse_note 按行抽取候选）。
+_BLOCK_TAG_RE = re.compile(
+    r"</?(?:p|div|li|ul|ol|br|h[1-6]|section|article|td|tr)[^>]*>",
+    re.IGNORECASE,
+)
+# POI 链接：马蜂窝/携程等的景点详情链接，锚文本即景点名（最高置信信号）。
+_POI_LINK_RE = re.compile(
+    r'<a[^>]+href="[^"]*(?:/poi/|/sight/|/attraction/|/scenery/|/destination/)[^"]*"[^>]*>'
+    r"([^<]{2,%d})</a>" % 60,
+    re.IGNORECASE,
+)
+# script/style 块整体丢弃（避免 JS 文本污染候选）。
+_SCRIPT_STYLE_RE = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
+# HTML 标签通用剥离。
+_TAG_RE = re.compile(r"<[^>]+>")
+# 连续空白/换行归一。
+_BLANK_RE = re.compile(r"[ \t\r\f\v]+")
 
 # SSRF 最小防护：明显内网/回环主机名段（白名单式保守拒绝，不求完整覆盖）。
 _SSRF_HOST_RE = re.compile(
@@ -74,8 +106,9 @@ _META_DESC_RE = re.compile(
 )
 _TITLE_RE = re.compile(r"<title[^>]*>([^<]*)</title>", re.IGNORECASE)
 
-# 候选描述来源文本长度上限（防超长 meta 撑爆 parse_note）。
-_FEED_MAX_CHARS = 4000
+# 候选描述来源文本长度上限（防超长 meta 撑爆 parse_note）；
+# P1-5 深度抽取后正文更长（POI 链接 + 段落），放宽到 8k（parse_note 上限 20k）。
+_FEED_MAX_CHARS = 8000
 
 
 class LinkImportError(Exception):
@@ -218,6 +251,40 @@ def _extract_meta(html_text: str) -> tuple[str, str]:
     return title, desc
 
 
+def _extract_deep_text(html_text: str) -> str:
+    """从攻略页正文深度抽取候选文本（task-link-import-zh-eval）。
+
+    两步（纯 std-lib，零依赖）：
+    1. **POI 链接锚文本**：`<a href="/poi/...">景点名</a>`（马蜂窝/携程/穷游等的
+       景点详情链接）→ 最高置信信号，转成 `📍 名称` 行供 parse_note 识别；
+    2. **正文块文本**：块级标签（p/li/h1-h6/br…）转行、剥离 script/style 与其余
+       标签、反转义 HTML 实体 → 保留段落/列表结构，让 parse_note 按行抽取
+       「推荐/打卡/必去」等标记行。
+
+    小红书不在深度抽取范围（反爬壳页面无正文），保持 og:meta 降级路径。
+    """
+    body = _SCRIPT_STYLE_RE.sub(" ", html_text)
+    # 1) POI 链接锚文本
+    poi_names: list[str] = []
+    for m in _POI_LINK_RE.finditer(body):
+        name = html.unescape(m.group(1)).strip()
+        if 2 <= len(name) <= 60 and name not in poi_names:
+            poi_names.append(name)
+    # 2) 块标签转行 + 剥离其余标签
+    text = _BLOCK_TAG_RE.sub("\n", body)
+    text = _TAG_RE.sub(" ", text)
+    text = html.unescape(text)
+    lines: list[str] = []
+    for ln in text.splitlines():
+        ln = _BLANK_RE.sub(" ", ln).strip()
+        if len(ln) >= 2:
+            lines.append(ln)
+    body_text = "\n".join(lines)
+    poi_block = "\n".join(f"📍 {n}" for n in poi_names)
+    combined = f"{poi_block}\n{body_text}" if poi_block else body_text
+    return combined[:_DEEP_TEXT_MAX_CHARS]
+
+
 def parse_link(url: str, fetch: Callable[[str], str] | None = None) -> LinkImportResult:
     """主入口：公开分享链接 → 提取结构化信息（成功）或静默降级为链接收藏。
 
@@ -243,8 +310,14 @@ def parse_link(url: str, fetch: Callable[[str], str] | None = None) -> LinkImpor
         # 无 meta / 反爬壳页面 → 链接收藏降级。
         return LinkImportResult(url=url, title=platform_name, platform=platform, extracted=False)
 
-    # 提取成功：把标题+描述喂给 note-import 管线（敌意输入剥离 / 类型推断复用）。
-    feed_text = f"{title}\n{description}"[: _FEED_MAX_CHARS]
+    # 提取成功：把标题+描述（+深度正文，任务 P1-5）喂给 note-import 管线
+    # （敌意输入剥离 / 类型推断复用）。
+    feed_parts: list[str] = [title, description]
+    if platform in _DEEP_EXTRACT_PLATFORMS:
+        deep_text = _extract_deep_text(html_text)
+        if deep_text:
+            feed_parts.append(deep_text)
+    feed_text = "\n".join(p for p in feed_parts if p)[: _FEED_MAX_CHARS]
     note_result = parse_note(feed_text)
 
     return LinkImportResult(
