@@ -7,6 +7,7 @@ import * as api from '@/api'
 import TripMap from '@/components/TripMap.vue'
 import HotelRecommend from '@/components/HotelRecommend.vue'
 import TripServicing from '@/components/TripServicing.vue'
+import PackingList from '@/components/PackingList.vue'
 import QualityCard from '@/components/QualityCard.vue'
 import XhsNoteDialog from '@/components/XhsNoteDialog.vue'
 import ImportDialog from '@/components/ImportDialog.vue'
@@ -1116,6 +1117,13 @@ onBeforeUnmount(() => {
           :checkin="servicingProps.checkin"
           :discount-rules="servicingProps.discountRules"
           :discounts="servicingProps.discounts"
+        />
+
+        <!-- 打包清单（纯前端 localStorage · 零凭证） -->
+        <PackingList
+          v-if="trip"
+          :trip-id="trip.id"
+          :trip-type="trip.trip_type"
         />
 
         <!-- 行中「今日视图」（live 期间置顶；打卡/跳过/迟到顺延） -->
