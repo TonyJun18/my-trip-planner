@@ -581,6 +581,7 @@ export default {
     offlineNoCache: 'You are offline with no local cache. Connect and try again.',
     consensus: 'Consensus',
     consensusTip: 'Majority has voted and favors it — good to proceed',
+    participationTip: 'Voted / group size: no response ≠ objection — majority proceeds',
     basisLabel: 'How we estimated',
     basisHotel: 'Hotel ¥{avg}/night × {n} (city base-rate estimate)',
     basisHotelShort: 'Hotel estimated from city base rate',

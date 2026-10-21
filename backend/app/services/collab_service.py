@@ -193,7 +193,7 @@ async def list_stop_votes(db: AsyncSession, token: str, *, voter_key: str | None
     )
     rows = (await db.execute(stmt)).all()
 
-    result: dict[str, dict[str, int]] = {}
+    result: dict[str, dict[str, Any]] = {}
     for stop_id, value, cnt in rows:
         item = result.setdefault(stop_id, {"stop_id": stop_id, "up": 0, "down": 0})
         if value == 1:
@@ -207,6 +207,10 @@ async def list_stop_votes(db: AsyncSession, token: str, *, voter_key: str | None
     for item in result.values():
         responded = item["up"] + item["down"]
         item["consensus"] = responded >= threshold and item["up"] > item["down"] if threshold > 0 else False
+        # 参与率透出（task-collab-democracy-eval 最小版）
+        item["responded"] = responded
+        item["group_size"] = group_size
+        item["participation"] = round(responded / group_size, 2) if group_size else 0.0
         item.setdefault("my_value", 0)  # 无 voter_key 时给默认值，保证 response 校验通过
 
     if voter_key:
@@ -264,6 +268,10 @@ async def cast_vote(
         "down": counts["down"],
         "my_value": data.value,
         "consensus": consensus,
+        # 参与率透出（task-collab-democracy-eval 最小版）：不响应 ≠ 反对
+        "responded": responded,
+        "group_size": group_size,
+        "participation": round(responded / group_size, 2) if group_size else 0.0,
     }
 
 

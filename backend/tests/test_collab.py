@@ -381,6 +381,44 @@ async def test_consensus_half_majority_progressive(client, auth_user):
     assert stop_b not in votes
 
 
+async def test_vote_participation_transparency(client, auth_user):
+    """参与率透出（task-collab-democracy-eval 最小版）：responded/group_size/participation。
+
+    借鉴 MonkeyTravel：不响应 ≠ 反对；参与率让共识更有信息量。
+    """
+    _, headers = auth_user
+    _, token, stop_ids = await _make_trip_with_travelers(client, headers, travelers=3)
+    stop_a, _ = stop_ids
+
+    # 1/3 表态：participaton≈0.33，consensus False
+    resp = await client.post(
+        f"/api/v1/trips/share/{token}/votes/{stop_a}", json={"value": 1},
+        headers={"User-Agent": "member-a"},
+    )
+    body = resp.json()
+    assert body["responded"] == 1
+    assert body["group_size"] == 3
+    assert abs(body["participation"] - 0.33) <= 0.01
+    assert body["consensus"] is False
+
+    # 2/3 表态：参与率 0.67，consensus True
+    resp = await client.post(
+        f"/api/v1/trips/share/{token}/votes/{stop_a}", json={"value": 1},
+        headers={"User-Agent": "member-b"},
+    )
+    body = resp.json()
+    assert body["responded"] == 2
+    assert abs(body["participation"] - 0.67) <= 0.01
+    assert body["consensus"] is True
+
+    # 汇总接口同样透出参与率
+    resp = await client.get(f"/api/v1/trips/share/{token}/votes", headers={"User-Agent": "member-a"})
+    votes = resp.json()
+    assert votes[stop_a]["responded"] == 2
+    assert votes[stop_a]["group_size"] == 3
+    assert votes[stop_a]["participation"] > 0.6
+
+
 async def test_consensus_threshold_ceil_and_solo(client, auth_user):
     """边界：4 人行 → 2 人即可；单人行程永不标记 consensus。"""
     _, headers = auth_user

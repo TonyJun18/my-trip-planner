@@ -49,6 +49,10 @@ class VoteOut(BaseModel):
         default=False,
         description="渐进式推进：该站点已投票（确认）成员数 ≥ 小组规模的 50% 即标记「小组一致」，未响应成员不阻塞",
     )
+    # 参与率透出（task-collab-democracy-eval 最小版）：不响应 ≠ 反对
+    responded: int = Field(default=0, description="已表态人数（up+down）")
+    group_size: int = Field(default=0, description="小组规模（人数与已表态访客数的较大者）")
+    participation: float = Field(default=0.0, ge=0, le=1, description="参与率 = responded / group_size")
 
 
 class InvitedStopUpdate(BaseModel):

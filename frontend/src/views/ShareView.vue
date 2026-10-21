@@ -245,6 +245,13 @@ function hasConsensus(stopId) {
   return !!votes.value?.[stopId]?.consensus
 }
 
+// 参与率透出（task-collab-democracy-eval 最小版）：不响应 ≠ 反对
+function voteParticipation(stopId) {
+  const v = votes.value?.[stopId]
+  if (!v || !v.group_size) return ''
+  return `${v.responded || 0}/${v.group_size}`
+}
+
 // ── 受邀编辑（editMode）：勾选 / 行内改名备注 / 上移下移顺序 ──
 async function toggleChecked(stop) {
   try {
@@ -599,6 +606,10 @@ function watchCollabFeed() {
                   <span v-if="hasConsensus(stop.id)" class="consensus-badge" :title="$t('share.consensusTip')">
                     <el-icon style="margin-right: 2px"><CircleCheck /></el-icon>{{ $t('share.consensus') }}
                   </span>
+                  <!-- 参与率（已表态/小组规模）：不响应 ≠ 反对 -->
+                  <span v-if="voteParticipation(stop.id)" class="vote-participation" :title="$t('share.participationTip')">
+                    {{ voteParticipation(stop.id) }}
+                  </span>
                 </span>
                 <!-- 受邀编辑：行内编辑 + 上移下移 -->
                 <span v-else class="edit-group">
@@ -863,6 +874,13 @@ function watchCollabFeed() {
 .vote-btn:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
 .vote-btn.active { background: var(--brand-soft); border-color: var(--brand); color: var(--brand); font-weight: 600; }
 .vote-btn:disabled { opacity: .55; cursor: default; }
+/* 参与率（已表态/小组规模）：不响应 ≠ 反对 */
+.vote-participation {
+  display: inline-flex; align-items: center;
+  font-size: 11.5px; color: var(--muted);
+  background: var(--bg-soft, #f6f6f7); border-radius: var(--radius-full);
+  padding: 2px 8px; cursor: default;
+}
 /* 渐进式共识徽标：过半成员表态且赞成多于反对 */
 .consensus-badge {
   display: inline-flex; align-items: center; gap: 2px;

@@ -581,6 +581,7 @@ export default {
     offlineNoCache: '当前离线且无本地缓存，请联网后查看',
     consensus: '小组一致',
     consensusTip: '过半成员表态且赞成多于反对，可推进',
+    participationTip: '已表态人数/小组规模：不响应 ≠ 反对，多数表态即推进',
     basisLabel: '预算口径',
     basisHotel: '住宿约 ¥{avg}/晚×{n}晚（城市基准价估算）',
     basisHotelShort: '住宿按城市基准价估算',
