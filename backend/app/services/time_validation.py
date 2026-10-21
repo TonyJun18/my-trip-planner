@@ -21,6 +21,15 @@
   2. 单日过饱和：每日站点数 / 预估游玩时长合计超限 → warning（与 Plan B
      Relaxed 变体同一过满直觉，但独立阈值可调）。
 
+体力负荷提示（task-exertion-check，2026-10-22 扩展）：
+- 新浪横测点名「AI 做不好体力/天气预判」：华山估算 2h vs 实际 7h 为反例；
+  Wonderplan 给带孩子的家庭推荐 night bar 为同质翻车。
+- 与 OPEN_HOURS_BY_TYPE 同思路：EXERTION_BY_TYPE 体力系数表（类目 → 单位强度），
+  单日累计体力负荷 = Σ（站点建议时长 × 强度系数），超阈值 → warning。
+- 高强度站点（登山/徒步/暴走）提示「实际耗时可能显著上浮」，
+  复用 timegate-card 前端透出通道，basis=rule_based 诚实标注。
+- 天气实时数据零凭证做不了，明确不做（README 诚实清单已声明）。
+
 字段约定（与 revise_service/Plan B 同构，均为可选）：
 - stop.open_hours: 可选字符串，如 "09:00-18:00"（显式营业时间优先于规则库）
 - stop.visit_start: 可选字符串，如 "14:00"（排程起点；缺省按一天起点推算）
@@ -49,6 +58,55 @@ _STOP_TYPE_TO_BASIS: dict[str, str] = {
     "attraction": "attraction",
     "food": "shopping",  # 餐饮按购物基准（10:00-22:00），宽口径不误伤
 }
+
+# ── 体力负荷系数表（task-exertion-check）────────────────────────
+# 新浪横测点名「AI 做不好体力/天气预判」——华山估算 2h 实际 7h 为反例。
+# 与 OPEN_HOURS_BY_TYPE 同风格的确定性规则库：类目 → 单位强度系数。
+# 系数语义：相对「常规观光 1.0」的体力消耗倍率；单日累计 = Σ(时长 × 系数)。
+# 真实体力消耗因人而异（basis=rule_based 诚实标注），只做提示不做裁决。
+# ⚠️ StopSchema.type 只有 attraction/food/hotel 三值（schemas/plan.py Literal），
+#    所以独立类目永远无法从 stop_type 命中 → 用「名称关键词」识别高强度站点
+#    （华山/黄山/登山/徒步/爬山/索道/徒步路线等），与「显式字段优先 + 规则库推断」
+#    哲学一致；系数仅供内部计算与文案展示，不扩展 schema 契约。
+EXERTION_BY_TYPE: dict[str, float] = {
+    "hiking": 2.5,       # 登山/徒步：体力消耗最大的类目（华山 2h→实际 7h 同源直觉）
+    "trekking": 2.5,     # 徒步/越野
+    "mountain": 2.2,     # 名山景区（含台阶/缆车混合）
+    "adventure": 2.0,    # 探险/户外运动（攀岩/漂流/ATV）
+    "sports": 1.8,       # 运动场馆（滑雪/骑行等）
+    "theme_park": 1.6,   # 主题乐园（暴走型）
+    "water_park": 1.5,   # 水上乐园
+    "zoo": 1.3,          # 动物园/野生动物园（户外步行多）
+    "park": 1.2,         # 大型公园/园林（比常规景点多走）
+    "attraction": 1.0,   # 常规观光（基准）
+    "museum": 0.8,       # 博物馆/美术馆（室内为主，体力消耗低）
+    "shopping": 0.6,     # 购物/商业街（轻走）
+    "food": 0.4,         # 餐饮（坐下为主）
+    "hotel": 0.0,        # 住宿不计体力
+}
+# 高强度站点阈值：达到此系数即提示「实际耗时可能显著上浮」
+HIGH_EXERTION_THRESHOLD = 1.8
+# 单日体力负荷上限（分钟当量）：超过提示当日体力偏大，建议拆分/减负
+MAX_EXERTION_POINTS_PER_DAY = 720  # 8h × 1.5 体力强度的心理上限
+
+# 高强度站点识别（名称关键词规则库，零 schema 改动）：
+# StopSchema.type 只有 attraction/food/hotel，无法区分「登山/博物馆」，
+# 所以用名称关键词推断（华山/黄山/武夷山等名山 + 徒步/雪山/漂流等动词）；
+# 排除词优先（山下古镇/老山城火锅/中山陵等含「山」但非高强度的场景）。
+# 真实体力消耗因人而异，规则只做提示不做裁决（basis=rule_based）。
+_HIGH_EXERTION_KEYWORDS: dict[str, float] = {
+    "徒步": 2.5, "登山": 2.5, "爬山": 2.5, "攀岩": 2.5, "溯溪": 2.5,
+    "雪山": 2.2,                                # 玉龙雪山/梅里雪山（先于「山」后缀命中）
+    "漂流": 2.0, "越野": 2.0, "探险": 2.0, "峡谷": 2.0, "栈道": 2.0,
+    "滑雪": 1.8, "骑行": 1.8,
+    "峰": 2.2,                                  # 飞来峰/玉女峰/莲花峰（山岳特征）
+}
+_EXERTION_EXCLUDE_KEYWORDS: tuple[str, ...] = (
+    "山下", "山脚", "山城", "山房", "山庄", "山居",
+    "陵", "烤肉", "火锅", "餐厅", "酒店", "民宿",
+)
+# 名山后缀（「XX山」如华山/黄山/武夷山/武功山 → 山岳强度）
+_MOUNTAIN_SUFFIX_COEF = 2.2
 
 # 显式营业时间解析：支持 "09:00-18:00" / "9:00~18:00" / "09:00-18:00 (周一闭馆)" 等
 _OPEN_HOURS_RE = re.compile(r"(\d{1,2}):(\d{2})\s*[-~至]\s*(\d{1,2}):(\d{2})")
@@ -129,6 +187,38 @@ def _stop_duration(stop: dict[str, Any], stop_type: str) -> int | None:
     }.get(stop_type, 120)
 
 
+def _stop_type_by_name(stops: list[dict[str, Any]], name: str) -> str:
+    """按站点名找回其 stop_type（用于高强度站点提示的系数展示）。"""
+    for s in stops:
+        if s.get("name") == name:
+            return s.get("stop_type") or "attraction"
+    return "attraction"
+
+
+def _stop_exertion_coef(stop: dict[str, Any]) -> float:
+    """站点体力系数：名称关键词规则库推断（零 schema 改动）。
+
+    优先级：排除词（山下/山庄/餐厅…）→ 0；动作词（徒步/登山/滑雪…）→ 对应系数；
+    名山后缀（XX山，如华山/玉龙雪山）→ 山岳系数；否则按类目基准（attraction 1.0
+    / museum 0.8 / food 0.4 / hotel 0.0）。真实体力消耗因人而异（basis=rule_based）。
+    """
+    stop_type = stop.get("stop_type") or "attraction"
+    name = str(stop.get("name") or "")
+    if not name:
+        # 无名站点：退回类目基准
+        return EXERTION_BY_TYPE.get(stop_type, 1.0)
+    for w in _EXERTION_EXCLUDE_KEYWORDS:
+        if w in name:
+            return 0.0
+    for w, coef in _HIGH_EXERTION_KEYWORDS.items():
+        if w in name:
+            return coef
+    if name.endswith("山"):
+        return _MOUNTAIN_SUFFIX_COEF
+    # 类目基准（世界级博物馆/餐饮等属低强度）
+    return EXERTION_BY_TYPE.get(stop_type, 1.0)
+
+
 def _day_start_clock(day: dict[str, Any]) -> tuple[int, int]:
     """一天的排程起点：站点 visit_start 优先，否则默认 9:00。"""
     for stop in day.get("stops") or []:
@@ -192,6 +282,48 @@ def check_plan_time_gate(plan: dict[str, Any], locale: str = "zh-CN") -> dict[st
                       day=day_no, min=play_total, max=MAX_PLAY_MINUTES_PER_DAY)
                 ),
                 "suggestion": t(locale, "timegate.suggest.play_long", min=over, h=round(over / 60, 1)),
+                "day_number": day_no,
+            })
+
+        # ── 体力负荷（task-exertion-check）：单日累计超限 + 高强度站点提示 ──
+        exertion_total = 0
+        high_stops: list[str] = []  # 高强度站点名（系数 ≥ 阈值）
+        for stop in stops:
+            stop_type = stop.get("stop_type") or "attraction"
+            duration = _stop_duration(stop, stop_type) or 0
+            coef = _stop_exertion_coef(stop)  # 名称关键词规则库推断
+            points = duration * coef
+            exertion_total += points
+            if coef >= HIGH_EXERTION_THRESHOLD and points > 0:
+                high_stops.append(stop.get("name") or t(locale, "timegate.stop.fallback"))
+        if exertion_total > MAX_EXERTION_POINTS_PER_DAY:
+            over = exertion_total - MAX_EXERTION_POINTS_PER_DAY
+            issues.append({
+                "severity": "warning",
+                "category": "schedule",
+                "message": (
+                    t(locale, "timegate.msg.exertion_high",
+                      day=day_no, pts=int(exertion_total), max=MAX_EXERTION_POINTS_PER_DAY)
+                ),
+                "suggestion": t(locale, "timegate.suggest.exertion_high",
+                                 min=int(over), names="、".join(high_stops) if high_stops else ""),
+                "day_number": day_no,
+            })
+        elif high_stops:
+            # 未超总负荷但有高强度站点 → 提示「实际耗时可能显著上浮」
+            spot_coef = _stop_exertion_coef(next(
+                (s for s in stops if (s.get("name") or "") == high_stops[0]), {}
+            ))
+            issues.append({
+                "severity": "warning",
+                "category": "schedule",
+                "message": (
+                    t(locale, "timegate.msg.exertion_spot",
+                      day=day_no, names="、".join(high_stops),
+                      coef=spot_coef)
+                ),
+                "suggestion": t(locale, "timegate.suggest.exertion_spot",
+                                 names="、".join(high_stops)),
                 "day_number": day_no,
             })
 

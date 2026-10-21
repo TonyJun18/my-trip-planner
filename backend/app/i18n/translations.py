@@ -88,6 +88,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "timegate.msg.arrive_close.play": "（建议游玩约 {min} 分钟）",
         "timegate.suggest.arrive_close": "建议把该站点安排在当天更早时段，或换到营业时间更晚的同类地点",
         "timegate.stop.fallback": "站点",
+        "timegate.msg.exertion_high": "Day {day} 体力负荷合计约 {pts}（时长×强度系数），超过建议上限 {max}，当日体能压力偏大",
+        "timegate.suggest.exertion_high": "把「{names}」等高强度站点拆到相邻日，或压缩站点时长",
+        "timegate.msg.exertion_spot": "Day {day} 含高强度站点「{names}」（体力系数 {coef}），实际耗时可能显著上浮",
+        "timegate.suggest.exertion_spot": "为「{names}」预留缓冲时间，或拆到另一天减少赶场",
+        "timegate.exertion.basis": "（体力系数为类目基准估算，因人而异）",
         # ── revise 修订 ─────────────────────────────────
         "revise.op.replace": "修改",
         "revise.op.add": "新增",
@@ -292,6 +297,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "timegate.msg.arrive_close.play": " (about {min} min suggested)",
         "timegate.suggest.arrive_close": "Schedule this stop earlier in the day, or pick a similar place with later hours",
         "timegate.stop.fallback": "stop",
+        "timegate.msg.exertion_high": "Day {day} estimated exertion is about {pts} (duration × intensity), above the suggested {max} cap — a physically heavy day",
+        "timegate.suggest.exertion_high": "Move high-intensity stops like \"{names}\" to another day, or shorten them",
+        "timegate.msg.exertion_spot": "Day {day} includes high-intensity stop(s) \"{names}\" (exertion factor {coef}) — actual time may run noticeably longer",
+        "timegate.suggest.exertion_spot": "Leave buffer time for \"{names}\", or split it across days to avoid rushing",
+        "timegate.exertion.basis": " (exertion factors are category-based estimates; actual effort varies)",
         # ── revise ──────────────────────────────────────
         "revise.op.replace": "Modify",
         "revise.op.add": "Add",

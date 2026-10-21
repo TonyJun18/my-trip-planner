@@ -181,3 +181,101 @@ def test_empty_plan_ok():
     assert check_plan_time_gate({"days": []})["passed"] is True
     assert check_plan_time_gate({"days": [_day(1)]})["passed"] is True
     assert check_plan_time_gate({"days": [_day(1, _stop(""))]})["issues"] == []
+
+
+# ── 体力负荷（task-exertion-check）───────────────────────────────
+# 高强度：单日含登山/徒步（名称关键词 → 系数 ≥ 阈值）→ 提示「实际耗时显著上浮」
+def test_high_intensity_stop_warns_spot():
+    plan = {
+        "days": [
+            _day(
+                1,
+                _stop("华山", stop_type="attraction", estimated_duration_minutes=120),  # 名山后缀 2.2
+                _stop("山下古镇", stop_type="attraction", estimated_duration_minutes=60),  # 排除词 → 0
+            )
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    assert result["passed"] is False
+    spot = [i for i in result["issues"] if "高强度" in i["message"]]
+    assert spot, "应产生高强度站点提示"
+    assert "华山" in spot[0]["message"]
+    assert "2.2" in spot[0]["message"]  # 山岳系数
+    assert spot[0]["severity"] == "warning"
+
+# 高强度：单日累计体力负荷超限 → 提示当日体能压力大
+def test_exertion_total_over_limit_warns():
+    plan = {
+        "days": [
+            _day(
+                1,
+                _stop("华山", stop_type="attraction", estimated_duration_minutes=240),  # 240×2.2=528
+                _stop("玉龙雪山", stop_type="attraction", estimated_duration_minutes=120),  # 120×2.5=300 → 合计 828 > 720
+            )
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    assert result["passed"] is False
+    heavy = [i for i in result["issues"] if "体力负荷" in i["message"]]
+    assert heavy, "应产生单日体力负荷超限提示"
+    assert "792" in heavy[0]["message"]  # 华山240×2.2 + 玉龙雪山120×2.2 = 792
+
+# 常规：纯常规观光（低系数）→ 无体力提示
+def test_regural_stops_no_exertion_warning():
+    plan = {
+        "days": [
+            _day(
+                1,
+                _stop("西湖", stop_type="attraction", estimated_duration_minutes=120),
+                _stop("中国美院", stop_type="museum", estimated_duration_minutes=90),
+                _stop("湖滨银泰", stop_type="food", estimated_duration_minutes=60),
+            )
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    assert all("体力" not in i["message"] for i in result["issues"])
+    # 且不应产生高强度站点提示
+    assert not any("高强度" in i["message"] for i in result["issues"])
+
+# 混合：含一个高强度但总负荷未超 → 只有 spot 提示，无 total 提示
+def test_mixed_day_only_spot_warning():
+    plan = {
+        "days": [
+            _day(
+                1,
+                _stop("灵隐飞来峰", stop_type="attraction", estimated_duration_minutes=90),  # 峰 → 2.2？检查关键词
+                _stop("博物馆", stop_type="museum", estimated_duration_minutes=60),          # 0.8
+                _stop("餐馆", stop_type="food", estimated_duration_minutes=60),              # 0.4
+            )
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    spot = [i for i in result["issues"] if "高强度" in i["message"]]
+    heavy = [i for i in result["issues"] if "体力负荷" in i["message"]]
+    assert spot, "混合日含高强度站点应产生 spot 提示"
+    assert not heavy, "总负荷未超限不应产生 total 提示"
+
+# 未知类目按常规基准（系数 1.0）→ 不触发高强度提示
+def test_unknown_type_default_exertion():
+    plan = {
+        "days": [
+            _day(1, _stop("神秘体验", stop_type="unknown_custom", estimated_duration_minutes=120))
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    assert all("体力" not in i["message"] for i in result["issues"])
+
+# 排除词：山下古镇/老山城火锅 含「山」但不误判为高强度
+def test_exclude_keywords_not_high_exertion():
+    plan = {
+        "days": [
+            _day(
+                1,
+                _stop("山下古镇", estimated_duration_minutes=90),
+                _stop("老山城火锅", stop_type="food", estimated_duration_minutes=60),
+            )
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    assert all("高强度" not in i["message"] for i in result["issues"])
+    assert all("体力负荷" not in i["message"] for i in result["issues"])
