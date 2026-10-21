@@ -28,7 +28,8 @@
   "issues": [
     "night-start(10-21) 重建：night 由 2026-10-17 更新为 2026-10-21。todo 重建自 docs/night-build-todo.md 未勾选项（12 项），首任务 competitive-analysis。工作区存在 2 个 untracked 报告文件（docs/nightly/reports/2026-10-17.md、2026-10-19.md），不触碰。",
     "2026-10-21 worker-7：竞品分析完成（branch nightly/2026-10-21/0-competitive-analysis）。web_extract 对 tripplanner.ai/tripnotes-2.webflow.io 仍 Blocked（私有地址误判，与 10-17 同），全部信息来自 web_search 多源摘要（含中文源），已标注来源。新增 4 行动项（task-collab-democracy-eval / task-exertion-check / content-zh-market-evidence / task-link-import-zh-eval）已追加 todo 与 docs/night-build-todo.md。",
-    "2026-10-21 worker-8：task-map-pin-cards 完成（branch nightly/2026-10-21/1-task-map-pin-cards，commit 98dd17f）。【乐观锁触发】worker-8 从 main 拉分支时工作区 checkpoint.json 被 main 陈旧版（10-17）覆盖；已用 nightly/2026-10-21/0-competitive-analysis 分支版本恢复后推进（index 1→2）。清晨用户合并分支时注意：main 的 docs/nightly/checkpoint.json 是 10-17 版，需以 10-21 分支链版本为准。另：5432 Postgres 容器（postgres）曾 Exited 导致后端测试 409 全 ConnectionRefused，已 docker start postgres 恢复，409 测试全绿。"
+    "2026-10-21 worker-8：task-map-pin-cards 完成（branch nightly/2026-10-21/1-task-map-pin-cards，commit 98dd17f）。【乐观锁触发】worker-8 从 main 拉分支时工作区 checkpoint.json 被 main 陈旧版（10-17）覆盖；已用 nightly/2026-10-21/0-competitive-analysis 分支版本恢复后推进（index 1→2）。清晨用户合并分支时注意：main 的 docs/nightly/checkpoint.json 是 10-17 版，需以 10-21 分支链版本为准。另：5432 Postgres 容器（postgres）曾 Exited 导致后端测试 409 全 ConnectionRefused，已 docker start postgres 恢复，409 测试全绿。",
+    "night-report(10-21)：晨报已生成 docs/nightly/reports/2026-10-21.md。status 保持 in_progress（2/17 完成，15 项顺延下夜；未全完成，不置 completed 类状态）。"
   ],
   "branches": [
     "nightly/2026-10-21/0-competitive-analysis",
