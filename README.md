@@ -15,7 +15,7 @@
 >   校验失败把错误摘要喂回 LLM 最多自纠正 3 次——LLM 输出不可信，schema 才可信
 > - **系统级容错**：LLM 调用统一指数退避重试 + 进程内熔断器（滑动窗口），保护下游 LLM 不被打爆
 > - **真实数据，不造假**：高德 POI/天气（未配置自动降级 Tavily + wttr.in），没有硬编码假数据
-> - **可测试性当一等公民**：FakeLLM 测试替身让 **409 个测试**不耗 token、不依赖网络
+> - **可测试性当一等公民**：FakeLLM 测试替身让 **453 个测试**不耗 token、不依赖网络
 > - **全链路可观测**：异步规划任务 + 前端实时 T-A-O（Thought-Action-Observation）轨迹
 
 ## 核心功能
@@ -55,6 +55,12 @@
 24. **定稿后服务（servicing 阶段）**：行程定稿后可兑现的服务层产物——市内通勤视图（相邻站点公共交通/步行/驾车建议）、酒店入住办理指引（模板基座 + LLM 润色，不收集证件号）、折扣规则（确定性本地规则库，零幻觉可审计）；三个子任务相互独立，任一失败不影响其他，全程失败降级不阻断主流程。
 25. **小红书笔记生成**：`POST /trips/{id}/xhs-note` 为行程生成适配小红书发布的种草笔记（标题/正文/话题），LLM 主路径 + 规则模板兜底（`source` 标注 llm/template），发布由用户复制到小红书 App 完成，接口无自动发布副作用。
 26. **营业时间/游玩时长校验（TimeGate）**：POI 类目基准营业时段 + 建议游玩时长规则库（零外部依赖、无 LLM），排程校验「闭馆到达（<30min 缓冲）」「单日过饱和（>5 站或 >480 分钟游玩）」，产出 warning + 调整建议，注入 `plan.time_gate` 供前端质检卡展示；对话式修订后同步重算；真实营业时间以 POI 现场为准（`basis=rule_based` 诚实标注）。
+27. **体力负荷提示**：`EXERTION_BY_TYPE` 体力系数表 + 名称关键词规则库（登山/徒步/雪山/峡谷等），单日体力负荷累计超限 + 高强度站点「实际耗时可能显著上浮」提示，复用质检卡通道（`basis=rule_based`）。
+28. **动态事实校验**：行程日期 × POI 特例规则表（周一闭馆 / 每月免费日 / 节假日窗口），命中即 warning + 「出行前再次确认」诚实标注（`dynamic_facts.py`，零凭证路线）。
+29. **行程事件流 + 主动通知**：修订/打卡/跳过/顺延/评论/投票 append-only 记录到 `trip_events`，owner 与受邀者（share/edit token 免登录）可读事件流；前端未读红点 + PWA Notification（`event_service.py` + `TripEventFeed.vue`）。
+30. **多城市衔接**：`cities` 有序城市列表 → 按天数分段排程 + 段间插入交通占位站（球面距离按均速估算）+ 衔接缓冲校验 warning（`multi_city.py`）。
+31. **公开灵感画廊 + 城市模板**：owner 一键把已分享行程发布到精选（目的地/天数/预算/一句话卖点），访客「以此为基础创建」复制到自己的账号；城市模板由 23 目的地知识库规则生成深链预填（`gallery_service.py`）。
+32. **打包清单**：按行程隔离的本地打包清单（5 套预设模板 + 自定义 + 勾选进度 + 清除已完成，纯前端零凭证）。
 
 ## 技术栈
 
@@ -84,7 +90,7 @@ backend/
 │   ├── agent/               # 多 Agent（agents.py 编排 / tools.py 高德·Tavily·天气 / providers.py LLM / graph.py LangGraph 原型）
 │   └── api/v1/              # 路由（health / auth / trips / planner / profile）
 ├── alembic/                 # 数据库迁移
-├── tests/                   # pytest 测试（409 个：FakeLLM 替身，覆盖协作/自驾/画像/编辑/恢复/时间校验等）
+├── tests/                   # pytest 测试（453 个：FakeLLM 替身，覆盖协作/自驾/画像/编辑/恢复/时间校验/事件流/多城市/画廊等）
 ├── pyproject.toml           # uv 工程配置
 ├── .env / .env.example      # 环境变量
 └── uv.lock
@@ -109,6 +115,9 @@ frontend/                    # Vue3 + Vite + Element Plus + Leaflet
 | [表单、对话、地图拖拽：三种行程修订范式的工程代价](docs/articles/05-map-edit-paradigms.md) | 对比三种修订范式的体验与工程代价，为地图拖拽修订铺路 | 协作者 / 潜在贡献者 / 技术决策者 |
 | [AI 旅行规划正在变成预订漏斗——独立工具的机会在「规划层」](docs/articles/06-planning-vs-booking.md) | 行业分层观察（agentic 订票 / OTA 收购），独立工具把规划层做深 | AI 行程/规划类产品 PM 与工程师 |
 | [当 AI 旅行工具都在抢着替你花钱：独立规划层的生存策略](docs/articles/07-open-planning-layer.md) | 规划与预订分离哲学：免费、透明、可修订、可协作、可自托管 | AI 行程/规划类产品 PM 与工程师 |
+| [AI 旅行翻车实录：从闭馆景点到悬崖救援，规划工具的质检底线](docs/articles/12-ai-travel-crashes.md) | 五类真实翻车归因 + 确定性质检层（规则/代码/特例表/降级/来源） | AI 规划/生成类产品工程师与 PM |
+| [第一次尝试就翻车：AI 旅行工具的信任缺口](docs/articles/13-trust-gap.md) | 可验证/可修订/不套模板三属性的工程实现 | AI 消费级产品工程师与 PM |
+| [巨头免费化之后：独立 AI 旅行规划工具还剩下什么](docs/articles/14-independent-planner-survival.md) | 2026 行业时间线 + 独立规划层四个生存条件与四条明确不做 | 独立开发者与产品负责人 |
 
 ## 快速启动
 
