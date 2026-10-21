@@ -51,3 +51,9 @@
 - [ ] task-exertion-check: 体力负荷提示（补功能，backend）。新浪横测点名「AI 做不好体力/天气预判」（华山估算 2h vs 实际 7h，Wonderplan 给家庭推夜店同质翻车）；time_validation 已有 OPEN_HOURS_BY_TYPE 类目基准自然延伸：EXERTION_BY_TYPE 体力系数表（登山/徒步/暴走/常规类目）→ 单日体力负荷累计 + 阈值 warning（高强度站点提示实际耗时显著上浮）→ 复用质检 warning + timegate-card 前端透出通道；天气实时数据零凭证做不了明确不做。（验收：体力负荷 warning + 建议 + 测试覆盖（高强度/常规/混合三路径）+ 前端质检卡透出（窗口不足则后端先行））
 - [ ] content-zh-market-evidence: 中文市场证据包（内容沉淀，docs）。2026-10-21 竞品分析三大新信号：①圆周旅迹 85% 解析率（攻略链接→景点名/位置/时长/开放信息）= 四通道导入场景验证（供 11 文入口之争）；②巨头入口之争（豆包/千问×飞猪/元宝×同程/程心/携程 TripGenie +400%、AI 代理仅占预订 3-5% 但 65% 用户第一选择已是 AI 工具）= 14 文量数；③马蜂窝报告（131.5 万份攻略/关键词 Top10/预算 ≤6000 元占 80%）+ 新浪横测信任数据 = 13 文素材。（验收：docs/nightly/research/zh-market-2026-10-21.md 证据清单存在（每条例出处 + 可用文章位置 11/12/13/14），条目与仓库实际一致，不写全文）
 - [ ] task-link-import-zh-eval: 中文攻略链接深度抽取（候选评估，backend）。圆周旅迹核心=粘贴小红书/穷游/马蜂窝链接→景点结构化；我们 link_import 已入 main 但只提取 og:title/description。评估三平台可行性矩阵（小红书反爬大概率挡/马蜂窝结构良好/穷游页可解析；纯 std-lib HTML 解析、零凭证、复用 note_import 敌意剥离 _INJECTION_RE 与 NoteStopCandidate），可行则最小版马蜂窝/穷游解析 + 测试覆盖，小红书降级现有链接收藏不回退。与 task-email-import「零凭证最小版」哲学同构。（验收：评估记录 docs/nightly/evaluations/ +（若可行）实现 + 测试覆盖）
+
+## 2026-10-19 竞品分析追加（DMO 供给合作为真实度加注 + 一站式管家分水岭 + 罗马实地检验，来自 docs/nightly/competitive-analysis/2026-10-19.md）
+
+- [ ] task-dynamic-facts-eval: 「动态事实」校验骨架（候选评估+补功能，backend）。罗马九工具实测：全行业在「单一动态事实」（免费周日/临时闭馆/节假日）集体翻车——Mindtrip 漏 Colosseum 免费周日且列错闭馆时间，只有 ChatGPT(web) 答对；我们 open-hours 规则库同样缺动态层。先低成本：行程日期×POI 特例规则表（每月特定日免票/周一闭馆基准/公共假日）→ 排程校验 warning + 「出行前再次确认」诚实标注；真实动态源需凭证则记为运营侧人工维护特例表（零凭证路线）。（验收：特例表 + 校验 warning + 测试覆盖（特例命中/未命中两路径）+ 评估记录（动态数据源矩阵：Google Flights 需登录/高德无此接口/Amadeus 付费，与 task-price-alert-eval 同构降级））
+- [x] （备注追加）task-packing-expense 补充佐证：Stippl 免费档标配「打包清单+预算+分摊」、Wanderlog 无预算/无分摊——「行中管理一体化」是 2026 分水岭，最小版优先打包清单纯前端（零凭证）。
+- [x] （素材追加）content-ai-travel-crashes（12 文）补罗马九工具实地测试素材（aitravel.tools，2026-10，Mindtrip 漏免费周日）；content-trust-gap（13 文）补 Mindtrip 全年 15+ DMO 合作 + Answer Intelligence（数据真实度供给侧护城河）vs 我们零凭证规则库的对照段。
