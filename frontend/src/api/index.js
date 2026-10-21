@@ -231,4 +231,12 @@ export const importLink = (data) => http.post('/trips/link/import', data).then((
 //              reason/play/match_score/matched_tags/season_note/basis}], counts, note }
 export const getInspiration = (params = {}) => http.get('/trips/inspiration', { params }).then((r) => r.data)
 
+// ── 行程事件流（task-trip-event-notify：主动通知最小版） ─────────
+// 后端契约：GET /trips/{id}/events（owner）/ GET /trips/share/{token}/events（免登录只读）
+// → { items: [{id, trip_id, event_type, payload, created_at}], total }
+export const getTripEvents = (tripId, params = {}) =>
+  http.get(`/trips/${tripId}/events`, { params }).then((r) => r.data)
+export const getSharedTripEvents = (token, params = {}) =>
+  http.get(`/trips/share/${token}/events`, { params }).then((r) => r.data)
+
 export default http

@@ -8,6 +8,7 @@ import TripMap from '@/components/TripMap.vue'
 import HotelRecommend from '@/components/HotelRecommend.vue'
 import TripServicing from '@/components/TripServicing.vue'
 import PackingList from '@/components/PackingList.vue'
+import TripEventFeed from '@/components/TripEventFeed.vue'
 import QualityCard from '@/components/QualityCard.vue'
 import XhsNoteDialog from '@/components/XhsNoteDialog.vue'
 import ImportDialog from '@/components/ImportDialog.vue'
@@ -1125,6 +1126,9 @@ onBeforeUnmount(() => {
           :trip-id="trip.id"
           :trip-type="trip.trip_type"
         />
+
+        <!-- 行程动态（事件流：修订/打卡/跳过/顺延/评论/投票 · 未读红点 + PWA 通知） -->
+        <TripEventFeed v-if="trip" :trip-id="trip.id" />
 
         <!-- 行中「今日视图」（live 期间置顶；打卡/跳过/迟到顺延） -->
         <div v-if="live && live.phase === 'live'" class="live-card">
