@@ -559,6 +559,11 @@ async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
 
     time_gate = check_plan_time_gate({"days": new_days})
 
+    # 动态事实校验（DynamicFacts）随修订重算：周一闭馆/免费日/节假日提示同步刷新
+    from app.services.dynamic_facts import check_plan_dynamic_facts
+
+    dyn_facts = check_plan_dynamic_facts({"days": new_days})
+
     # 更新最新 TripPlan 快照（若无则跳过；前端详情页主数据来自 trip 本身）
     stmt = select(TripPlan).where(TripPlan.trip_id == trip.id).order_by(TripPlan.created_at.desc())
     plan = (await db.execute(stmt)).scalars().first()
@@ -571,6 +576,11 @@ async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
             "time_gate": {
                 **{k: v for k, v in time_gate.items() if k != "issues"},
                 "issues": time_gate.get("issues") or [],
+                "basis": "rule_based",
+            },
+            "dynamic_facts": {
+                **{k: v for k, v in dyn_facts.items() if k != "issues"},
+                "issues": dyn_facts.get("issues") or [],
                 "basis": "rule_based",
             },
         }

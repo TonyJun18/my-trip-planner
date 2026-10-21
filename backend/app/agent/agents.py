@@ -1519,6 +1519,35 @@ async def run_planning_agents(
         "issues": time_gate.get("issues") or [],
     })
 
+    # ── DynamicFacts：日期特例规则库校验（周一闭馆/每月免费日/节假日）──
+    # 与 TimeGate 同风格：只报告，不阻断。规则表为运营侧可维护知识，
+    # basis=rule_based 诚实标注（真实动态源需凭证，零凭证路线见 dynamic_facts.py）。
+    from app.services.dynamic_facts import check_plan_dynamic_facts
+
+    dyn_facts = check_plan_dynamic_facts(plan, locale=locale)
+    plan["dynamic_facts"] = {
+        **{k: v for k, v in dyn_facts.items() if k != "issues"},
+        "issues": dyn_facts.get("issues") or [],
+        "basis": "rule_based",
+    }
+    for iss in dyn_facts.get("issues") or []:
+        plan.setdefault("warnings", []).append(
+            t(locale, "plan.warning.dynfacts", message=iss.get("message") or "",
+              extra=(t(locale, "plan.warning.dynfacts.sugg", suggestion=iss.get("suggestion")) if iss.get("suggestion") else ""))
+        )
+    if dyn_facts.get("issues"):
+        _append_trace({
+            "agent": "DynamicFacts",
+            "action": "check_dynamic_facts",
+            "observation": t(locale, "plan.trace.dynfacts.warn", n=dyn_facts.get("warning_count", 0)),
+            "status": "warning",
+        })
+    _fire_artifact("dynamic_facts", {
+        "passed": dyn_facts.get("passed"),
+        "warning_count": dyn_facts.get("warning_count", 0),
+        "issues": dyn_facts.get("issues") or [],
+    })
+
     # ── 第二段 servicing：定稿后的可执行服务（市内通勤 / 入住办理 / 折扣比价）──
     # 消费已定稿 plan，与采集/规划解耦；任一失败只记 warnings，绝不阻断主流程。
     _fire_phase("servicing", "running")
