@@ -38,6 +38,8 @@ export default {
     typeTransport: '往返交通',
     mapTitle: '行程地图',
     mapHint: '按游玩顺序连线 · 点击标记查看详情',
+    mapFree: '免费',
+    mapImagePlaceholder: '暂无图片',
     budgetTitle: '预算明细',
     estimated: '已估算',
     percentOfBudget: '占设定预算 {pct}%',

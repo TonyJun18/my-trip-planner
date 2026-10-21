@@ -38,6 +38,8 @@ export default {
     typeTransport: 'Round-trip transport',
     mapTitle: 'Trip map',
     mapHint: 'Connected in visit order · click markers for details',
+    mapFree: 'Free',
+    mapImagePlaceholder: 'No image yet',
     budgetTitle: 'Budget breakdown',
     estimated: 'Estimated',
     percentOfBudget: '{pct}% of your budget',

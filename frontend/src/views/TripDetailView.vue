@@ -188,7 +188,7 @@ const markers = computed(() => {
   for (const day of trip.value?.days || []) {
     for (const stop of day.stops || []) {
       if (stop.lat != null && stop.lng != null) {
-        list.push({ lat: stop.lat, lng: stop.lng, name: stop.name, stop_type: stop.stop_type, description: stop.description, day_number: day.day_number, stop_id: stop.id })
+        list.push({ lat: stop.lat, lng: stop.lng, name: stop.name, stop_type: stop.stop_type, description: stop.description, day_number: day.day_number, stop_id: stop.id, estimated_cost: stop.estimated_cost, details: stop.details || null })
       }
     }
   }
