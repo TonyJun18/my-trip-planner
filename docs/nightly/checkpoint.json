@@ -22,17 +22,26 @@
   ],
   "completed": [
     "competitive-analysis",
-    "task-map-pin-cards"
+    "task-map-pin-cards",
+    "content-inspiration-first"
   ],
-  "current_index": 2,
+  "current_index": 3,
   "issues": [
     "night-start(10-21) 重建：night 由 2026-10-17 更新为 2026-10-21。todo 重建自 docs/night-build-todo.md 未勾选项（12 项），首任务 competitive-analysis。工作区存在 2 个 untracked 报告文件（docs/nightly/reports/2026-10-17.md、2026-10-19.md），不触碰。",
     "2026-10-21 worker-7：竞品分析完成（branch nightly/2026-10-21/0-competitive-analysis）。web_extract 对 tripplanner.ai/tripnotes-2.webflow.io 仍 Blocked（私有地址误判，与 10-17 同），全部信息来自 web_search 多源摘要（含中文源），已标注来源。新增 4 行动项（task-collab-democracy-eval / task-exertion-check / content-zh-market-evidence / task-link-import-zh-eval）已追加 todo 与 docs/night-build-todo.md。",
     "2026-10-21 worker-8：task-map-pin-cards 完成（branch nightly/2026-10-21/1-task-map-pin-cards，commit 98dd17f）。【乐观锁触发】worker-8 从 main 拉分支时工作区 checkpoint.json 被 main 陈旧版（10-17）覆盖；已用 nightly/2026-10-21/0-competitive-analysis 分支版本恢复后推进（index 1→2）。清晨用户合并分支时注意：main 的 docs/nightly/checkpoint.json 是 10-17 版，需以 10-21 分支链版本为准。另：5432 Postgres 容器（postgres）曾 Exited 导致后端测试 409 全 ConnectionRefused，已 docker start postgres 恢复，409 测试全绿。",
-    "night-report(10-21)：晨报已生成 docs/nightly/reports/2026-10-21.md。status 保持 in_progress（2/17 完成，15 项顺延下夜；未全完成，不置 completed 类状态）。"
+    "night-report(10-21)：晨报已生成 docs/nightly/reports/2026-10-21.md。status 保持 in_progress（2/17 完成，15 项顺延下夜；未全完成，不置 completed 类状态）。",
+    "night-start(10-17) 重建：night 由 2026-10-16 更新为 2026-10-17。todo 重建自 docs/night-build-todo.md 未勾选项（9 项），首任务 competitive-analysis。",
+    "【重要·用户待处理】工作区曾存在 2026-10-16 白天会话 i18n 语言化改造的未提交改动（19 文件 ±545/527 + 新增 backend/app/i18n/ + tests/test_i18n.py + docs/i18n-language-task-archive.md）——已于白天合并入 main（commit aaa0fa2 + merge 01d9a38），worker-7 开工时工作区已干净，无需处理。",
+    "2026-10-17 worker-6：web_extract 对竞品域名返回 Blocked(私有地址误判)，降级 curl 抓取官方页（tripplanner.ai/wonderplan.ai/tripnotes-2.webflow.io）完成分析；Tripnotes 2.0 回归在线为新信号。",
+    "2026-10-17 worker-7：task-map-pin-cards 完成于其分支 nightly/2026-10-17/1-task-map-pin-cards（commit 9056fb1 + ae404b9，前端 build 3.27s 通过）但未合并 main，main checkpoint 未登记。worker-8 核验其分支登记后补录 completed；清晨合并该分支时若 checkpoint 冲突以 main 本版本为准。",
+    "2026-10-17 worker-8：content-inspiration-first 完成——docs/articles/11-inspiration-first.md（167 行：三范式对比 + 四层入口策略 + 可复用模式 + 检查清单）+ publish-list.md 补文章⑪卡片 + 速查表扩为 9-11。代码引用逐条与 main 实码核验一致（inspiration_service.recommend_destinations 实际 23 个目的地、PlanWizard tierPresetMap/applyInspiration、agents._questions_text、note/email/screenshot/link 四 parser、GET /trips/inspiration、guest-trial 评估文件存在）。纯 docs，无 pytest/build。分支 nightly/2026-10-17/2-content-inspiration-first（commit a7d1789）。",
+    "【数据不一致提示】night-build-todo.md 历史登记（task-inspiration-mode 补登记、task-gallery-city-templates 描述）均写「27 目的地知识库」，实际 inspiration_service.DESTINATIONS 为 23 条（grep -c '\"name\":' = 23）。文章⑪已按实码写 23；后续 task-gallery-city-templates 实现时请以实码为准（worker-8 记录）。"
   ],
   "branches": [
     "nightly/2026-10-21/0-competitive-analysis",
-    "nightly/2026-10-21/1-task-map-pin-cards"
+    "nightly/2026-10-21/1-task-map-pin-cards",
+    "nightly/2026-10-17/0-competitive-analysis",
+    "nightly/2026-10-17/2-content-inspiration-first"
   ]
 }
