@@ -9,6 +9,7 @@ from app.models.trip import (
     TripComment,
     TripDay,
     TripEvent,
+    TripExpense,
     TripFavorite,
     TripPlan,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "TripComment",
     "TripDay",
     "TripEvent",
+    "TripExpense",
     "TripFavorite",
     "TripPlan",
     "User",
