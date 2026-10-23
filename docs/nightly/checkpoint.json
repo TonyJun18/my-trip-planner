@@ -1,58 +1,21 @@
 {
-  "night": "2026-10-22",
-  "status": "completed_with_issues",
+  "night": "2026-10-23",
+  "status": "in_progress",
   "todo": [
     "competitive-analysis",
-    "task-map-pin-cards",
-    "content-inspiration-first",
-    "task-price-alert-eval",
-    "content-ai-travel-crashes",
-    "task-packing-expense",
-    "content-trust-gap",
-    "task-multi-city-segments",
-    "task-trip-event-notify",
-    "content-independent-planner-survival",
-    "task-gallery-featured",
-    "task-gallery-city-templates",
-    "task-live-lockscreen-eval",
-    "task-collab-democracy-eval",
-    "task-exertion-check",
-    "content-zh-market-evidence",
-    "task-link-import-zh-eval",
-    "task-dynamic-facts-eval"
+    "task-export-offline",
+    "task-expense-split-mini",
+    "task-social-collection-eval",
+    "task-share-gate-eval"
   ],
   "completed": [
-    "competitive-analysis",
-    "task-map-pin-cards",
-    "content-inspiration-first",
-    "task-exertion-check",
-    "task-dynamic-facts-eval",
-    "task-packing-expense",
-    "task-trip-event-notify",
-    "task-link-import-zh-eval",
-    "task-price-alert-eval",
-    "task-live-lockscreen-eval",
-    "task-collab-democracy-eval",
-    "task-multi-city-segments",
-    "task-gallery-featured",
-    "task-gallery-city-templates",
-    "content-ai-travel-crashes",
-    "content-trust-gap",
-    "content-independent-planner-survival",
-    "content-zh-market-evidence"
+    "competitive-analysis"
   ],
-  "current_index": 18,
+  "current_index": 1,
   "issues": [
-    "night-start(10-21) 重建：night 由 2026-10-17 更新为 2026-10-21。todo 重建自 docs/night-build-todo.md 未勾选项（12 项），首任务 competitive-analysis。",
-    "2026-10-21 worker-7：竞品分析完成（branch nightly/2026-10-21/0-competitive-analysis）。web_extract 对 tripplanner.ai/tripnotes-2.webflow.io 仍 Blocked（私有地址误判），全部信息来自 web_search 多源摘要（含中文源），已标注来源。新增 4 行动项已追加 todo 与 docs/night-build-todo.md。",
-    "2026-10-21 worker-8：task-map-pin-cards 完成（branch nightly/2026-10-21/1-task-map-pin-cards）。【乐观锁触发】工作区 checkpoint.json 被 main 陈旧版覆盖，已用 10-21/0 分支版本恢复后推进。",
-    "night-report(10-21)：晨报已生成 docs/nightly/reports/2026-10-21.md。status 保持 in_progress（未全完成）。",
-    "2026-10-22 白天债务清理（用户指令：按优先级把复盘清单全部落地）：P0 文档欠账（task-map-pin-cards 勾选 + README 测试数/i18n 状态）→ P1 五项（exertion-check 体力负荷、dynamic-facts 动态事实、packing-expense 打包清单核验、trip-event-notify 事件流全链路、link-import-zh 中文攻略深度抽取）→ P2 三项（price-alert/live-lockscreen 评估关单、collab-democracy 参与率透出、multi-city 多城市衔接、gallery 画廊+城市模板）→ P3 内容资产（证据包 + 文章 12/13/14 + 发布清单）。全套 453 测试全绿，前端 build 通过。",
-    "【诚实边界】未做：预订/支付闭环、实时价格源、7×24 人工兜底、锁屏 Live Activities（评估记录 docs/nightly/evaluations/ 三份）；multi-city/gallery 前端仅最小入口，深度打磨（PlanWizard 多城市输入、画廊筛选/排序）留待真实用户验证后决定。"
+    "2026-10-23 worker-8：competitive-analysis 完成。web_extract 对 searchspot.ai/aitravel.tools/stippl.io 仍 Blocked（私有地址误判，与 10-17/10-21 一致，不重试），信息全部来自 web_search 多源摘要，已在文档标注。新增 4 行动项（task-export-offline/task-expense-split-mini/task-social-collection-eval/task-share-gate-eval）追加 todo 与 docs/night-build-todo.md。上夜 4 行动项（collab-democracy/exertion-check/link-import-zh/zh-market-evidence）经仓库核验全部闭环。"
   ],
   "branches": [
-    "nightly/2026-10-21/0-competitive-analysis",
-    "nightly/2026-10-21/1-task-map-pin-cards",
-    "nightly/2026-10-17/2-content-inspiration-first"
+    "nightly/2026-10-23/0-competitive-analysis"
   ]
 }
