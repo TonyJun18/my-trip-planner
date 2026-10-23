@@ -1,58 +1,24 @@
 {
-  "night": "2026-10-22",
-  "status": "completed_with_issues",
+  "night": "2026-10-24",
+  "status": "in_progress",
   "todo": [
-    "competitive-analysis",
-    "task-map-pin-cards",
-    "content-inspiration-first",
-    "task-price-alert-eval",
-    "content-ai-travel-crashes",
-    "task-packing-expense",
-    "content-trust-gap",
-    "task-multi-city-segments",
-    "task-trip-event-notify",
-    "content-independent-planner-survival",
-    "task-gallery-featured",
-    "task-gallery-city-templates",
-    "task-live-lockscreen-eval",
-    "task-collab-democracy-eval",
-    "task-exertion-check",
-    "content-zh-market-evidence",
-    "task-link-import-zh-eval",
-    "task-dynamic-facts-eval"
+    "task-export-offline",
+    "task-expense-split-mini",
+    "task-social-collection-eval",
+    "task-share-gate-eval"
   ],
   "completed": [
-    "competitive-analysis",
-    "task-map-pin-cards",
-    "content-inspiration-first",
-    "task-exertion-check",
-    "task-dynamic-facts-eval",
-    "task-packing-expense",
-    "task-trip-event-notify",
-    "task-link-import-zh-eval",
-    "task-price-alert-eval",
-    "task-live-lockscreen-eval",
-    "task-collab-democracy-eval",
-    "task-multi-city-segments",
-    "task-gallery-featured",
-    "task-gallery-city-templates",
-    "content-ai-travel-crashes",
-    "content-trust-gap",
-    "content-independent-planner-survival",
-    "content-zh-market-evidence"
+    "task-export-offline",
+    "task-expense-split-mini"
   ],
-  "current_index": 18,
+  "current_index": 2,
   "issues": [
-    "night-start(10-21) 重建：night 由 2026-10-17 更新为 2026-10-21。todo 重建自 docs/night-build-todo.md 未勾选项（12 项），首任务 competitive-analysis。",
-    "2026-10-21 worker-7：竞品分析完成（branch nightly/2026-10-21/0-competitive-analysis）。web_extract 对 tripplanner.ai/tripnotes-2.webflow.io 仍 Blocked（私有地址误判），全部信息来自 web_search 多源摘要（含中文源），已标注来源。新增 4 行动项已追加 todo 与 docs/night-build-todo.md。",
-    "2026-10-21 worker-8：task-map-pin-cards 完成（branch nightly/2026-10-21/1-task-map-pin-cards）。【乐观锁触发】工作区 checkpoint.json 被 main 陈旧版覆盖，已用 10-21/0 分支版本恢复后推进。",
-    "night-report(10-21)：晨报已生成 docs/nightly/reports/2026-10-21.md。status 保持 in_progress（未全完成）。",
-    "2026-10-22 白天债务清理（用户指令：按优先级把复盘清单全部落地）：P0 文档欠账（task-map-pin-cards 勾选 + README 测试数/i18n 状态）→ P1 五项（exertion-check 体力负荷、dynamic-facts 动态事实、packing-expense 打包清单核验、trip-event-notify 事件流全链路、link-import-zh 中文攻略深度抽取）→ P2 三项（price-alert/live-lockscreen 评估关单、collab-democracy 参与率透出、multi-city 多城市衔接、gallery 画廊+城市模板）→ P3 内容资产（证据包 + 文章 12/13/14 + 发布清单）。全套 453 测试全绿，前端 build 通过。",
-    "【诚实边界】未做：预订/支付闭环、实时价格源、7×24 人工兜底、锁屏 Live Activities（评估记录 docs/nightly/evaluations/ 三份）；multi-city/gallery 前端仅最小入口，深度打磨（PlanWizard 多城市输入、画廊筛选/排序）留待真实用户验证后决定。"
+    "2026-10-24 worker-1：night-start 重建——核对上夜（10-23）报告：竞品分析已完成（branch nightly/2026-10-23/0-competitive-analysis 2 commits 未合并），其追加的 4 项行动项（export-offline/expense-split-mini/social-collection-eval/share-gate-eval）作为本夜 todo。10-23 夜间 worker 未执行这 4 项（报告已标异常），本夜从 task-export-offline 开始。",
+    "2026-10-24 worker-2：task-export-offline 完成（branch nightly/2026-10-24/0-task-export-offline，2 commits 3635401+f38cafa）。【抢断接管】开工时分支已存在且工作区有未提交实现（上夜/本夜 worker 被掐断遗留），按手册 3.5 核验质量：后端 458 测试全绿（含新增 5 例 export 专项）+ 前端 build 3.13s 通过 + 验收满足（双路径导出/预算口径/质检元信息/零令牌字段），补登记完成并分两段提交（backend/frontend）。无阻塞性问题。",
+    "2026-10-24 worker-3：task-expense-split-mini 完成（branch nightly/2026-10-24/1-task-expense-split-mini，commit fe1e309）。TripExpense 模型 + trip_expenses 迁移（alembic a1b2c3d4e5f6 head）+ expense_service（add/delete/list + compute_balance 纯函数：payer 自由文本零凭证、空 payer 计入 total 不参与分摊、travelers<1 防除零、四舍五入到分、append-only 记账）+ GET/POST/DELETE /trips/{id}/expenses（owner 隔离，分享只读链路不暴露财务）。18 例专项测试全绿，全套 471 测试通过。【分支基线说明】本夜真实 checkpoint（10-24 版）仅存在于 worker-2 未合并分支（main 为 10-22 旧版）；worker-3 从 worker-2 分支取回 docs/night-build-todo.md + checkpoint.json 基线继续推进，保证链条连续；代码从 main 拉出（铁律 5）。"
   ],
   "branches": [
-    "nightly/2026-10-21/0-competitive-analysis",
-    "nightly/2026-10-21/1-task-map-pin-cards",
-    "nightly/2026-10-17/2-content-inspiration-first"
+    "nightly/2026-10-24/0-task-export-offline",
+    "nightly/2026-10-24/1-task-expense-split-mini"
   ]
 }
