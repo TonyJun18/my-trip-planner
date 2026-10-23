@@ -493,6 +493,30 @@ async function doExportPdf() {
     exporting.value = false
   }
 }
+// ── 导出 JSON（task-export-offline：数据主权 / 完整备份；非截图，真实可移植数据） ──
+async function doExportJson() {
+  exporting.value = true
+  try {
+    const blob = await api.exportTripJson(trip.value.id)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${trip.value.destination}-${trip.value.start_date}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    ElMessage.success(t('tripDetail.jsonExported'))
+  } catch (e) {
+    ElMessage.error(t('tripDetail.exportFail', { msg: e.message }))
+  } finally {
+    exporting.value = false
+  }
+}
+// ── 打印（浏览器打印 → 可存 PDF；打印样式见 @media print） ──
+function doPrint() {
+  window.print()
+}
 
 // ── 分享（只读链接） ─────────────────────────────────────
 const sharing = ref(false)
@@ -1248,6 +1272,12 @@ onBeforeUnmount(() => {
         <el-button type="primary" plain :loading="exporting" @click="doExportPdf">
           <el-icon style="margin-right: 4px"><Document /></el-icon>{{ $t('tripDetail.exportPdf') }}
         </el-button>
+        <el-button type="warning" plain :loading="exporting" @click="doExportJson">
+          <el-icon style="margin-right: 4px"><Download /></el-icon>{{ $t('tripDetail.exportJson') }}
+        </el-button>
+        <el-button plain @click="doPrint">
+          <el-icon style="margin-right: 4px"><Printer /></el-icon>{{ $t('tripDetail.exportPrint') }}
+        </el-button>
       </div>
     </template>
 
@@ -1761,5 +1791,25 @@ onBeforeUnmount(() => {
   .bottom-bar :deep(.el-button) { flex: 1 1 calc(50% - 4px); margin-left: 0; min-height: 44px; }
   /* 编辑对话框：经纬度输入纵向（对话框已由全局断点收窄） */
   .latlng { flex-direction: column; }
+}
+
+/* ── 打印样式（task-export-offline：浏览器打印 → 存 PDF） ──
+ * 只打印导出区（头图/概览/地图/预算/每日行程），隐藏操作控件与交互区；
+ * 打印走浏览器原生分页（无需 html2canvas 长图裁切）。 */
+@media print {
+  .topbar, .bottom-bar, .revise-card, .day-actions, .stop-actions,
+  .map-hint, .status-switch, .map-drag-error,
+  .share-settings-hint, .share-settings-body, .gen-days-hint,
+  .el-dialog__wrapper, .el-overlay,
+  .trip-servicing, .packing-list, .trip-event-feed, .quality-card {
+    display: none !important;
+  }
+  .detail-page { padding: 0; }
+  .hero-cover { height: auto !important; min-height: 0 !important; }
+  .hero-city { display: none; }
+  .map-card { max-height: 320px; overflow: hidden; }
+  /* 避免叶子节点/分页处截断 */
+  .day-card, .stop-item { break-inside: avoid; }
+  .export-area { border: none; }
 }
 </style>
