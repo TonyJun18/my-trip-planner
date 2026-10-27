@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from app.common.config import settings
@@ -171,3 +173,52 @@ async def test_google_login_passes_full_client_id_as_audience(client, monkeypatc
     assert resp.status_code == 200, resp.text
     # 完整 Client ID，而不是其首字符（如 "t"）
     assert captured.get("audience") == _CLIENT_ID
+
+
+# ── 网络可靠性回归（2026-10）：公钥缓存 + 强制超时 ─────────────────────
+
+class _FakeInner:
+    """模拟 google.auth.transport.requests.Request：记录调用、可注入异常/延时。"""
+
+    def __init__(self, response=None, exc=None, delay=0):
+        self.response = response
+        self.exc = exc
+        self.delay = delay
+        self.calls = []
+
+    def __call__(self, url, method="GET", body=None, headers=None, timeout=120, **kwargs):
+        self.calls.append((url, method, timeout))
+        if self.delay:
+            time.sleep(self.delay)
+        if self.exc:
+            raise self.exc
+        return self.response
+
+
+def test_cached_google_request_caches_certs_endpoint():
+    """Google 公钥端点：第二次调用命中缓存，不再发网络请求（回归：登录卡 loading）。"""
+    from app.services.google_auth import _CachedCertsResponse, _CachedGoogleRequest
+
+    fake = _FakeInner(response=_CachedCertsResponse(200, b"{}"))
+    req = _CachedGoogleRequest()
+    req._inner = fake
+
+    r1 = req("https://www.googleapis.com/oauth2/v1/certs")
+    r2 = req("https://www.googleapis.com/oauth2/v3/certs")  # 不同路径也应命中（前缀匹配）
+    assert r1.status == 200 and r2.status == 200
+    # 只发生一次真实网络请求
+    assert len(fake.calls) == 1, fake.calls
+    # 透传强制超时（默认值 10s）
+    assert fake.calls[0][2] == 10
+
+
+def test_cached_google_request_forwards_default_timeout_to_inner():
+    """非公钥端点：强制短超时透传给底层（google-auth 默认 120s → 10s）。"""
+    from app.services.google_auth import _CachedCertsResponse, _CachedGoogleRequest
+
+    fake = _FakeInner(response=_CachedCertsResponse(200, b"ok"))
+    req = _CachedGoogleRequest()
+    req._inner = fake
+
+    req("https://example.com/other", method="POST", timeout=5)
+    assert fake.calls[0][2] == 5  # 显式传参生效

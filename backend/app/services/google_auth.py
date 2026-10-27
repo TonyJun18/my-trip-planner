@@ -9,11 +9,25 @@
 - 校验 ``aud`` 等于本站 GOOGLE_CLIENT_ID（防 token 被其他应用复用）
 - 校验 ``iss`` 为 Google 白名单（accounts.google.com / https://accounts.google.com）
 - ``clock_skew_in_seconds`` 放宽容许少量时钟偏差
+
+网络可靠性（2026-10 修复）：
+- google-auth 默认每次验证都重新拉取 Google 公钥（``www.googleapis.com/oauth2/v1/certs``），
+  且其默认超时长达 120s——国内网络访问该端点 TLS 握手常卡数秒甚至数十秒，
+  曾导致前端 Google 登录"授权后永远 loading"。
+- 修复：``_CachedGoogleRequest`` 强制 10s 超时 + 进程内 TTL 缓存公钥响应（24h），
+  并把 verify 挪到 ``asyncio.to_thread``，避免阻塞 FastAPI 事件循环。
 """
 from __future__ import annotations
 
+import asyncio
+import threading
+import time
+
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 
 from app.common.config import settings
 from app.core.exceptions import UnauthorizedError
@@ -22,6 +36,51 @@ from app.models import User
 from app.schemas import TokenOut, UserMeOut
 
 _GOOGLE_ISSUERS = {"accounts.google.com", "https://accounts.google.com"}
+
+# 公钥端点请求超时（秒）。google-auth 默认 120s，国内网络访问 Google 常卡死，
+# 前端 axios 又设 300s 超时 → 表现为"授权完成但一直 loading"。10s 后快速失败。
+_GOOGLE_REQ_TIMEOUT = 10
+
+# Google 公钥 TTL：官方说明约每天轮换一次，缓存 24h 内无需再联网。
+_GOOGLE_CERTS_TTL_SECONDS = 24 * 3600
+
+
+class _CachedCertsResponse:
+    """极简 Response 兼容对象：google-auth verify 只读 ``.status`` / ``.data``。"""
+
+    __slots__ = ("status", "data")
+
+    def __init__(self, status: int, data: bytes):
+        self.status = status
+        self.data = data
+
+
+class _CachedGoogleRequest:
+    """包装 ``google.auth.transport.requests.Request``：
+
+    - 强制短超时（默认 120s → 10s），Google 网络抖动时快速失败而非无限挂起；
+    - 对 Google 公钥端点做进程内 TTL 缓存，登录热路径不再依赖外网，秒回。
+    """
+
+    def __init__(self) -> None:
+        self._inner = google_requests.Request()  # type: ignore[assignment]  # 鸭子类型：测试注入 _FakeInner
+        self._lock = threading.Lock()
+        self._cached: tuple[float, _CachedCertsResponse] | None = None
+
+    def __call__(self, url, method="GET", body=None, headers=None, timeout=_GOOGLE_REQ_TIMEOUT, **kwargs):
+        if method == "GET" and url.startswith("https://www.googleapis.com/"):
+            with self._lock:
+                if self._cached and self._cached[0] > time.monotonic():
+                    return self._cached[1]
+            resp = self._inner(url, method=method, body=body, headers=headers, timeout=timeout, **kwargs)
+            with self._lock:
+                self._cached = (
+                    time.monotonic() + _GOOGLE_CERTS_TTL_SECONDS,
+                    _CachedCertsResponse(resp.status, resp.data),
+                )
+            return self._cached[1]
+        # 非公钥端点：透传（同样强制超时）
+        return self._inner(url, method=method, body=body, headers=headers, timeout=timeout, **kwargs)
 
 
 class GoogleAuthError(UnauthorizedError):
@@ -105,16 +164,15 @@ async def google_login(db: AsyncSession, id_token: str) -> TokenOut:
     client_id = _google_credentials()
 
     try:
-        from google.auth.transport import requests as google_requests
-        from google.oauth2 import id_token as google_id_token
-
-        info = google_id_token.verify_oauth2_token(
+        # 同步网络验证挪到线程池；公钥请求带 10s 超时 + 24h 缓存（见 _CachedGoogleRequest）
+        info = await asyncio.to_thread(
+            google_id_token.verify_oauth2_token,
             id_token,
-            google_requests.Request(),
+            _CachedGoogleRequest(),
             audience=client_id,
             clock_skew_in_seconds=10,
         )
-    except Exception as exc:  # ValueError / GoogleAuthError 等
+    except Exception as exc:  # ValueError / TransportError 等
         raise GoogleAuthError("Google ID Token 无效或已过期") from exc
 
     if info.get("iss") not in _GOOGLE_ISSUERS:

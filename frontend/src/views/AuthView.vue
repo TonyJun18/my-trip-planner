@@ -76,8 +76,11 @@ function switchMode() {
 }
 
 /* ── Google Identity Services 登录 ───────────────────────── */
-// 1) 懒加载 GIS 脚本（仅当配置了 client id）
-// 2) credential 回调 → POST /auth/google → 复用 setSession（与邮箱登录同一会话体系）
+// GIS 官方要求：initialize 只应调用一次（多次调用只有最后一次生效，且会刷 403/警告）。
+// 因此把「脚本加载 + initialize」提升为模块级一次性；renderButton 每次挂载执行
+// （按钮 DOM 每次重建，需要重新渲染到当次容器）。
+let gsiReady = null // Promise：脚本加载 + initialize 已完成（模块级，跨挂载复用）
+
 function loadGsiScript() {
   return new Promise((resolve, reject) => {
     if (window.google?.accounts) {
@@ -115,14 +118,25 @@ async function handleGoogleCredential(credential) {
   }
 }
 
+// 模块级一次性初始化：懒加载 GIS 脚本 + initialize（只调一次）
+function ensureGsiInitialized() {
+  if (!gsiReady) {
+    gsiReady = (async () => {
+      await loadGsiScript()
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: (resp) => handleGoogleCredential(resp.credential),
+        // 明确使用 FedCM 时不需要 popup 白名单；无特殊配置
+      })
+    })()
+  }
+  return gsiReady
+}
+
 async function initGoogleButton() {
   if (!showGoogleLogin.value) return
   try {
-    await loadGsiScript()
-    window.google.accounts.id.initialize({
-      client_id: googleClientId,
-      callback: (resp) => handleGoogleCredential(resp.credential),
-    })
+    await ensureGsiInitialized()
     window.google.accounts.id.renderButton(
       document.getElementById('google-login-btn'),
       { theme: 'outline', size: 'large', shape: 'pill', width: 260, text: 'continue_with' },
@@ -132,7 +146,12 @@ async function initGoogleButton() {
   }
 }
 
-onMounted(initGoogleButton)
+onMounted(() => {
+  // 清空容器再渲染，避免路由往返（退出登录再进登录页）时 GIS renderButton 重复追加按钮
+  const btn = document.getElementById('google-login-btn')
+  if (btn) btn.innerHTML = ''
+  initGoogleButton()
+})
 </script>
 
 <template>

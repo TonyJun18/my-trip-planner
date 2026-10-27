@@ -1,17 +1,19 @@
 <script setup>
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useI18n()
 const auth = useAuthStore()
 
-// 已登录用户访问产品门面 → 直接进「我的行程」（门面面向陌生访客）
+// 已登录用户访问产品门面 → 直接进「我的行程」（门面面向陌生访客）；
+// 但带 ?view=gallery 时保留首页，让登录用户也能看自己发布到画廊的行程
 onMounted(() => {
-  if (auth.isLoggedIn) router.replace('/trips')
+  if (auth.isLoggedIn && route.query.view !== 'gallery') router.replace('/trips')
   loadGallery()
 })
 
