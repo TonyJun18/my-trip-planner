@@ -1,5 +1,5 @@
 {
-  "night": "2026-10-23",
+  "night": "2026-10-24",
   "status": "in_progress",
   "todo": [
     "task-export-offline",
@@ -7,8 +7,15 @@
     "task-social-collection-eval",
     "task-share-gate-eval"
   ],
-  "completed": [],
-  "current_index": 0,
-  "issues": [],
-  "branches": []
+  "completed": [
+    "task-export-offline"
+  ],
+  "current_index": 1,
+  "issues": [
+    "2026-10-24 worker-1：night-start 重建——核对上夜（10-23）报告：竞品分析已完成（branch nightly/2026-10-23/0-competitive-analysis 2 commits 未合并），其追加的 4 项行动项（export-offline/expense-split-mini/social-collection-eval/share-gate-eval）作为本夜 todo。10-23 夜间 worker 未执行这 4 项（报告已标异常），本夜从 task-export-offline 开始。",
+    "2026-10-24 worker-2：task-export-offline 完成（branch nightly/2026-10-24/0-task-export-offline，2 commits 3635401+f38cafa）。【抢断接管】开工时分支已存在且工作区有未提交实现（上夜/本夜 worker 被掐断遗留），按手册 3.5 核验质量：后端 458 测试全绿（含新增 5 例 export 专项）+ 前端 build 3.13s 通过 + 验收满足（双路径导出/预算口径/质检元信息/零令牌字段），补登记完成并分两段提交（backend/frontend）。无阻塞性问题。"
+  ],
+  "branches": [
+    "nightly/2026-10-24/0-task-export-offline"
+  ]
 }
