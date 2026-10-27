@@ -110,6 +110,8 @@ async function parse() {
       res = await api.importLink({ url: linkInput.value.trim() })
     } else if (tab.value === 'email') {
       res = await api.importEmail({ text: textInput.value })
+    } else if (tab.value === 'social') {
+      res = await api.importSocial({ text: textInput.value })
     } else {
       res = await api.importNote({ text: textInput.value })
     }
@@ -178,15 +180,16 @@ async function commit() {
       <el-tab-pane :label="t('importDialog.tabScreenshot')" name="screenshot" />
       <el-tab-pane :label="t('importDialog.tabLink')" name="link" />
       <el-tab-pane :label="t('importDialog.tabEmail')" name="email" />
+      <el-tab-pane :label="t('importDialog.tabSocial')" name="social" />
     </el-tabs>
 
     <!-- 输入区 -->
-    <div v-if="tab === 'note' || tab === 'email'" class="input-area">
+    <div v-if="tab === 'note' || tab === 'email' || tab === 'social'" class="input-area">
       <el-input
         v-model="textInput"
         type="textarea"
         :rows="8"
-        :placeholder="tab === 'note' ? t('importDialog.notePlaceholder') : t('importDialog.emailPlaceholder')"
+        :placeholder="tab === 'note' ? t('importDialog.notePlaceholder') : tab === 'email' ? t('importDialog.emailPlaceholder') : t('importDialog.socialPlaceholder')"
         maxlength="20000"
         show-word-limit
       />
