@@ -9,16 +9,19 @@
   ],
   "completed": [
     "task-export-offline",
-    "task-expense-split-mini"
+    "task-expense-split-mini",
+    "task-social-collection-eval"
   ],
-  "current_index": 2,
+  "current_index": 3,
   "issues": [
     "2026-10-24 worker-1：night-start 重建——核对上夜（10-23）报告：竞品分析已完成（branch nightly/2026-10-23/0-competitive-analysis 2 commits 未合并），其追加的 4 项行动项（export-offline/expense-split-mini/social-collection-eval/share-gate-eval）作为本夜 todo。10-23 夜间 worker 未执行这 4 项（报告已标异常），本夜从 task-export-offline 开始。",
     "2026-10-24 worker-2：task-export-offline 完成（branch nightly/2026-10-24/0-task-export-offline，2 commits 3635401+f38cafa）。【抢断接管】开工时分支已存在且工作区有未提交实现（上夜/本夜 worker 被掐断遗留），按手册 3.5 核验质量：后端 458 测试全绿（含新增 5 例 export 专项）+ 前端 build 3.13s 通过 + 验收满足（双路径导出/预算口径/质检元信息/零令牌字段），补登记完成并分两段提交（backend/frontend）。无阻塞性问题。",
-    "2026-10-24 worker-3：task-expense-split-mini 完成（branch nightly/2026-10-24/1-task-expense-split-mini，commit fe1e309）。TripExpense 模型 + trip_expenses 迁移（alembic a1b2c3d4e5f6 head）+ expense_service（add/delete/list + compute_balance 纯函数：payer 自由文本零凭证、空 payer 计入 total 不参与分摊、travelers<1 防除零、四舍五入到分、append-only 记账）+ GET/POST/DELETE /trips/{id}/expenses（owner 隔离，分享只读链路不暴露财务）。18 例专项测试全绿，全套 471 测试通过。【分支基线说明】本夜真实 checkpoint（10-24 版）仅存在于 worker-2 未合并分支（main 为 10-22 旧版）；worker-3 从 worker-2 分支取回 docs/night-build-todo.md + checkpoint.json 基线继续推进，保证链条连续；代码从 main 拉出（铁律 5）。"
+    "2026-10-24 worker-3：task-expense-split-mini 完成（branch nightly/2026-10-24/1-task-expense-split-mini，commit fe1e309）。TripExpense 模型 + trip_expenses 迁移（alembic a1b2c3d4e5f6 head）+ expense_service（add/delete/list + compute_balance 纯函数：payer 自由文本零凭证、空 payer 计入 total 不参与分摊、travelers<1 防除零、四舍五入到分、append-only 记账）+ GET/POST/DELETE /trips/{id}/expenses（owner 隔离，分享只读链路不暴露财务）。18 例专项测试全绿，全套 471 测试通过。【分支基线说明】本夜真实 checkpoint（10-24 版）仅存在于 worker-2 未合并分支（main 为 10-22 旧版）；worker-3 从 worker-2 分支取回 docs/night-build-todo.md + checkpoint.json 基线继续推进，保证链条连续；代码从 main 拉出（铁律 5）。",
+    "2026-10-24 worker-4：task-social-collection-eval 完成（branch nightly/2026-10-24/2-task-social-collection-eval）。评估通过并实现：三路线对比（抓分享页反爬墙/接平台 API 需凭证/粘贴 caption 文本零凭证）→ C 路线可行，与 email-import 零凭证粘贴版同构；social_import.py parse_social 纯函数（URL 只识别平台不抓取、40+ 地名收尾词 + 顿号列举 + 标签/emoji/语气词/价格语/方位前缀剥离 + 类型推断 + 敌意输入复用 note_import _INJECTION_RE）+ POST /trips/social/import（登录必需、超长 422）+ 评估记录 docs/nightly/evaluations/task-social-collection-eval-2026-10-24.md。13 例专项测试全绿，全套 466 测试通过（main 453 + 本任务 13）。纯链接粘贴走 link_import 链接收藏兜底。"
   ],
   "branches": [
     "nightly/2026-10-24/0-task-export-offline",
-    "nightly/2026-10-24/1-task-expense-split-mini"
+    "nightly/2026-10-24/1-task-expense-split-mini",
+    "nightly/2026-10-24/2-task-social-collection-eval"
   ]
 }
