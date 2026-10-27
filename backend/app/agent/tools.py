@@ -314,6 +314,21 @@ _AMAP_POI_ENDPOINT = "https://restapi.amap.com/v3/place/text"
 _AMAP_TYPE = {"attraction": "110000", "food": "050000", "hotel": "100000"}
 
 
+def _parse_amap_cost(raw: Any) -> float:
+    """解析高德 biz_ext.cost（人均消费，字符串或数字）。
+
+    高德文档：biz_ext 在 extensions=all 时返回，cost 为人均消费，
+    仅存在于餐饮/酒店/景点/影院类 POI 之下；缺失/非数字 → 0（不编造）。
+    """
+    if raw in (None, ""):
+        return 0.0
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+    return val if val > 0 else 0.0
+
+
 async def search_pois_amap(
     city: str,
     *,
@@ -337,7 +352,7 @@ async def search_pois_amap(
         "types": _AMAP_TYPE.get(want_type, "110000"),
         "offset": str(limit),
         "page": "1",
-        "extensions": "base",
+        "extensions": "all",
         "output": "JSON",
     }
     try:
@@ -361,17 +376,23 @@ async def search_pois_amap(
         except (KeyError, ValueError, IndexError):
             lat = lng = None
         # 高德 name 规整；type 字段形如 "景点;公园"，取第一段
-        # 估算费用：酒店用城市基准价×档位倍率（代码确定性估算，补竞品缺口），
-        # 其他类型 0（景点门票等实际价格高德不返回，前端标注"以实际为准"）
-        est_cost = 0.0
+        # 真实价格（task-price-realism-eval，2026-10-28）：
+        # - extensions=all 时高德返回 biz_ext.cost（人均消费，餐饮/酒店/景点/影院类 POI）
+        # - 景点/美食用真实人均消费（若有）；酒店维持城市基准价×档位估算
+        #   （高德无标准房价字段，文档未提供，基准价口径不变）
+        # - biz_ext.cost 缺失/非数字 → 保持 0（不编造，前端标注"以实际为准"）
+        cost = 0.0
+        biz_ext = item.get("biz_ext") or {}
+        if isinstance(biz_ext, dict):
+            cost = _parse_amap_cost(biz_ext.get("cost"))
         if want_type == "hotel":
-            est_cost = estimate_hotel_cost(item.get("name"), city)
+            cost = estimate_hotel_cost(item.get("name"), city)
         pois.append({
             "name": item.get("name", ""),
             "type": want_type,
             "lat": lat,
             "lng": lng,
-            "estimated_cost": est_cost,
+            "estimated_cost": cost,
             "duration_minutes": None,
             "description": (item.get("address") or item.get("type") or "")[:200],
             "source": "amap",
