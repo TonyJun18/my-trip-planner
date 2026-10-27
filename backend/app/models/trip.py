@@ -243,3 +243,26 @@ class TripEvent(Base):
     event_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class TripExpense(Base):
+    """行中费用记录（task-expense-split-mini：Stippl/MonkeyTravel 行中管理一体化）。
+
+    - 行程内的实际花费（金额/类别/支付人），与 stops.estimated_cost（估算）区分：
+      估算进预算视图（compute_budget），实付进费用分摊视图（expense_service）。
+    - ``payer``：支付人的自由文本姓名（如「小彭」），零凭证、零成员表依赖；
+      空串表示「未指定」，不参与人均结余（见 expense_service.balance 处理）。
+    - ``category``：food / transport / hotel / attraction / shopping / other（默认 other）。
+    - 删除为物理删除（最小版：owner 页面可撤销误记）；金额不允许原地修改，
+      修改 = 删除旧记录 + 新增（保持 append-only 记账语义，见 service 注释）。
+    """
+
+    __tablename__ = "trip_expenses"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    category: Mapped[str] = mapped_column(String(20), default="other", nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    payer: Mapped[str] = mapped_column(String(50), default="", nullable=False)
+    note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
