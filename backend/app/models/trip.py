@@ -71,6 +71,28 @@ class Trip(Base):
     days: Mapped[list[TripDay]] = relationship(
         back_populates="trip", cascade="all, delete-orphan", order_by="TripDay.day_number"
     )
+    plans: Mapped[list[TripPlan]] = relationship(
+        back_populates="trip", order_by="TripPlan.created_at.desc()"
+    )
+
+    @property
+    def escalated(self) -> bool:
+        """人工兜底信号（task-human-escalation-eval）：派生属性，非 DB 列。
+
+        从最新 AI 方案（TripPlan.plan_data.quality）派生：finalized=true /
+        passed=false / degraded=true 任一命中 → 建议人工复核。ORM 属性供
+        Pydantic from_attributes 直接读出（TripOut.escalated），零端点改动。
+        无 plan / 正常通过 → False。plans relationship 已按 created_at 倒序。
+        """
+        try:
+            plan = (self.plans or [None])[0]
+        except Exception:  # noqa: BLE001 — 派生失败按不升级处理，绝不阻断读取
+            return False
+        if plan is None:
+            return False
+        from app.services.escalation_service import escalate_from_quality
+
+        return escalate_from_quality((plan.plan_data or {}).get("quality"))
 
 
 class TripDay(Base):
@@ -128,7 +150,7 @@ class TripPlan(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    trip: Mapped[Trip] = relationship()
+    trip: Mapped[Trip] = relationship(back_populates="plans")
 
 
 class PlanTask(Base):

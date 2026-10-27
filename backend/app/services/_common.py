@@ -8,7 +8,12 @@ from sqlalchemy.orm import selectinload
 from app.models import Trip, TripDay
 
 # 统一 eager-load 关系，避免序列化时 async lazy load 报 MissingGreenlet
-TRIP_LOADS = (selectinload(Trip.days).selectinload(TripDay.stops),)
+# plans 用于 Trip.escalated 派生（task-human-escalation-eval）：最新 AI 方案
+# 的 quality 命中需要人工复核信号时，列表/详情直接带出 escalated 标记。
+TRIP_LOADS = (
+    selectinload(Trip.days).selectinload(TripDay.stops),
+    selectinload(Trip.plans),
+)
 
 
 def normalize_trace(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -107,6 +107,9 @@ class TripOut(BaseModel):
     status: str
     share_token: str | None = None
     edit_token: str | None = None
+    # 人工兜底（task-human-escalation-eval）：最新 AI plan 的 quality 是否命中
+    # 需人工复核信号（finalized / passed=false / degraded）。派生字段，非存储。
+    escalated: bool = False
     created_at: datetime
     updated_at: datetime
     days: list[DayOut] = []
@@ -215,6 +218,34 @@ class TripEventListOut(BaseModel):
 class TripListOut(BaseModel):
     items: list[TripOut]
     total: int
+
+
+# ── 人工兜底评审队列（task-human-escalation-eval） ────────────────
+class EscalationQualityOut(BaseModel):
+    """结构化失败摘要（从 plan.quality 提炼，供 owner 评审/自托管接人工）。"""
+
+    reason: str | None = None  # finalized / low_confidence / degraded
+    summary: str | None = None
+    issues: list = Field(default_factory=list)  # 最多 5 条
+    score: int | None = None
+
+
+class EscalationOut(BaseModel):
+    """评审队列中的一条（escalated 行程 + 失败摘要）。"""
+
+    trip_id: str
+    title: str
+    destination: str
+    start_date: date
+    end_date: date
+    budget: float | None = None
+    escalated_at: str | None = None
+    quality: EscalationQualityOut = Field(default_factory=EscalationQualityOut)
+
+
+class EscalationListOut(BaseModel):
+    items: list[EscalationOut] = []
+    total: int = 0
 
 
 # ── 分享只读响应：TripOut + 预算汇总（分享页免 token 调 budget API） ──────
