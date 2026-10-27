@@ -315,10 +315,11 @@ _AMAP_TYPE = {"attraction": "110000", "food": "050000", "hotel": "100000"}
 
 
 def _parse_amap_cost(raw: Any) -> float:
-    """解析高德 biz_ext.cost（人均消费，字符串或数字）。
+    """解析高德 cost（人均消费，字符串或数字）。
 
-    高德文档：biz_ext 在 extensions=all 时返回，cost 为人均消费，
-    仅存在于餐饮/酒店/景点/影院类 POI 之下；缺失/非数字 → 0（不编造）。
+    高德文档：cost 为人均消费，仅存在于餐饮/酒店/景点/影院类 POI 之下
+    （v3 place/text 顶层字段，部分场景返回在 biz_ext 深度信息里）；
+    缺失/非数字 → 0（不编造）。
     """
     if raw in (None, ""):
         return 0.0
@@ -327,6 +328,20 @@ def _parse_amap_cost(raw: Any) -> float:
     except (TypeError, ValueError):
         return 0.0
     return val if val > 0 else 0.0
+
+
+def _parse_amap_rating(raw: Any) -> float | None:
+    """解析高德 rating（评分，0-5，字符串或数字）。
+
+    缺失/空/非法 → None（不阻断 POI 使用）；越界值裁剪到 [0, 5]。
+    """
+    if raw in (None, ""):
+        return None
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(5.0, round(val, 2)))
 
 
 async def search_pois_amap(
@@ -377,14 +392,19 @@ async def search_pois_amap(
             lat = lng = None
         # 高德 name 规整；type 字段形如 "景点;公园"，取第一段
         # 真实价格（task-price-realism-eval，2026-10-28）：
-        # - extensions=all 时高德返回 biz_ext.cost（人均消费，餐饮/酒店/景点/影院类 POI）
+        # - extensions=all 时高德返回人均消费 cost 字段（餐饮/酒店/景点/影院类 POI）；
+        #   v3 place/text 文档中 cost/rating 为 POI 顶层字段，部分场景/版本会返回在
+        #   biz_ext 深度信息里 → 双读（顶层优先 + biz_ext 兜底）最稳
         # - 景点/美食用真实人均消费（若有）；酒店维持城市基准价×档位估算
-        #   （高德无标准房价字段，文档未提供，基准价口径不变）
-        # - biz_ext.cost 缺失/非数字 → 保持 0（不编造，前端标注"以实际为准"）
+        #   （高德 cost 对酒店是人均消费而非房价，口径不变）
+        # - cost 缺失/非数字 → 保持 0（不编造，前端标注"以实际为准"）
         cost = 0.0
-        biz_ext = item.get("biz_ext") or {}
-        if isinstance(biz_ext, dict):
-            cost = _parse_amap_cost(biz_ext.get("cost"))
+        amap_cost = item.get("cost")
+        if _parse_amap_cost(amap_cost) <= 0:
+            biz_ext = item.get("biz_ext") or {}
+            if isinstance(biz_ext, dict):
+                amap_cost = biz_ext.get("cost")
+        cost = _parse_amap_cost(amap_cost)
         if want_type == "hotel":
             cost = estimate_hotel_cost(item.get("name"), city)
         pois.append({
@@ -398,6 +418,10 @@ async def search_pois_amap(
             "source": "amap",
             "source_url": "",
             "geocoded": lat is not None,
+            # 评分透传（extensions=all 返回；顶层优先 + biz_ext 兜底），前端候选卡可展示
+            "rating": _parse_amap_rating(
+                item.get("rating") or ((item.get("biz_ext") or {}).get("rating") if isinstance(item.get("biz_ext"), dict) else None)
+            ),
         })
     logger.info("search_pois_amap city=%s want=%s pois=%d", city, want_type, len(pois))
     return {"city": city, "query": query or city, "count": len(pois), "results": pois}

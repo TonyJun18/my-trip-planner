@@ -176,6 +176,84 @@ async def test_search_amap_missing_biz_ext_keeps_zero(monkeypatch):
     assert result["results"][0]["estimated_cost"] == 0.0
 
 
+# ── 增强：顶层 cost/rating 双读（2026-10-28 worker-4 接管核验补齐）────────
+# v3 place/text 官方文档把 cost（人均消费）/rating（评分）列为 POI 顶层字段
+# （仅餐饮/酒店/景点/影院类），部分场景返回在 biz_ext 深度信息 → 顶层优先 + biz_ext 兜底
+def test_parse_amap_rating_units():
+    """_parse_amap_rating：字符串/数字/非法/越界裁剪。"""
+    from app.agent.tools import _parse_amap_rating
+
+    assert _parse_amap_rating("4.8") == 4.8
+    assert _parse_amap_rating(4.6) == 4.6
+    assert _parse_amap_rating("9.9") == 5.0
+    assert _parse_amap_rating("-1") == 0.0
+    assert _parse_amap_rating(None) is None
+    assert _parse_amap_rating("") is None
+    assert _parse_amap_rating("很好") is None
+
+
+@pytest.mark.asyncio
+async def test_search_amap_top_level_cost_preferred(monkeypatch):
+    """顶层 cost 优先于 biz_ext.cost（官方文档顶层字段为准）。"""
+    from app.common.config import settings
+
+    monkeypatch.setattr(settings, "AMAP_API_KEY", "test-key")
+    payload = {
+        "status": "1",
+        "pois": [
+            {
+                "name": "西湖",
+                "location": "120.150,30.274",
+                "type": "风景名胜;风景名胜",
+                "cost": "88",
+                "rating": "4.9",
+                "biz_ext": {"cost": "60", "rating": "4.5"},
+            }
+        ],
+    }
+
+    async def _fake_get(self, url, params=None, **kw):  # noqa: ARG001
+        return _FakeResp(payload)
+
+    import httpx
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", _fake_get)
+    result = await search_pois_amap("杭州", want_type="attraction")
+    p = result["results"][0]
+    assert p["estimated_cost"] == 88.0  # 顶层 cost 优先
+    assert p["rating"] == 4.9  # 顶层 rating 优先
+
+
+@pytest.mark.asyncio
+async def test_search_amap_biz_ext_fallback_when_top_level_missing(monkeypatch):
+    """顶层 cost 缺失 → biz_ext.cost 兜底（兼容旧版返回结构）。"""
+    from app.common.config import settings
+
+    monkeypatch.setattr(settings, "AMAP_API_KEY", "test-key")
+    payload = {
+        "status": "1",
+        "pois": [
+            {
+                "name": "灵隐寺",
+                "location": "120.11,30.24",
+                "type": "风景名胜;寺庙",
+                "biz_ext": {"cost": "75", "rating": "4.6"},
+            }
+        ],
+    }
+
+    async def _fake_get(self, url, params=None, **kw):  # noqa: ARG001
+        return _FakeResp(payload)
+
+    import httpx
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", _fake_get)
+    result = await search_pois_amap("杭州", want_type="attraction")
+    p = result["results"][0]
+    assert p["estimated_cost"] == 75.0
+    assert p["rating"] == 4.6
+
+
 class _FakeResp:
     """最小 httpx.Response 替身（只暴露 .json()）。"""
 
