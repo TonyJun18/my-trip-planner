@@ -20,7 +20,7 @@ from app.services import chat_service
 
 
 # ── 工具函数 ─────────────────────────────────────────────────
-def _aimsg(content: str = "ok", *, tool_calls: list[dict[str, Any]] | None = None) -> AIMessage:
+def _aimsg(content: str = "ok", *, tool_calls: list[dict[str, Any]] | None = None, reasoning: str | None = None) -> AIMessage:
     if tool_calls:
         return AIMessage(
             content="",
@@ -35,7 +35,10 @@ def _aimsg(content: str = "ok", *, tool_calls: list[dict[str, Any]] | None = Non
             ],
             response_metadata={},
         )
-    return AIMessage(content=content, response_metadata={})
+    kw = {}
+    if reasoning:
+        kw["additional_kwargs"] = {"reasoning_content": reasoning}
+    return AIMessage(content=content, response_metadata={}, **kw)
 
 
 @pytest.fixture
@@ -107,6 +110,48 @@ async def test_send_message_returns_assistant_reply(db_session, mock_llm):
     assert "你好" in items[1].content
 
 
+async def test_send_message_reasoning_persisted(db_session, mock_llm):
+    """LLM 带 reasoning → 最终 assistant 消息 reasonng 落库、透出 out。"""
+    mock_llm["set"]([_aimsg("杭州 3 日安排如下。", reasoning="先拆解用户需求，再查景点")])
+    session = await chat_service.create_session(db_session, "user-1", title="思考")
+
+    result = await chat_service.send_message(db_session, session, "杭州怎么玩", broadcast=False)
+    assert result["status"] == "completed"
+    # 服务返回 message 带 reasoning
+    assert result["message"]["reasoning"] == "先拆解用户需求，再查景点"
+
+    items, _ = await chat_service.list_messages(db_session, session.id)
+    assistant = [m for m in items if m.role == "assistant"][-1]
+    assert assistant.reasoning == "先拆解用户需求，再查景点"
+
+
+async def test_send_message_no_reasoning_none(db_session, mock_llm):
+    """普通模型无 reasoning → 落库为空，out.reasoning=None（契约稳定）。"""
+    mock_llm["set"]([_aimsg("普通回复")])
+    session = await chat_service.create_session(db_session, "user-1", title="无思考")
+    result = await chat_service.send_message(db_session, session, "hi", broadcast=False)
+    assert result["message"]["reasoning"] is None
+    items, _ = await chat_service.list_messages(db_session, session.id)
+    assistant = [m for m in items if m.role == "assistant"][-1]
+    assert assistant.reasoning is None
+
+
+async def test_send_message_reasoning_ws_broadcasted(db_session, mock_llm, monkeypatch):
+    """broadcast=True 时 reasoning_start 事件经 hub 广播。"""
+    from app.services import ws_broadcast
+
+    published: list[dict] = []
+    async def _fake_publish(key: str, payload: dict) -> None:
+        published.append(payload)
+    monkeypatch.setattr(ws_broadcast.hub, "publish", _fake_publish)
+
+    mock_llm["set"]([_aimsg("好的", reasoning="思考一下")])
+    session = await chat_service.create_session(db_session, "user-1", title="广播")
+    await chat_service.send_message(db_session, session, "在吗", broadcast=True)
+    reasoning_msgs = [p for p in published if p.get("type") == "reasoning_start"]
+    assert reasoning_msgs and reasoning_msgs[0]["reasoning"] == "思考一下"
+
+
 async def test_send_message_with_tool_call(db_session, mock_llm):
     """对话中 LLM 调用工具 → 工具执行 → 回填 tool 消息 → 最终回复。"""
     # 第一轮要调 search_attractions，第二轮给最终回复
@@ -129,7 +174,7 @@ async def test_send_message_with_tool_call(db_session, mock_llm):
         parameters=None,
     )
     original = chat_service._chat_tools
-    chat_service._chat_tools = lambda: [fake_tool]  # type: ignore[assignment]
+    chat_service._chat_tools = lambda **kwargs: [fake_tool]  # type: ignore[assignment]
     try:
         result = await chat_service.send_message(db_session, session, "杭州有什么好玩的", broadcast=False)
     finally:
@@ -196,7 +241,7 @@ async def test_tool_failure_error_persisted(db_session, mock_llm):
 
     fake_tool = AgentTool(name="query_weather", description="天气", execute=_boom, parameters=None)
     original = chat_service._chat_tools
-    chat_service._chat_tools = lambda: [fake_tool]  # type: ignore[assignment]
+    chat_service._chat_tools = lambda **kwargs: [fake_tool]  # type: ignore[assignment]
     try:
         session = await chat_service.create_session(db_session, "user-1", title="工具错误")
         result = await chat_service.send_message(db_session, session, "杭州天气", broadcast=False)

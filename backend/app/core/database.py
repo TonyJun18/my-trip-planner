@@ -36,6 +36,9 @@ SessionLocal = async_sessionmaker(
 async def get_session() -> AsyncGenerator[AsyncSession]:
     """FastAPI 依赖：请求级会话。"""
     async with SessionLocal() as session:
+        # 行程修改工具（trip_edit_tool）预览轮要求 db 有 session_factory
+        # 开独立事务（预览应用在副本上，绝不污染请求级事务）。
+        session.session_factory = SessionLocal  # type: ignore[attr-defined]
         try:
             yield session
             await session.commit()

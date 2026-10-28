@@ -100,15 +100,36 @@ class OllamaProvider(BaseLLMProvider):
         return settings.OLLAMA_MODEL
 
     def healthcheck(self) -> bool:
-        """检查 Ollama 服务是否在监听。"""
-        try:
-            import socket
-            from urllib.parse import urlparse
+        """检查 Ollama 服务是否可用（端口连通 + 配置的模型确实存在）。
 
-            parsed = urlparse(settings.OLLAMA_BASE_URL)
-            with socket.create_connection((parsed.hostname or "127.0.0.1", parsed.port or 11434), timeout=2):
-                return True
+        只做端口连通检查不足以发现配置错误——例如 ``OLLAMA_MODEL`` 指向
+        未拉取的模型时，服务端口是通的，但真正调用会 404。这会让坏兜底
+        混进 provider 链，把配置错误伪装成瞬时故障。
+        这里额外调用 ``/api/show`` 验证模型存在性：模型缺失即视为不可用
+        （调用方据此跳过该 provider 或 fail-fast）。
+        """
+        import socket
+        from urllib.parse import urlparse
+
+        parsed = urlparse(settings.OLLAMA_BASE_URL)
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 11434
+        try:
+            with socket.create_connection((host, port), timeout=2):
+                pass
         except OSError:
+            return False
+
+        try:
+            import httpx
+
+            resp = httpx.post(
+                f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/show",
+                json={"name": settings.OLLAMA_MODEL},
+                timeout=3,
+            )
+            return resp.status_code == 200
+        except Exception:  # noqa: BLE001 —— 任何网络/解析异常都视为不可用，绝不把坏 provider 放进链
             return False
 
 
@@ -382,7 +403,10 @@ def get_provider(name: str = "auto") -> BaseLLMProvider:
     if name in PROVIDER_REGISTRY:
         provider = PROVIDER_REGISTRY[name]
         if name == "ollama" and not provider.healthcheck():
-            raise LLMProviderError("Ollama 服务不可达，请确认已启动（ollama serve）")
+            raise LLMProviderError(
+                f"Ollama 服务不可用（{settings.OLLAMA_BASE_URL}，模型 {settings.OLLAMA_MODEL}；"
+                "请确认 ollama serve 已启动且已 `ollama pull` 该模型）"
+            )
         return provider
 
     provider: BaseLLMProvider
@@ -403,7 +427,10 @@ def get_provider(name: str = "auto") -> BaseLLMProvider:
     elif name == "ollama":
         provider = OllamaProvider()
         if not provider.healthcheck():
-            raise LLMProviderError("Ollama 服务不可达，请确认已启动（ollama serve）")
+            raise LLMProviderError(
+                f"Ollama 服务不可用（{settings.OLLAMA_BASE_URL}，模型 {settings.OLLAMA_MODEL}；"
+                "请确认 ollama serve 已启动且已 `ollama pull` 该模型）"
+            )
     else:
         raise LLMProviderError(f"未知 LLM provider: {name}")
 

@@ -17,9 +17,10 @@ import pytest
 class _FakeLoop:
     """伪 AgentLoop：run 直接返回预设结果（不触 provider / 工具）。"""
 
-    def __init__(self, reply: str = "已为你查询杭州：西湖、灵隐寺。", status: str = "completed"):
+    def __init__(self, reply: str = "已为你查询杭州：西湖、灵隐寺。", status: str = "completed", reasoning: str | None = None):
         self.reply = reply
         self.status = status
+        self.reasoning = reasoning
 
     async def run(self, message: str) -> dict[str, Any]:
         return {
@@ -29,6 +30,7 @@ class _FakeLoop:
             "trace": [],
             "corrections": 0,
             "error": None if self.status == "completed" else "llm down",
+            "reasoning": self.reasoning,
             "provider": "fake",
             "model": "fake-model",
         }
@@ -76,10 +78,21 @@ async def test_create_session_with_context_and_title(client, auth_user, mock_loo
         json={"title": "杭州攻略", "context": {"destination": "杭州", "trip_id": "t1"}},
         headers=headers,
     )
+    # 绑定行程校验：t1 非当前用户行程 → 403（设计契约：不静默解绑）
+    assert resp.status_code == 403, resp.text
+    data = resp.json()
+    assert data["error"]["code"] == "chat_bind_trip_forbidden"
+
+    # 不带 trip_id 的普通会话仍可创建
+    resp = await client.post(
+        "/api/v1/chat/sessions",
+        json={"title": "杭州攻略", "context": {"destination": "杭州"}},
+        headers=headers,
+    )
     assert resp.status_code == 201, resp.text
     data = resp.json()
     assert data["title"] == "杭州攻略"
-    assert data["context"] == {"destination": "杭州", "trip_id": "t1"}
+    assert data["context"] == {"destination": "杭州"}
 
 
 async def test_session_owner_isolation(client, auth_user):
@@ -155,6 +168,61 @@ async def test_send_message_persists_and_returns_reply(client, auth_user, mock_l
     assert msgs[0]["role"] == "user"
     assert msgs[0]["content"] == "杭州有什么好玩的？"
     assert msgs[1]["role"] == "assistant"
+    # 无 reasoning（_FakeLoop 默认 None）→ 字段存在但为 null
+    assert "reasoning" in msgs[1]
+
+
+async def test_send_message_reasoning_in_response(client, auth_user, monkeypatch):
+    """mock loop 带 reasoning → REST 返回与历史都透出。"""
+    await _register_and_session(client, auth_user)
+
+    from app.services import chat_service
+
+    class _RLoop:
+        async def run(self, message):
+            return {
+                "status": "completed",
+                "output": "答案",
+                "messages": [],
+                "trace": [],
+                "corrections": 0,
+                "error": None,
+                "reasoning": "我先看了西湖和灵隐寺",
+                "provider": "fake",
+                "model": "fake-model",
+            }
+    monkeypatch.setattr(chat_service, "AgentLoop", lambda **kw: _RLoop())
+
+    _, headers = auth_user
+    resp = await client.post(
+        f"/api/v1/chat/sessions/{await _current_session_id(client, headers)}/messages",
+        json={"message": "帮我安排"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["reasoning"] == "我先看了西湖和灵隐寺"
+
+    # 历史消息也透出
+    resp = await client.get(
+        f"/api/v1/chat/sessions/{await _current_session_id(client, headers)}/messages",
+        headers=headers,
+    )
+    msgs = resp.json()["items"]
+    assistant = [m for m in msgs if m["role"] == "assistant"][-1]
+    assert assistant["reasoning"] == "我先看了西湖和灵隐寺"
+
+
+async def _register_and_session(client, auth_user):
+    """建一个会话（helper）。"""
+    _, headers = auth_user
+    resp = await client.post("/api/v1/chat/sessions", json={}, headers=headers)
+    return resp.json()["id"]
+
+
+async def _current_session_id(client, headers):
+    resp = await client.get("/api/v1/chat/sessions", headers=headers)
+    return resp.json()["items"][0]["id"]
 
 
 async def test_send_message_requires_session_owner(client, auth_user, mock_loop):

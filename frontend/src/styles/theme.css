@@ -118,6 +118,19 @@ body {
 .el-table { --el-table-border-color: var(--line); }
 .el-tag { border-radius: 6px; font-weight: 500; }
 
+/* 下拉菜单危险项（详情页「更多 / Day / Stop」折叠菜单中 teleport 到 body，
+   scoped :deep() 够不到 → 放全局）。 */
+.el-dropdown-menu__item.detail-dropdown-danger {
+  color: var(--danger);
+}
+.el-dropdown-menu__item.detail-dropdown-danger:hover {
+  background: var(--brand-soft);
+  color: var(--danger);
+}
+.el-dropdown-menu__item.detail-dropdown-danger .el-icon {
+  color: var(--danger);
+}
+
 /* 滚动条润色 */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 5px; border: 2px solid var(--canvas); }

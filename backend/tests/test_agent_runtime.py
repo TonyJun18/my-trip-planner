@@ -337,7 +337,102 @@ async def test_transform_context(loop_factory):
     assert seen_ctx == [1]  # 第一次调用只有 user message（system 由 loop 单独拼）
 
 
-# ═══════════════ 可观测性：工具失败透传真实错误 ═══════════════
+# ═══════════════ reasoning（思考过程）透传 ═══════════════
+
+def _aimsg_reasoning(content: str = "done", *, reasoning: str = "", tool_calls: list[dict[str, Any]] | None = None, **kwargs: Any) -> AIMessage:
+    """构造带 reasoner 推理文本的 AIMessage（DeepSeek 风格 additional_kwargs.reasoning_content）。"""
+    if tool_calls:
+        content = ""
+        normalized = [
+            {
+                "name": tc["name"],
+                "args": tc.get("args") or {},
+                "id": tc.get("id") or f"call-{tc['name']}",
+                "type": "tool_call",
+            }
+            for tc in tool_calls
+        ]
+        return AIMessage(
+            content=content,
+            additional_kwargs={"reasoning_content": reasoning} if reasoning else {},
+            tool_calls=normalized,
+            **kwargs,
+        )
+    return AIMessage(
+        content=content,
+        additional_kwargs={"reasoning_content": reasoning} if reasoning else {},
+        **kwargs,
+    )
+
+
+async def test_extract_reasoning_helpers(loop_factory):
+    """_extract_reasoning：覆盖 DeepSeek 字符串 / OpenAI 列表 / 缺失三种形态。"""
+    assert AgentLoop._extract_reasoning(_aimsg_reasoning(reasoning="先查天气")) == "先查天气"
+    # OpenAI 分段 reasoning
+    oai = AIMessage(
+        content="oi",
+        additional_kwargs={"reasoning": [{"type": "reasoning_text", "text": "段一"}, {"type": "reasoning_text", "text": "段二"}]},
+    )
+    assert AgentLoop._extract_reasoning(oai) == "段一段二"
+    # 无语义字段 → None（不破坏主契约）
+    assert AgentLoop._extract_reasoning(_aimsg("plain")) is None
+    assert AgentLoop._extract_reasoning(None) is None
+
+
+async def test_run_reasoning_event_and_return(loop_factory):
+    """LLM 响应带 reasoning → reasoning_start 事件 + run() 返回 reasoning 聚合。"""
+    events: list[AgentEvent] = []
+    async def _sink(ev: AgentEvent) -> None:
+        events.append(ev)
+
+    loop, _ = loop_factory(
+        [_aimsg_reasoning(content="最终答案", reasoning="先分析用户意图")],
+        on_event=_sink,
+    )
+    result = await loop.run("帮我选行程")
+    assert result["status"] == "completed"
+    assert result["reasoning"] == "先分析用户意图"
+    # reasoning_start 事件被广播
+    reasoning_events = [e for e in events if e.type == "reasoning_start"]
+    assert reasoning_events and reasoning_events[0].reasoning == "先分析用户意图"
+    # message_update 也带 reasoning
+    updates = [e for e in events if e.type == "message_update"]
+    assert updates and updates[0].reasoning == "先分析用户意图"
+
+
+async def test_run_reasoning_accumulates_across_rounds(loop_factory):
+    """多轮（工具轮）reasoning 聚合：第二轮追加，空轮不影响。"""
+    responses = [
+        _aimsg_reasoning(tool_calls=[{"name": "t", "args": {}}], reasoning="第一轮思考"),
+        _aimsg_reasoning(content="ok", reasoning="第二轮思考"),
+    ]
+    async def _tool() -> str:
+        return "{}"
+    loop, _ = loop_factory(responses, tools=[AgentTool(name="t", description="t", execute=_tool)])
+    result = await loop.run("x")
+    assert result["reasoning"] == "第一轮思考\n\n第二轮思考"
+
+
+async def test_run_no_reasoning_field_none(loop_factory):
+    """普通模型无 reasoning → run() 返回 reasoning=None（契约稳定）。"""
+    loop, _ = loop_factory([_aimsg("plain")])
+    result = await loop.run("x")
+    assert result["reasoning"] is None
+
+
+async def test_reasoning_not_persisted_to_llm_context(loop_factory):
+    """reasoning 只作为展示辅助，绝不混入发给 LLM 的 context（转换钩子不含它）。"""
+    def _convert(messages: list[Any]) -> list[Any]:
+        return [m for m in messages]
+
+    loop, _ = loop_factory(
+        [_aimsg_reasoning(content="ok", reasoning="不应出现在上下文")],
+        convert_to_llm=_convert,
+    )
+    await loop.run("x")
+    # 上下文追加的只有 AIMessage（content 不含 reasoning）
+    llm_msgs = [m for m in loop.messages if hasattr(m, "content")]
+    assert all("不应出现在上下文" not in str(m.content) for m in llm_msgs)
 
 async def test_tool_failure_event_carries_real_error(loop_factory):
     """工具失败 → tool_execution_end 事件 metadata.error 带上真实异常，而非空。"""
