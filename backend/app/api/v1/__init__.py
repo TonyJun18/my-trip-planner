@@ -19,7 +19,11 @@ from app.api.v1 import (
     profile,
     screenshot_import,
     social_import,
-    trips,
+    trips_crud,
+    trips_escalations,
+    trips_favorites,
+    trips_gallery,
+    trips_share,
     ws,
 )
 
@@ -27,11 +31,19 @@ api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(health.router, tags=["health"])
 # inspiration 先于 trips 注册：/trips/inspiration 是字面量路径，
-# 若排在 trips.router 之后会被 GET /{trip_id} 吞掉（trip_id="inspiration" → 404）
+# 若排在 trips_* 之后会被 GET /{trip_id} 吞掉（trip_id="inspiration" → 404）
 api_router.include_router(inspiration.router, prefix="/trips", tags=["trips"])
-api_router.include_router(trips.router, prefix="/trips", tags=["trips"])
+# trips 域按子域拆分为 5 个 router，注册顺序即路由匹配优先级：
+# 1) 字面量段优先：/share /edit （trips_share 前半）、/gallery、/escalations、/favorites
+# 2) 动态段兜底：/{trip_id}（trips_crud）
+# 3) trips_share 后半（/{trip_id}/share/*、/edit/{token}/live）与 crud 互补不冲突
+api_router.include_router(trips_share.router, prefix="/trips", tags=["trips"])
+api_router.include_router(trips_gallery.router, prefix="/trips", tags=["trips"])
+api_router.include_router(trips_favorites.router, prefix="/trips", tags=["trips"])
+api_router.include_router(trips_escalations.router, prefix="/trips", tags=["trips"])
+api_router.include_router(trips_crud.router, prefix="/trips", tags=["trips"])
 # export 路由（/trips/{trip_id}/export 与 /trips/share/{token}/export）：
-# 声明在 trips 之后即可，段数不同不冲突；字面量 /share/ 由 trips.py 先注册，
+# 声明在 trips 之后即可，段数不同不冲突；字面量 /share/ 由 trips_share 先注册，
 # /share/{token}/export 多一段，Starlette 按精确段匹配互不吞并。
 api_router.include_router(export.router, prefix="/trips", tags=["trips"])
 api_router.include_router(note_import.router, tags=["trips"])

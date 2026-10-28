@@ -161,6 +161,8 @@ class Settings(BaseSettings):
 
     # ── 日志 ────────────────────────────────────────────────
     LOG_LEVEL: str = "DEBUG"
+    # 日志格式：text（默认，人类可读）/ json（单行 JSON，含 trace_id，供采集器消费）
+    LOG_FORMAT: str = "text"
 
     # ── 辅助属性 ────────────────────────────────────────────
     @property

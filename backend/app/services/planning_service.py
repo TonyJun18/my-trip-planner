@@ -117,10 +117,15 @@ class PlanningExecutor:
 
     async def _worker_loop(self) -> None:
         """串行消费队列，逐个执行规划任务。"""
+        from app.core.tracing import trace_context
+
         while True:
             task_id = await self._queue.get()
             try:
-                await self._execute_task(task_id)
+                # 任务级 trace 作用域：agent 层所有 logger 输出自动携带 task-{id}，
+                # 与 HTTP 请求的 X-Trace-ID 维度互补（后台任务无请求上下文）。
+                with trace_context(f"task-{task_id}"):
+                    await self._execute_task(task_id)
             except Exception:
                 logger.exception("规划任务执行异常 task_id=%s", task_id)
             finally:

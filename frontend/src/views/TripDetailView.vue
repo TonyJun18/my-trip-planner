@@ -1,8 +1,8 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import * as api from '@/api'
 import TripMap from '@/components/TripMap.vue'
 import HotelRecommend from '@/components/HotelRecommend.vue'
@@ -12,179 +12,76 @@ import TripEventFeed from '@/components/TripEventFeed.vue'
 import QualityCard from '@/components/QualityCard.vue'
 import XhsNoteDialog from '@/components/XhsNoteDialog.vue'
 import ImportDialog from '@/components/ImportDialog.vue'
-import { exportImage, exportPdf } from '@/utils/export'
-import { readCachedJson } from '@/utils/pwa'
+import { useTripDetailLoad } from '@/composables/useTripDetailLoad'
+import { useRevise } from '@/composables/useRevise'
+import { useEditDialog } from '@/composables/useEditDialog'
+import { useTripShareActions } from '@/composables/useTripShareActions'
+import { useExport } from '@/composables/useExport'
 
 const route = useRoute()
 const router = useRouter()
-const { t, locale } = useI18n()
+const { t } = useI18n()
 
-const trip = ref(null)
-const loading = ref(false)
-const budget = ref(null)
-const plan = ref(null)
-const exporting = ref(false)
-const exportEl = ref(null)
-// PWA 离线降级：网络失败时从缓存读取行程（仅骨架，只读展示）
-const offlineFallback = ref(false)
+// ── 核心加载域（trip/budget/plan/离线降级/行中/Plan B） ──
+const core = useTripDetailLoad()
+const {
+  trip, loading, budget, plan, offlineFallback,
+  live, liveLoading, liveOp,
+  planB, activePlan, planOptions, onPlanChange,
+  doCheckStop, doSkipStop, doDelayTrip, loadLive, load,
+} = core
 
-// ── AI 调整行程（方案 B：对话式修订） ─────────────────────
-const reviseMsg = ref('')
-const revising = ref(false)
-const lastReviseSummary = ref('')
-const lastReviseDiff = ref([])
-const reviseError = ref('')
-const reviseDone = ref(false)
-// 修订质控闭环：后端返回的 quality 报告（score/passed/issues/summary/fix_applied）
-const lastReviseQuality = ref(null)
+// ── 分享 / 收藏 / 画廊 / 受邀编辑权 ──────────────────────
+const share = useTripShareActions({ trip, afterChange: load })
+const {
+  sharing, xhsNoteVisible, importVisible, doShare,
+  publishingGallery, publishGallery,
+  editSharing, editRevoking, doShareEdit, doRevokeShareEdit,
+  shareSettingsVisible, lifecycleItems, lifecycleLoading, ttlUpdating, revokingKind,
+  openShareSettings, loadShareLifecycle, lifecycleStatus, copyShareUrl, setTtl, revokeShareLink, ttlOptions,
+  isFavorite, favoriting, hasSharedToken, toggleFavorite,
+} = share
 
-// diff 预览折叠：超过 8 条默认收起，避免卡片过高
-const REVISE_DIFF_PREVIEW_MAX = 8
-const visibleReviseDiff = computed(() => lastReviseDiff.value.slice(0, REVISE_DIFF_PREVIEW_MAX))
-const reviseDiffMore = computed(() => Math.max(0, lastReviseDiff.value.length - REVISE_DIFF_PREVIEW_MAX))
+// load 内部在行程已分享时检查收藏状态（注入 share 域的实现）
+core.setCheckFavorite(share.checkFavorite)
 
-// diff 动作 → 人类可读文案（后端已给 op/target_name/day_number/fields）
-const diffOpKeys = {
-  replace: 'diffReplace',
-  add: 'diffAdd',
-  remove: 'diffRemove',
-  reorder: 'diffReorder',
-}
-// 变更字段 key → 可读标签（diff 预览打磨：不再裸显示英文字段名）
-const fieldLabelKeys = {
-  name: 'fieldName',
-  description: 'fieldDesc',
-  stop_type: 'fieldType',
-  estimated_cost: 'fieldCost',
-  estimated_duration_minutes: 'fieldDuration',
-  note: 'fieldNote',
-  date: 'fieldDate',
-  lat: 'fieldLat',
-  lng: 'fieldLng',
-}
-function fieldLabel(k) {
-  const key = fieldLabelKeys[k]
-  return key ? t(`tripDetail.${key}`) : k
-}
-function diffText(a) {
-  const day = a.day_number ? `Day${a.day_number} · ` : ''
-  const target = a.target_name || ''
-  if (a.op === 'reorder') {
-    // 后端 ReviseAction.index 是 1-based（移到第 N 位），直接显示即可
-    return t('tripDetail.diffReorderText', { day, n: a.index ?? '?' })
-  }
-  const fieldKeys = Object.keys(a.fields || {})
-  const fieldText = fieldKeys.length ? `（${fieldKeys.map(fieldLabel).join('、')}）` : ''
-  const opLabel = diffOpKeys[a.op] ? t(`tripDetail.${diffOpKeys[a.op]}`) : a.op
-  return t('tripDetail.diffActionText', { day, op: opLabel, target, fields: fieldText })
-}
-
-async function revise() {
-  const msg = reviseMsg.value.trim()
-  if (!msg) {
-    ElMessage.warning(t('tripDetail.reviseWarning'))
-    return
-  }
-  if (revising.value) return
-  revising.value = true
-  reviseError.value = ''
-  reviseDone.value = false
-  lastReviseSummary.value = ''
-  lastReviseDiff.value = []
-  lastReviseQuality.value = null
-  try {
-    const r = await api.reviseTrip(route.params.id, { message: msg, provider: 'auto', language: String(locale.value || '').replace('_', '-') })
-    lastReviseSummary.value = r.summary || ''
-    lastReviseDiff.value = Array.isArray(r.diff) ? r.diff : []
-    lastReviseQuality.value = r.quality || null
-    reviseDone.value = true
-    ElMessage.success(r.summary || t('tripDetail.revised'))
-    reviseMsg.value = ''
+// ── AI 对话式修订行程（方案 B：revise） ──────────────────
+const reviseState = useRevise({
+  afterRevise: () => {
     budget.value = null
-    await load()
-  } catch (e) {
-    // 全局拦截器已 toast 具体错误；内联横幅展示后端 detail（若有）并提示保留输入（避免双 toast）
-    lastReviseSummary.value = ''
-    lastReviseDiff.value = []
-    lastReviseQuality.value = null
-    reviseError.value = e?.response?.data?.detail || e?.response?.data?.error?.message || t('tripDetail.reviseFailHint')
-  } finally {
-    revising.value = false
-  }
-}
-
-// ── 编辑对话框状态 ─────────────────────────
-const editType = ref(null)
-const editDayId = ref(null)
-const editStopId = ref(null)
-const stopForm = ref({ name: '', stop_type: 'attraction', lat: null, lng: null, description: '', estimated_cost: null, estimated_duration_minutes: null })
-const dayForm = ref({ day_number: 1 })
-const tripForm = ref({ title: '', destination: '', departure: '', trip_type: '', travelers: 1, budget: null })
-// 出行性质选项（与 AI 规划/手动创建同款契约值：稳定中文，后端按此约束）
-const tripTypeOptions = [
-  { key: 'tripTypeLeisure', value: '休闲旅游' },
-  { key: 'tripTypeBusiness', value: '商务出差' },
-  { key: 'tripTypeFamily', value: '亲子出游' },
-  { key: 'tripTypeHoneymoon', value: '蜜月度假' },
-  { key: 'tripTypeVisiting', value: '探亲访友' },
-]
-// 后端返回的中文契约值 → 当前语言显示（映射到 i18n key，未知值原样显示）
-function tripTypeDisplay(v) {
-  const found = tripTypeOptions.find((o) => o.value === v)
-  return found ? t('tripList.' + found.key) : v
-}
-const dialogVisible = ref(false)
-const stopFormRef = ref(null)
-
-// 编辑/添加共用表单；编辑时把 stop 字段拷入（null 转空串便于输入框清空）
-function blankStopForm() {
-  return { name: '', stop_type: 'attraction', lat: null, lng: null, description: '', estimated_cost: null, estimated_duration_minutes: null }
-}
-function openEditStop(day, stop) {
-  editDayId.value = day.id
-  editStopId.value = stop.id
-  stopForm.value = {
-    name: stop.name,
-    stop_type: stop.stop_type || 'attraction',
-    lat: stop.lat ?? '',
-    lng: stop.lng ?? '',
-    description: stop.description ?? '',
-    estimated_cost: stop.estimated_cost ?? null,
-    estimated_duration_minutes: stop.estimated_duration_minutes ?? null,
-  }
-  editType.value = 'edit-stop'
-  dialogVisible.value = true
-}
-async function saveEditStop() {
-  await stopFormRef.value.validate()
-  const payload = { ...stopForm.value }
-  if (payload.lat === '' || payload.lat == null) payload.lat = null
-  if (payload.lng === '' || payload.lng == null) payload.lng = null
-  if (payload.estimated_cost === '' || payload.estimated_cost == null) payload.estimated_cost = null
-  if (payload.estimated_duration_minutes === '' || payload.estimated_duration_minutes == null) payload.estimated_duration_minutes = null
-  await api.updateStop(editDayId.value, editStopId.value, payload)
-  ElMessage.success(t('tripDetail.stopUpdated'))
-  dialogVisible.value = false
-  load()
-}
-
-// ── 上移 / 下移（整日顺序重排） ────────────
-async function moveStop(day, stop, dir) {
-  const stops = day.stops
-  const idx = stops.findIndex((s) => s.id === stop.id)
-  const target = idx + dir
-  if (idx < 0 || target < 0 || target >= stops.length) return
-  const order = stops.map((s) => s.id)
-  ;[order[idx], order[target]] = [order[target], order[idx]]
-  try {
-    await api.reorderStops(day.id, order)
-    ElMessage.success(dir < 0 ? t('tripDetail.movedUp') : t('tripDetail.movedDown'))
     load()
-  } catch (e) {
-    // api 拦截器已 toast
-  }
-}
+  },
+})
+const {
+  reviseMsg, revising, lastReviseSummary, lastReviseDiff, reviseError, reviseDone, lastReviseQuality,
+  visibleReviseDiff, reviseDiffMore, diffText, revise,
+} = reviseState
 
+// ── 编辑对话框（行程/日程/站点三合一） ────────────────────
+const edit = useEditDialog({
+  trip,
+  afterSave: (opts) => {
+    if (opts?.deleted) {
+      router.push('/trips')
+    } else {
+      load()
+    }
+  },
+})
+const {
+  editType, editDayId, editStopId, dialogVisible, stopFormRef,
+  stopForm, dayForm, tripForm, tripTypeOptions, tripTypeDisplay,
+  openEditTrip, saveTrip, openAddDay, saveDay,
+  openEditStop, openAddStop, saveEditStop, saveStop,
+  moveStop, removeStop, removeDay, removeTrip,
+} = edit
+
+// ── 导出（截图 / PDF / JSON / 打印） ─────────────────────
+const exportEl = ref(null)
+const exp = useExport({ exportEl, getTrip: () => trip.value })
+const { exporting, doExportImage, doExportPdf, doExportJson, doPrint } = exp
+
+// ── 展示派生（模板专用 computed / 状态） ─────────────────
 const markers = computed(() => {
   const list = []
   for (const day of trip.value?.days || []) {
@@ -197,15 +94,10 @@ const markers = computed(() => {
   return list
 })
 
-// 拖拽仅对 owner 开放（受邀编辑走分享页 editMode，本视图为 owner 主入口）：
-// 详情页路由是登录态 owner 视角，无 isOwner 标志 → 直接允许（后端 /map-edit 只认 owner 鉴权）。
-// 移动端由 TripMap 内部 isMobileViewport() 自动隐藏拖拽（验收「移动端隐藏拖拽」）。
+// 拖拽仅对 owner 开放（详情页路由为登录态 owner 视角；移动端由 TripMap 内部隐藏）
 const canMapDrag = computed(() => !offlineFallback.value)
 
-// ── 地图拖拽修订（task-map-drag-edit）：拖动 marker 改坐标 ──────
-// 后端内核（POST /trips/{id}/map-edit 最小 diff 原子应用 + DrivingGate 约束门）已在 main，
-// 这里完成 TripDetailView 接线：拖拽结束 → 调 mapEditTrip → 成功刷新（marker 落到新位置 +
-// 预算/自驾重算），失败（如自驾约束 400）→ 重新 load 让 marker 弹回原位 + 内联提示。
+// 地图拖拽修订：拖动 marker 改坐标 → 最小 diff 原子应用
 const mapDragBusy = ref(false)
 const mapDragError = ref('')
 async function onMapMove({ name, lat, lng, day_number }) {
@@ -223,8 +115,6 @@ async function onMapMove({ name, lat, lng, day_number }) {
       await load()
     }
   } catch (e) {
-    // DrivingGate 拒绝 → 内联展示后端 detail.issues（避免抬手即被全局 toast 淹没）；
-    // 其余错误走拦截器 toast。无论如何重新 load，让 marker 弹回原位（组件只发事件不改数据）。
     const detail = e?.response?.data?.error?.detail
     const issues = Array.isArray(detail?.issues) ? detail.issues : []
     mapDragError.value = issues.length
@@ -236,7 +126,7 @@ async function onMapMove({ name, lat, lng, day_number }) {
   }
 }
 
-// 行程状态：展示 + 切换（label 走 i18n）
+// 行程状态：展示 + 切换
 const statusMap = computed(() => ({
   draft: { label: t('tripList.statusDraft'), type: 'info' },
   planning: { label: t('tripList.statusPlanning'), type: 'warning' },
@@ -244,8 +134,6 @@ const statusMap = computed(() => ({
   archived: { label: t('tripList.statusArchived'), type: 'info' },
 }))
 const statusOptions = computed(() => Object.entries(statusMap.value).map(([value, s]) => ({ value, label: s.label })))
-
-// ── 状态切换（PATCH /trips/{id} status 字段，后端已支持） ──
 const statusUpdating = ref(false)
 async function changeStatus() {
   const newStatus = trip.value.status
@@ -254,7 +142,6 @@ async function changeStatus() {
     await api.updateTrip(route.params.id, { status: newStatus })
     ElMessage.success(t('tripDetail.statusChanged', { label: (statusMap.value[newStatus] || {}).label || newStatus }))
   } catch {
-    // 失败时回滚为当前真实状态
     await load()
   } finally {
     statusUpdating.value = false
@@ -276,7 +163,7 @@ const budgetPercent = computed(() => {
   return Math.min(100, Math.round((budget.value.total_estimated / trip.value.budget) * 100))
 })
 
-// 预算估算口径（诚实估算标注：来源 + 基准说明，对齐「预算必须可审计」哲学）
+// 预算估算口径（诚实估算标注：来源 + 基准说明）
 const basisText = computed(() => {
   const b = budget.value?.estimate_basis
   if (!b) return ''
@@ -300,166 +187,10 @@ const basisText = computed(() => {
   return parts.join(' · ')
 })
 
-async function load() {
-  loading.value = true
-  try {
-    try {
-      trip.value = await api.getTrip(route.params.id)
-      offlineFallback.value = false // 在线成功：清除离线标识
-    } catch (e) {
-      // 离线/网络失败：尝试从 Cache API 读缓存行程详情（SW 的 api 缓存），读不到再上抛
-      const cached = await readCachedJson(`/api/v1/trips/${route.params.id}`)
-      if (cached) {
-        trip.value = cached
-        offlineFallback.value = true
-      } else {
-        throw e
-      }
-    }
-    // 离线降级：只展示缓存的行程骨架，预算/规划等可选数据不再请求
-    if (offlineFallback.value) {
-      budget.value = null
-      plan.value = null
-      planB.value = null
-      isFavorite.value = false
-      return
-    }
-    budget.value = await api.getBudget(route.params.id)
-    // 尽力加载 AI 规划方案（含酒店推荐候选）；404/报错不阻断详情页
-    try {
-      plan.value = await api.getTripPlan(route.params.id)
-    } catch {
-      plan.value = null
-    }
-    // Plan B 备选方案：确定性规则生成（无 LLM 成本）；仅主案模式加载
-    if (activePlan.value === 'main') {
-      try {
-        const pb = await api.getPlanB(route.params.id)
-        planB.value = pb?.variant || null
-      } catch {
-        planB.value = null // 404/无站点 → 无备选，静默降级（不展示入口）
-      }
-    }
-    // 收藏状态（分享后才有收藏入口，非分享行程跳过）
-    if (trip.value?.share_token) {
-      await checkFavorite()
-    } else {
-      isFavorite.value = false
-    }
-    // 行中「今日视图」：尽力加载，失败不阻断详情页
-    await loadLive()
-  } finally {
-    loading.value = false
-  }
-}
-
-// ── 行中「今日视图」（task-live-today-view：MonkeyTravel live trip 差异化） ──
-const live = ref(null)          // LiveSnapshotOut | null
-const liveLoading = ref(false)
-const liveOp = ref('')          // 正在执行的行中操作（check/skip/delay），防重复点击
-
-async function loadLive() {
-  if (!trip.value?.id || offlineFallback.value) return
-  liveLoading.value = true
-  try {
-    live.value = await api.getLiveSnapshot(trip.value.id)
-  } catch {
-    live.value = null // 详情页不因行中快照失败而报错（尽力而为）
-  } finally {
-    liveLoading.value = false
-  }
-}
-
-async function doCheckStop(stop, checked) {
-  if (liveOp.value) return
-  liveOp.value = 'check'
-  try {
-    live.value = await api.checkLiveStop(trip.value.id, stop.id, checked)
-  } catch {
-    // 拦截器已 toast；保持原状态等待用户重试
-  } finally {
-    liveOp.value = ''
-  }
-}
-
-async function doSkipStop(stop) {
-  if (liveOp.value) return
-  try {
-    await ElMessageBox.confirm(
-      t('tripDetail.liveSkipConfirmMsg', { name: stop.name }),
-      t('tripDetail.liveSkipConfirmTitle'),
-      { type: 'warning' }
-    )
-  } catch { return }
-  liveOp.value = 'skip'
-  try {
-    live.value = await api.skipLiveStop(trip.value.id, stop.id)
-    await load() // 同步主视图（站点被删）
-  } catch {
-  } finally {
-    liveOp.value = ''
-  }
-}
-
-async function doDelayTrip() {
-  if (liveOp.value) return
-  try {
-    await ElMessageBox.confirm(
-      t('tripDetail.liveDelayConfirmMsg'),
-      t('tripDetail.liveDelayConfirmTitle'),
-      { type: 'warning' }
-    )
-  } catch { return }
-  liveOp.value = 'delay'
-  try {
-    live.value = await api.delayLiveTrip(trip.value.id)
-    await load() // 同步主视图（日期全部 +1）
-    ElMessage.success(t('tripDetail.liveDelayed'))
-  } catch {
-  } finally {
-    liveOp.value = ''
-  }
-}
-
-// ── 行程备选方案（Plan B：确定性规则生成，无 LLM 成本） ────
-const planB = ref(null) // { label, description, deltas, days, budget } | null
-const activePlan = ref('main') // 'main' | 'plan_b'
-
-// 主案 / 备选 切换选项（el-segmented）
-const planOptions = computed(() => [
-  { label: t('tripDetail.planMain'), value: 'main' },
-  { label: t('tripDetail.planB'), value: 'plan_b' },
-])
-
-// 备选骨架的天数（与主案同构：day_number/date/theme/stops）
-const planBDays = computed(() => ((planB.value?.days) || []).map((d) => ({
-  day_number: d.day_number,
-  date: d.date,
-  note: d.theme, // 语义对齐主案 DayOut.note（后端 day.theme ↔ note）
-  stops: (d.stops || []).map((s) => ({
-    id: `pb-${d.day_number}-${s.name}`,
-    name: s.name,
-    stop_type: s.stop_type,
-    lat: s.lat,
-    lng: s.lng,
-    description: s.description,
-    estimated_cost: s.estimated_cost,
-    estimated_duration_minutes: s.estimated_duration_minutes,
-  })),
-})))
-
-// 备选方案预算（服务端已按站点汇总，与 backend budget_service 同构）
-const planBBudget = computed(() => planB.value?.budget || null)
-const planBTotal = computed(() => planBBudget.value?.total_estimated || 0)
-
-function onPlanChange(p) {
-  if (p === 'main' && activePlan.value !== 'main') load() // 切回主案时重新加载（刷新权威数据）
-}
-
-// ── 酒店推荐（公共组件 HotelRecommend 接收 plan.hotels + trip.days） ──
+// 酒店推荐（公共组件 HotelRecommend 接收 plan.hotels + trip.days）
 const hotelCandidates = computed(() => plan.value?.hotels || [])
 
-// ── 行程服务层（方案 B 第二段 servicing 产物：交通/通勤/入住/折扣） ──
+// 行程服务层（第二段 servicing 产物：交通/通勤/入住/折扣）
 const servicingProps = computed(() => ({
   transport: plan.value?.transport || null,
   transit: plan.value?.transit || null,
@@ -468,251 +199,11 @@ const servicingProps = computed(() => ({
   discounts: plan.value?.discounts || null,
 }))
 
-// ── 导出 ───────────────────────────────────
-async function doExportImage() {
-  exporting.value = true
-  try {
-    await nextTick()
-    await exportImage(exportEl.value, `${trip.value.destination}-${t('tripDetail.exportImage')}`)
-    ElMessage.success(t('tripDetail.imageExported'))
-  } catch (e) {
-    ElMessage.error(t('tripDetail.exportFail', { msg: e.message }))
-  } finally {
-    exporting.value = false
-  }
-}
-async function doExportPdf() {
-  exporting.value = true
-  try {
-    await nextTick()
-    await exportPdf(exportEl.value, `${trip.value.destination}-${t('tripDetail.exportPdf')}`)
-    ElMessage.success(t('tripDetail.pdfExported'))
-  } catch (e) {
-    ElMessage.error(t('tripDetail.exportFail', { msg: e.message }))
-  } finally {
-    exporting.value = false
-  }
-}
-// ── 导出 JSON（task-export-offline：数据主权 / 完整备份；非截图，真实可移植数据） ──
-async function doExportJson() {
-  exporting.value = true
-  try {
-    const blob = await api.exportTripJson(trip.value.id)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${trip.value.destination}-${trip.value.start_date}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    ElMessage.success(t('tripDetail.jsonExported'))
-  } catch (e) {
-    ElMessage.error(t('tripDetail.exportFail', { msg: e.message }))
-  } finally {
-    exporting.value = false
-  }
-}
-// ── 打印（浏览器打印 → 可存 PDF；打印样式见 @media print） ──
-function doPrint() {
-  window.print()
-}
+// 备选方案预算（服务端已按站点汇总，与 budget_service 同构）
+const planBBudget = computed(() => planB.value?.budget || null)
+const planBTotal = computed(() => planBBudget.value?.total_estimated || 0)
 
-// ── 分享（只读链接） ─────────────────────────────────────
-const sharing = ref(false)
-const xhsNoteVisible = ref(false)
-const importVisible = ref(false)
-async function doShare() {
-  sharing.value = true
-  try {
-    const r = await api.createShare(trip.value.id)
-    const url = r.share_url
-    try {
-      await navigator.clipboard.writeText(url)
-      ElMessage.success(t('tripDetail.shareLinkCopied'))
-    } catch {
-      ElMessage.success(t('tripDetail.shareLink', { url }))
-    }
-  } catch (e) {
-    ElMessage.error(t('tripDetail.shareFail'))
-  } finally {
-    sharing.value = false
-  }
-}
-
-// ── 发布到灵感画廊（task-gallery-featured）──────────────────
-const publishingGallery = ref(false)
-async function publishGallery() {
-  try {
-    const { value } = await ElMessageBox.prompt(t('tripDetail.galleryBlurbPrompt'), t('tripDetail.galleryPublish'), {
-      confirmButtonText: t('tripDetail.galleryPublishOk'),
-      cancelButtonText: t('common.cancel'),
-      inputPlaceholder: t('tripDetail.galleryBlurbPlaceholder'),
-      inputValidator: (v) => (v || '').length <= 200 || t('tripDetail.galleryBlurbTooLong'),
-    })
-    publishingGallery.value = true
-    await api.publishToGallery(trip.value.id, { blurb: value || '' })
-    ElMessage.success(t('tripDetail.galleryPublished'))
-  } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('tripDetail.galleryPublishFail'))
-  } finally {
-    publishingGallery.value = false
-  }
-}
-
-// ── 受邀编辑权（owner 开放/收回；与只读分享分离） ──────────
-const editSharing = ref(false)
-const editRevoking = ref(false)
-async function doShareEdit() {
-  editSharing.value = true
-  try {
-    const r = await api.createShareEdit(trip.value.id)
-    const url = r.edit_url
-    try {
-      await navigator.clipboard.writeText(url)
-      ElMessage.success(t('tripDetail.editLinkCopied'))
-    } catch {
-      ElMessage.success(t('tripDetail.editLink', { url }))
-    }
-    await load()
-  } catch (e) {
-    ElMessage.error(t('tripDetail.openEditFail'))
-  } finally {
-    editSharing.value = false
-  }
-}
-async function doRevokeShareEdit() {
-  try {
-    await ElMessageBox.confirm(t('tripDetail.revokeConfirmMsg'), t('tripDetail.revokeConfirmTitle'), { type: 'warning' })
-  } catch { return }
-  editRevoking.value = true
-  try {
-    await api.revokeShareEdit(trip.value.id)
-    ElMessage.success(t('tripDetail.revoked'))
-    await load()
-  } catch (e) {
-    ElMessage.error(t('tripDetail.revokeFail'))
-  } finally {
-    editRevoking.value = false
-  }
-}
-
-// ── 分享设置（生命周期：TTL / 吊销 / 审计） ──────────────
-const shareSettingsVisible = ref(false)
-const lifecycleItems = ref([])
-const lifecycleLoading = ref(false)
-const ttlUpdating = ref(false)
-const revokingKind = ref('')
-
-async function openShareSettings() {
-  shareSettingsVisible.value = true
-  await loadShareLifecycle()
-}
-
-// 重新拉取生命周期状态（打开弹窗 / TTL / 吊销成功后）
-async function loadShareLifecycle() {
-  lifecycleLoading.value = true
-  try {
-    lifecycleItems.value = await api.getShareLifecycle(trip.value.id)
-  } catch (e) {
-    lifecycleItems.value = []
-    ElMessage.error(t('tripDetail.shareLinkFetchFail'))
-  } finally {
-    lifecycleLoading.value = false
-  }
-}
-
-// 状态计算：active/expired/revoked（revoked 优先展示）
-const lifecycleStatus = (item) => {
-  if (item.revoked_at) return 'revoked'
-  if (item.expires_at && new Date(item.expires_at).getTime() <= Date.now()) return 'expired'
-  return 'active'
-}
-
-// 复制某个链接（share_url / 编辑链接）
-function copyShareUrl(item) {
-  const url = item.kind === 'edit' ? `${window.location.origin}/share/${item.token}?edit=1` : item.share_url
-  if (!url) return
-  navigator.clipboard.writeText(url).then(() => ElMessage.success(t('tripDetail.linkCopied')))
-}
-
-// 设置 TTL（0 永久 / 1 / 7 / 30 天）
-async function setTtl(kind, days) {
-  ttlUpdating.value = true
-  try {
-    await api.setShareTokenTtl(trip.value.id, kind, days)
-    ElMessage.success(t('tripDetail.shareTtlUpdated'))
-    await loadShareLifecycle()
-  } catch (e) {
-    ElMessage.error(t('tripDetail.shareTtlFail'))
-  } finally {
-    ttlUpdating.value = false
-  }
-}
-
-// 吊销某个令牌（确认后）
-async function revokeShareLink(item) {
-  if (revokingKind.value) return
-  try {
-    await ElMessageBox.confirm(t('tripDetail.shareRevokeConfirmMsg'), t('tripDetail.shareRevokeConfirmTitle'), { type: 'warning' })
-  } catch { return }
-  revokingKind.value = item.kind
-  try {
-    await api.revokeShareToken(trip.value.id, item.kind)
-    ElMessage.success(t('tripDetail.shareRevoked'))
-    await loadShareLifecycle()
-  } catch (e) {
-    ElMessage.error(t('tripDetail.shareRevokeFail'))
-  } finally {
-    revokingKind.value = ''
-  }
-}
-
-// TTL 选项文案（0/1/7/30）
-const ttlOptions = computed(() => [
-  { label: t('tripDetail.ttlPermanent'), value: 0 },
-  { label: t('tripDetail.ttl1d'), value: 1 },
-  { label: t('tripDetail.ttl7d'), value: 7 },
-  { label: t('tripDetail.ttl30d'), value: 30 },
-])
-// 弹窗内展示完整链接用（编辑链接由前端拼 origin + share path）
-const windowOrigin = window.location.origin
-
-// ── 收藏灵感夹（当前行程是否已收藏） ──────────────────────
-const isFavorite = ref(false)
-const favoriting = ref(false)
-const hasSharedToken = computed(() => !!trip.value?.share_token)
-
-async function checkFavorite() {
-  if (!trip.value?.id) return
-  try {
-    const favs = await api.listFavorites({ limit: 200 })
-    isFavorite.value = favs.items?.some((f) => f.trip_id === trip.value.id) || false
-  } catch {
-    isFavorite.value = false
-  }
-}
-async function toggleFavorite() {
-  if (!trip.value?.id) return
-  favoriting.value = true
-  try {
-    if (isFavorite.value) {
-      await api.removeFavorite(trip.value.id)
-      ElMessage.success(t('tripDetail.favoriteRemoved'))
-      isFavorite.value = false
-    } else {
-      await api.addFavorite(trip.value.id)
-      ElMessage.success(t('tripDetail.favoriteAdded'))
-      isFavorite.value = true
-    }
-  } catch (e) {
-    ElMessage.error(t('tripDetail.favoriteFail'))
-  } finally {
-    favoriting.value = false
-  }
-}
-
-// ── 批量生成日程（按日期范围） ──────────────
+// ── 批量生成日程（按日期范围） ─────────────────────────
 const genDaysVisible = ref(false)
 const genRange = ref([])
 const genDaysLoading = ref(false)
@@ -734,111 +225,24 @@ async function genDays() {
   }
 }
 
-// ── 编辑行程基本信息 ───────────────────────
-function openEditTrip() {
-  tripForm.value = {
-    title: trip.value.title,
-    destination: trip.value.destination,
-    departure: trip.value.departure || '',
-    trip_type: trip.value.trip_type || '休闲旅游',
-    travelers: trip.value.travelers,
-    budget: trip.value.budget,
-  }
-  editType.value = 'edit-trip'
-  dialogVisible.value = true
-}
-async function saveTrip() {
-  const data = {}
-  if (tripForm.value.title !== trip.value.title) data.title = tripForm.value.title
-  if (tripForm.value.destination !== trip.value.destination) data.destination = tripForm.value.destination
-  if ((tripForm.value.departure || '') !== (trip.value.departure || '')) data.departure = tripForm.value.departure || null
-  if (tripForm.value.trip_type !== (trip.value.trip_type || '休闲旅游')) data.trip_type = tripForm.value.trip_type
-  if (tripForm.value.travelers !== trip.value.travelers) data.travelers = tripForm.value.travelers
-  if (tripForm.value.budget !== trip.value.budget) data.budget = tripForm.value.budget
-  await api.updateTrip(trip.value.id, data)
-  ElMessage.success(t('tripDetail.saved'))
-  dialogVisible.value = false
-  load()
-}
+// 分享设置弹窗展示完整链接用
+const windowOrigin = window.location.origin
 
-// ── 添加日程 ───────────────────────────────
-function openAddDay() {
-  const maxDay = trip.value.days.reduce((m, d) => Math.max(m, d.day_number), 0)
-  dayForm.value = { day_number: maxDay + 1 }
-  editType.value = 'add-day'
-  dialogVisible.value = true
-}
-async function saveDay() {
-  await api.addDay(trip.value.id, dayForm.value)
-  ElMessage.success(t('tripDetail.dayAdded'))
-  dialogVisible.value = false
-  load()
-}
-
-// ── 添加站点 ───────────────────────────────
-function openAddStop(dayId) {
-  editDayId.value = dayId
-  editStopId.value = null
-  stopForm.value = blankStopForm()
-  editType.value = 'add-stop'
-  dialogVisible.value = true
-}
-async function saveStop() {
-  await stopFormRef.value.validate()
-  const payload = { ...stopForm.value }
-  if (payload.lat === '' || payload.lat == null) payload.lat = null
-  if (payload.lng === '' || payload.lng == null) payload.lng = null
-  if (payload.estimated_cost === '' || payload.estimated_cost == null) payload.estimated_cost = null
-  if (payload.estimated_duration_minutes === '' || payload.estimated_duration_minutes == null) payload.estimated_duration_minutes = null
-  await api.addStop(editDayId.value, payload)
-  ElMessage.success(t('tripDetail.stopAdded'))
-  dialogVisible.value = false
-  load()
-}
-
-// ── 删除 ───────────────────────────────────
-async function removeStop(day, stop) {
-  try {
-    await ElMessageBox.confirm(t('tripDetail.deleteStopConfirm', { name: stop.name }), t('common.confirm'), { type: 'warning' })
-  } catch { return }
-  await api.deleteStop(day.id, stop.id)
-  ElMessage.success(t('tripDetail.deleted'))
-  load()
-}
-async function removeDay(day) {
-  try {
-    await ElMessageBox.confirm(t('tripDetail.deleteDayConfirm', { n: day.day_number }), t('common.confirm'), { type: 'warning' })
-  } catch { return }
-  await api.deleteDay(day.id)
-  ElMessage.success(t('tripDetail.deleted'))
-  load()
-}
-async function removeTrip() {
-  try {
-    await ElMessageBox.confirm(t('tripDetail.deleteTripConfirm', { title: trip.value.title }), t('common.confirm'), { type: 'warning' })
-  } catch { return }
-  await api.deleteTrip(trip.value.id)
-  ElMessage.success(t('tripDetail.deleted'))
-  router.push('/trips')
-}
-
-onMounted(load)
-
-// ── 行中实时 feed：订阅行程协作频道，同伴打卡/顺延时今日卡片自动刷新 ──
-// 断线不打扰（详情页主流程靠手动 load / 本地操作后的重载兜底）。
+// ── 行中实时 feed：订阅行程协作频道，同伴操作时今日卡片自动刷新 ──
 let collabClose = null
 function watchCollabFeed() {
   if (!route.params.id) return
   collabClose = api.subscribeTripCollab(route.params.id, {
     onEvent: (evt) => {
       // 行中相关事件（打卡/跳过/顺延）→ 刷新今日卡片；评论/投票事件不打扰
-      if (evt && (evt.type || '').startsWith('stop.') || (evt.type || '') === 'trip.delayed') {
+      if (evt && ((evt.type || '').startsWith('stop.') || (evt.type || '') === 'trip.delayed')) {
         loadLive()
       }
     },
   })
 }
 onMounted(() => {
+  load()
   watchCollabFeed()
 })
 onBeforeUnmount(() => {
@@ -848,7 +252,6 @@ onBeforeUnmount(() => {
   }
 })
 </script>
-
 <template>
   <div v-loading="loading" class="detail-page">
     <!-- 返回 -->

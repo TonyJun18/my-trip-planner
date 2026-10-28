@@ -60,6 +60,11 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # 请求级 trace_id（contextvar + 响应头 X-Trace-ID；日志自动附加）
+    from app.core.tracing import RequestIdMiddleware
+
+    app.add_middleware(RequestIdMiddleware)
+
     register_exception_handlers(app)
     app.include_router(api_router, prefix="/api/v1")
 

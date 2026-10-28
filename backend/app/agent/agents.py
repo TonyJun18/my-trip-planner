@@ -44,7 +44,6 @@ from app.i18n.prompts import get_prompt, preference_keys_to_keywords, preference
 from app.i18n.translations import t
 from app.schemas.plan import validate_critique, validate_plan
 from app.services.discount_service import discount_rules_for_request
-from app.services.driving_service import check_plan_driving_async
 
 logger = get_logger(__name__)
 
@@ -1207,11 +1206,7 @@ async def run_planning_agents(
     trace 每步标注 agent 名，前端可展示“哪个专家在做什么”。
     """
     city = request.get("destination", "")
-    prefs = request.get("preferences") or []
     locale = _request_locale(request)
-    # 偏好解析：前端可能传「稳定 key」（food/nature）或「当前语言 label」；
-    # 统一转成搜索关键词（语言无关契约），采集 Agent 不再依赖 UI 语言。
-    pref_keywords = preference_keys_to_keywords(locale, prefs)
     trace: list[dict[str, Any]] = []
     review_history: list[dict[str, Any]] = []  # 每次评审的报告（给 Planner 作为上下文）
 
@@ -1221,20 +1216,20 @@ async def run_planning_agents(
     # 1) 六个采集 Agent 并行（request 传入后，主动提问 Q&A 会并入搜索上下文）
     #    采集 agent 内部最多调用工具一次，无 LLM 迭代循环，但通过参数显式带上限。
     #    FoodAgent 主路径（口味偏好 → search_foods）；失败由下方降级补位代码兜底。
+    #    （方案 A：经 pipeline.CollectAgentsStep 统一执行——并行 + return_exceptions，
+    #     单 agent 失败不整体抛错，产物标记 failed 由主流程降级处理。）
     agent_max_iter = max_iterations if max_iterations is not None else settings.AGENT_MAX_ITERATIONS
-    attraction_task = attraction_agent(city, pref_keywords, request=request, provider=provider, max_iterations=agent_max_iter)
-    weather_task = weather_agent(city)
-    hotel_task = hotel_agent(city, _accommodation_hints(request), request=request, provider=provider, max_iterations=agent_max_iter)
-    food_task = food_agent(city, _food_hints(pref_keywords), request=request, provider=provider, max_iterations=agent_max_iter)
-    transport_task = transport_agent(
-        request.get("departure"), city,
-        date=request.get("start_date"), provider=provider, max_iterations=agent_max_iter,
-    )
-    discount_task = discount_agent(city)
+    from app.agent.pipeline import run_collect_stage
 
-    a_res, w_res, h_res, food_res, t_res, d_res = await asyncio.gather(
-        attraction_task, weather_task, hotel_task, food_task, transport_task, discount_task,
+    collected = await run_collect_stage(
+        request, provider=provider, max_iterations=agent_max_iter,
     )
+    a_res = collected.get("attractions") or {"status": "failed", "pois": []}
+    w_res = collected.get("weather") or {"status": "failed", "weather": {}}
+    h_res = collected.get("hotels") or {"status": "failed", "pois": []}
+    food_res = collected.get("foods") or {"status": "failed", "pois": []}
+    t_res = collected.get("transport") or {"status": "failed", "transport": None}
+    d_res = collected.get("discount") or {"status": "failed", "rules": []}
 
     def _append_trace(entry: dict[str, Any]) -> None:
         """追加一条 trace 并向 WS 订阅者实时推送（推送失败不影响主流程）。"""
@@ -1320,6 +1315,8 @@ async def run_planning_agents(
     _fire_phase("assembling", "running")
 
     # 3) Planner 整合（无工具），Evaluator-Optimizer 评审循环 + 自驾 DrivingGate
+    #    （方案 A：经 pipeline.PlanAssembleStep 统一执行——评审循环内聚为步骤，
+    #      trace/review_history/driving_reports 由主流程共享，事件/制品契约不变。）
     materials = {
         "attractions": a_res.get("pois", []),
         "hotels": h_res.get("pois", []),
@@ -1328,316 +1325,37 @@ async def run_planning_agents(
         "transport": (t_res.get("transport") or None),
         "discount_rules": d_res.get("rules", []),
     }
-    plan: dict[str, Any] | None = None
-    planner: dict[str, Any] = {"status": "failed", "error": "未执行"}  # 循环前预初始化（静态分析）
-    review_rounds = 0
-    driving_reports: list[dict[str, Any]] = []  # 每代自驾校验报告（给最终 plan.driving 用）
 
-    for round_idx in range(max_review_rounds + 1):
-        review_feedback = _critic_feedback(review_history[-1], locale) if review_history else None
-        if round_idx > 0:
-            _fire_phase("reviewing", "running")
-            _fire_phase("assembling", "running")
-        planner = await planner_agent(
-            request, materials, provider=provider, max_corrections=max_corrections,
-            review_feedback=review_feedback,
-        )
-        _append_trace({
-            "agent": "PlannerAgent",
-            "action": "integrate" if round_idx == 0 else f"revise (round {round_idx})",
-            "observation": (
-                f"integrate {len(materials['attractions'])} attractions / {len(materials['hotels'])} hotels / {len(foods)} restaurants"
-                + ("; revised per review" if round_idx > 0 else "")
-            ),
-            "status": planner.get("status"),
-        })
-        if planner.get("status") != "completed" or planner.get("plan") is None:
-            return {"plan": None, "trace": trace, "status": "failed",
-                    "error": planner.get("error") or t(locale, "agent.ctx.planner_failed"), "agents": {},
-                    "review_rounds": review_rounds}
+    from app.agent.pipeline import run_assemble_stage
 
-        candidate = planner["plan"]
+    assembled = await run_assemble_stage(
+        request, materials, trace=trace,
+        provider=provider, max_corrections=max_corrections, max_review_rounds=max_review_rounds,
+    )
+    review_history = assembled.get("review_history") or []
+    review_rounds = assembled.get("review_rounds", 0)
+    driving_reports = assembled.get("driving_reports") or []
+    planner = {"status": assembled.get("planner_status") or "failed", "error": assembled.get("error") or "未执行"}
 
-        # 预算校准前置：先以真实 stops 计算预算（覆盖 LLM 估值），再交给质检；
-        # 若采集阶段有大交通参考价，则把「往返参考价」并入 by_type.transport 与总额，
-        # 使 plan.budget 与详情页 budget API（compute_budget(plan_data=...)）口径一致。
-        all_stops = [s for d in candidate.get("days", []) for s in d.get("stops", [])]
-        candidate["budget"] = agent_tools.compute_budget(all_stops)
-        from app.services.budget_service import transport_round_trip_cost
-
-        transport_cost = transport_round_trip_cost(t_res.get("transport") if isinstance(t_res, dict) else None)
-        if transport_cost is not None:
-            candidate["budget"]["by_type"]["transport"] = transport_cost
-            candidate["budget"]["total_estimated"] = round(
-                float(candidate["budget"].get("total_estimated") or 0.0) + transport_cost, 2
-            )
-        candidate["hotels"] = _normalize_hotels(materials.get("hotels") or [])
-
-        # 行程草案制品（每代都发；前端「编排阶段」实时展示天数/主题）
-        _fire_artifact("draft", {
-            "days": len(candidate.get("days", [])),
-            "themes": [f"Day {d.get('day_number')} {d.get('theme') or ''}".strip()
-                       for d in candidate.get("days", [])][:10],
-            "round": round_idx + 1,
-        })
-        if round_idx == 0:
-            _fire_phase("assembling", "completed", summary=t(locale, "plan.phase.assembling.draft", n=len(candidate.get("days", []))))
-
-        # ── DrivingGate：自驾约束校验（确定性代码，超距/超时/折返；真实路径优先） ──
-        driving = await check_plan_driving_async(candidate, locale=locale)
-        driving_reports.append(driving)
-        if not driving["passed"] and round_idx < max_review_rounds:
-            # 拒绝该站点组合：带自驾反馈重新生成（不进 Critic，省一次评审 token）
-            logger.info("自驾校验未通过 round=%d critical=%d，进入修订", round_idx + 1, driving["critical_count"])
-            _append_trace({
-                "agent": "DrivingGate",
-                "action": "check_driving",
-                "observation": (
-                    t(locale, "plan.trace.driving.fail",
-                      n=driving["critical_count"], summary=driving["summary"])
-                ),
-                "status": "failed",
-            })
-            review_history.append(_driving_feedback(driving, locale))  # 作为修订反馈
-            review_rounds += 1
-            continue
-
-        review_rounds += 1
-
-        # 交给 TravelCriticAgent 评审（最后一代无需再评：强制定稿）
-        if round_idx >= max_review_rounds:
-            plan = candidate
-            _append_trace({"agent": "TravelCriticAgent", "action": "review",
-                          "observation": t(locale, "plan.trace.review.max_rounds", n=max_review_rounds), "status": "completed"})
-            break
-
-        critic = await critic_agent(request, candidate, provider=provider)
-        critique = critic.get("critique") or _pass_critique(t(locale, "agent.ctx.planner_review_degraded"))
-        review_history.append(critique)
-        n_issues = len(critique.get("issues") or [])
-        # 质检评分制品：前端「AI 质检」阶段实时展示分数与问题数
-        _fire_artifact("quality", {
-            "score": critique.get("score"),
-            "passed": bool(critique.get("passed")),
-            "round": round_idx + 1,
-            "max_rounds": max_review_rounds,
-            "issues": critique.get("issues") or [],
-        })
-        if round_idx == 0:
-            _fire_phase("reviewing", "completed", summary=t(locale, "plan.phase.reviewing.score", score=critique.get("score")))
-        _append_trace({
-            "agent": "TravelCriticAgent",
-            "action": "review",
-            "observation": (
-                t(locale, "plan.trace.review.score",
-                  score=critique.get("score"),
-                  n=len([i for i in critique.get("issues") or [] if i.get("severity") in ("critical", "warning")]))
-                + (f"（{critique.get('summary') or ''}）" if critique.get("summary") else "")
-            ),
-            "status": "completed" if critic.get("status") == "completed" else "degraded",
-        })
-
-        if critique.get("passed") or n_issues == 0 or not _has_actionable_issues(critique):
-            plan = candidate
-            break  # 质检通过 / 无待修改项 → 定稿
-
-        logger.info("行程评审未通过 round=%d score=%s issues=%d，进入下一轮修订",
-                    round_idx + 1, critique.get("score"), n_issues)
-
-        # ── Critic 协作者：优先应用精确修订 diff（复用修订执行器语义）──
-        # 不过审时 Critic 附带 fix（站点级动作）。编排层代码应用成功 →
-        # 跳过 Planner 整段重生成（省一次大模型生成、保留其余站点细节）；
-        # 应用失败（目标不存在/字段非法等）→ 回退整段重生成，绝不静默丢失。
-        fix = critique.get("fix")
-        if isinstance(fix, dict) and fix.get("actions"):
-            applied = _apply_critic_fix(candidate, fix)
-            if applied:
-                review_history[-1] = {**critique, "fix_applied": True}
-                plan = candidate
-                _append_trace({
-                    "agent": "TravelCriticAgent",
-                    "action": "apply_fix",
-                    "observation": (
-                        t(locale, "plan.trace.review.fix_applied", n=len(fix.get("actions") or []))
-                        + (f"（{fix.get('summary') or ''}）" if fix.get("summary") else "")
-                    ),
-                    "status": "completed",
-                })
-                break  # 已按 Critic 指令修正 → 定稿（不重复整段重生成）
-            logger.info("Critic fix 应用失败，回退 Planner 整段重生成 (round=%d)", round_idx + 1)
-
-    # 兜底：若循环异常退出（理论上不会），仍保留最后一代
+    plan = assembled.get("plan")
     if plan is None:
-        return {"plan": None, "trace": trace, "status": "failed",
-                "error": t(locale, "plan.error.qa_loop_exit"), "agents": {}, "review_rounds": review_rounds}
-
-    # 质检摘要注入 plan.quality（随 plan JSON 落库，前端可直接消费）
-    plan["quality"] = _plan_quality(review_history, review_rounds, max_review_rounds)
-    # ── 采集产物回填（task: 详情页大交通/折扣）──────────────────
-    # 采集阶段的 TransportAgent / DiscountAgent 产物只出现在 materials，
-    # 若不回填 plan，落库后的 plan_data.transport / .discount_rules 恒为
-    # null / []（PlanSchema 默认值），详情页 TripServicing 因 options 为空
-    # 直接不渲染大交通卡片。回填后前端零改动即恢复展示；预算口径依赖此数据。
-    plan["transport"] = (t_res.get("transport") or {}) if isinstance(t_res, dict) else None
-    plan["discount_rules"] = (d_res.get("rules") or []) if isinstance(d_res, dict) else []
-    # 自驾校验报告注入 plan.driving（最终一代；前端可展示里程/时长/折返告警）
-    if driving_reports:
-        final_driving = driving_reports[-1]
-        # 只保留最终代完整报告，历史各代摘要放进 driving_history（避免 plan 膨胀）
-        plan["driving"] = {
-            **{k: v for k, v in final_driving.items() if k != "legs"},
-            "legs": final_driving.get("legs") or [],
-            "history": [{"passed": r.get("passed"), "critical_count": r.get("critical_count"),
-                         "summary": r.get("summary")} for r in driving_reports],
+        return {
+            "plan": None, "trace": trace, "status": "failed",
+            "error": assembled.get("error") or t(locale, "agent.ctx.planner_failed"),
+            "agents": {}, "review_rounds": review_rounds,
         }
-        _append_trace({
-            "agent": "DrivingGate",
-            "action": "check_driving",
-            "observation": (
-                (t(locale, "plan.trace.driving.pass") if final_driving["passed"] else t(locale, "plan.trace.driving.warn", n=final_driving["critical_count"]))
-                + t(locale, "plan.trace.driving.distance", km=final_driving["total_km"])
-            ),
-            "status": "completed" if final_driving["passed"] else "warning",
-        })
 
-    # 阶段收尾：assembling/reviewing 完成 → servicing（第二段） → 整体 completed
-    _fire_phase("assembling", "completed", summary=t(locale, "plan.phase.assembling.final", n=len(plan.get("days", []))))
-    _fire_phase("reviewing", "completed", summary=t(locale, "plan.phase.reviewing.completed"))
+    # ── 定稿后处理 + 第二段 servicing（方案 A：经 pipeline.FinalizePlanStep /
+    #    ServicingStep 统一执行——finalize 回填 + MultiCity/TimeGate/DynamicFacts
+    #    门控 + 市内通勤/入住/折扣。与原 agents.py 手写段行为等价：门控只报告不
+    #    阻断、servicing 任一失败只记 warnings，事件/制品契约不变。）
+    from app.agent.pipeline import run_finalize_stage, run_servicing_stage
 
-    # ── MultiCity：多城市分段 + 段间交通占位 + 衔接校验（规则估算，零 LLM）──
-    # 与 TimeGate 同风格：只报告不阻断；占位站点让「什么时候在赶路」进入排程。
-    multi_city = None
-    _cities = request.get("cities") or []
-    if isinstance(_cities, list) and len(_cities) >= 2:
-        from app.services.multi_city import apply_multi_city
-
-        multi_city = apply_multi_city(plan, _cities, locale=locale)
-        plan["multi_city"] = {
-            **{k: v for k, v in multi_city.items() if k != "issues"},
-            "issues": multi_city.get("issues") or [],
-            "basis": "rule_based",
-        }
-        for iss in multi_city.get("issues") or []:
-            plan.setdefault("warnings", []).append(
-                f"[{t(locale, 'multicity.summary.warn', n=multi_city.get('warning_count', 0))}] {iss.get('message')}"
-            )
-        _append_trace({
-            "agent": "MultiCity",
-            "action": "apply_segments",
-            "observation": multi_city.get("summary") or "",
-            "status": "completed" if multi_city.get("passed") else "warning",
-        })
-        _fire_artifact("multi_city", {
-            "enabled": multi_city.get("enabled"),
-            "segments": multi_city.get("segments") or [],
-            "warning_count": multi_city.get("warning_count", 0),
-        })
-
-    # ── TimeGate：营业时间/游玩时长确定性校验（规则库，零 LLM）──
-    # 与 DrivingGate 同风格：只报告，不阻断。所有 issue 为 warning（建议级），
-    # 注入 plan.time_gate 供前端质检卡展示；真实营业时间以 POI 现场为准。
-    from app.services.time_validation import check_plan_time_gate
-
-    time_gate = check_plan_time_gate(plan, locale=locale)
-    plan["time_gate"] = {
-        **{k: v for k, v in time_gate.items() if k != "issues"},
-        "issues": time_gate.get("issues") or [],
-        "basis": "rule_based",
-    }
-    for iss in time_gate.get("issues") or []:
-        plan.setdefault("warnings", []).append(
-            t(locale, "plan.warning.timegate", message=iss.get("message") or "",
-              extra=(t(locale, "plan.warning.timegate.sugg", suggestion=iss.get("suggestion")) if iss.get("suggestion") else ""))
-        )
-    _append_trace({
-        "agent": "TimeGate",
-        "action": "check_time",
-        "observation": (
-            (t(locale, "plan.trace.timegate.pass") if time_gate.get("passed") else t(locale, "plan.trace.timegate.warn", n=time_gate.get("warning_count", 0)))
-            + t(locale, "plan.trace.timegate.basis")
-        ),
-        "status": "completed" if time_gate.get("passed") else "warning",
-    })
-    _fire_artifact("time_gate", {
-        "passed": time_gate.get("passed"),
-        "warning_count": time_gate.get("warning_count", 0),
-        "issues": time_gate.get("issues") or [],
-    })
-
-    # ── DynamicFacts：日期特例规则库校验（周一闭馆/每月免费日/节假日）──
-    # 与 TimeGate 同风格：只报告，不阻断。规则表为运营侧可维护知识，
-    # basis=rule_based 诚实标注（真实动态源需凭证，零凭证路线见 dynamic_facts.py）。
-    from app.services.dynamic_facts import check_plan_dynamic_facts
-
-    dyn_facts = check_plan_dynamic_facts(plan, locale=locale)
-    plan["dynamic_facts"] = {
-        **{k: v for k, v in dyn_facts.items() if k != "issues"},
-        "issues": dyn_facts.get("issues") or [],
-        "basis": "rule_based",
-    }
-    for iss in dyn_facts.get("issues") or []:
-        plan.setdefault("warnings", []).append(
-            t(locale, "plan.warning.dynfacts", message=iss.get("message") or "",
-              extra=(t(locale, "plan.warning.dynfacts.sugg", suggestion=iss.get("suggestion")) if iss.get("suggestion") else ""))
-        )
-    if dyn_facts.get("issues"):
-        _append_trace({
-            "agent": "DynamicFacts",
-            "action": "check_dynamic_facts",
-            "observation": t(locale, "plan.trace.dynfacts.warn", n=dyn_facts.get("warning_count", 0)),
-            "status": "warning",
-        })
-    _fire_artifact("dynamic_facts", {
-        "passed": dyn_facts.get("passed"),
-        "warning_count": dyn_facts.get("warning_count", 0),
-        "issues": dyn_facts.get("issues") or [],
-    })
-
-    # ── 第二段 servicing：定稿后的可执行服务（市内通勤 / 入住办理 / 折扣比价）──
-    # 消费已定稿 plan，与采集/规划解耦；任一失败只记 warnings，绝不阻断主流程。
-    _fire_phase("servicing", "running")
-    from app.services.servicing_service import run_servicing
-
-    servicing = await run_servicing(plan, provider=provider, locale=locale)
-    if servicing.get("transit"):
-        plan["transit"] = servicing["transit"]
-        _fire_artifact("transit", {
-            "count": servicing["transit"].get("count", 0),
-            "legs": servicing["transit"].get("legs", [])[:10],
-        })
-    if servicing.get("checkin"):
-        plan["checkin"] = servicing["checkin"]
-        _fire_artifact("checkin", {
-            "hotel_name": servicing["checkin"].get("hotel_name"),
-            "docs_required": servicing["checkin"].get("docs_required", []),
-            "steps": servicing["checkin"].get("steps", [])[:8],
-            "source": servicing["checkin"].get("source"),
-        })
-    if servicing.get("discounts"):
-        plan["discounts"] = servicing["discounts"]
-        _fire_artifact("discounts", {
-            "count": servicing["discounts"].get("count", 0),
-            "items": servicing["discounts"].get("items", [])[:10],
-            "note": servicing["discounts"].get("note"),
-        })
-    _append_trace({
-        "agent": "ServicingGate", "action": "servicing",
-        "observation": (
-            t(locale, "plan.trace.servicing",
-              n=len((servicing.get("transit") or {}).get("legs", [])),
-              checkin=(t(locale, "plan.servicing.checkin.yes") if servicing.get("checkin") else t(locale, "plan.servicing.checkin.degraded")),
-              d=len((servicing.get("discounts") or {}).get("items", [])))
-        ),
-        "status": "completed" if not servicing.get("warnings") else "warning",
-    })
-    for w in servicing.get("warnings", []):
-        plan.setdefault("warnings", []).append(w)
-    _fire_phase("servicing", "completed", summary=t(
-        locale, "plan.phase.servicing.summary",
-        n=len((servicing.get("transit") or {}).get("legs", [])),
-        src=servicing.get("checkin", {}).get("source", "-"),
-        d=len((servicing.get("discounts") or {}).get("items", [])),
-    ))
+    await run_finalize_stage(
+        plan, request, trace=trace,
+        t_res=t_res, d_res=d_res, driving_reports=driving_reports,
+    )
+    await run_servicing_stage(plan, request, trace=trace, provider=provider)
     _fire_phase("completed", "completed")
 
     return {
