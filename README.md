@@ -178,7 +178,7 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 | `DEFAULT_LLM_PROVIDER` | 模型提供商（auto/deepseek/openai/ollama） | `auto` |
 | `DEEPSEEK_API_KEY` | DeepSeek key | 空 |
 | `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | OpenAI 兼容接口 | 空 / `gpt-4o-mini` |
-| `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | 本地 Ollama | `http://localhost:11434` / `qwen2.5:7b` |
+| `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | 本地 Ollama（`OLLAMA_MODEL` 必须与本机 `ollama list` 的实际模型名一致） | `http://localhost:11434` / `batiai/gemma4-12b:q4` |
 | `TAVILY_API_KEY` | Tavily 搜索 key（高德未配置时降级源） | 空 |
 | `AMAP_API_KEY` | 高德开放平台 Web 服务 key（POI 搜索/天气，https://lbs.amap.com 申请） | 空 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth（ID Token 登录用 Client ID 校验） | 空 |
