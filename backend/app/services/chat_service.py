@@ -257,12 +257,18 @@ async def send_message(
     history = await _last_messages(db, session_id)
     # 会话绑定行程（context_json.trip_id）注入行程工具；owner 隔离由工具内 owner 校验
     bound_trip_id = (session.context_json or {}).get("trip_id")
+    # 方案 3：行程事件 + 画像上下文注入（每轮快照，双向感知）
+    from app.services.chat_trip_context import make_transform_context
+
     loop = AgentLoop(
         system_prompt=_SYSTEM_PROMPT,
         tools=_chat_tools(db=db, user_id=session.user_id, trip_id=bound_trip_id),
         provider=provider,
         max_iterations=8,  # 对话型护栏：最多 8 轮工具/重生成
         max_corrections=2,
+        transform_context=make_transform_context(
+            db, user_id=session.user_id, trip_id=bound_trip_id
+        ),
         on_event=_chat_event_sink(db, session_id, broadcast),
     )
 
