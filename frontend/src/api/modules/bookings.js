@@ -10,3 +10,11 @@ export const deleteBooking = (tripId, bookingId) =>
 
 // ── 旅程全程追踪（task-journey-timeline：投影） ──
 export const getJourney = (tripId) => http.get(`/trips/${tripId}/journey`).then((r) => r.data)
+
+// ── 旅程护照（task-journey-passport：徽章墙） ──
+export const getPassport = (tripId) => http.get(`/trips/${tripId}/passport`).then((r) => r.data)
+export const getSharedPassport = (token) => http.get(`/trips/share/${token}/passport`).then((r) => r.data)
+
+// ── 旅程故事（task-trip-story：晒图高光卡） ──
+export const generateStory = (tripId, channel = 'xhs') =>
+  http.post(`/trips/${tripId}/story`, { channel }).then((r) => r.data)

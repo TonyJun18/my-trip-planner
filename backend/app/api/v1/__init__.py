@@ -25,7 +25,9 @@ from app.api.v1 import (
     trips_favorites,
     trips_gallery,
     trips_journey,
+    trips_passport,
     trips_share,
+    trips_story,
     ws,
 )
 
@@ -55,6 +57,8 @@ api_router.include_router(link_import.router, tags=["trips"])
 api_router.include_router(expenses.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_bookings.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_journey.router, prefix="/trips", tags=["trips"])
+api_router.include_router(trips_passport.router, prefix="/trips", tags=["trips"])
+api_router.include_router(trips_story.router, prefix="/trips", tags=["trips"])
 api_router.include_router(social_import.router, tags=["trips"])
 api_router.include_router(map_edit.router, tags=["trips"])
 api_router.include_router(plan_b.router, tags=["trips"])

@@ -59,8 +59,33 @@ async def record_event(
         db.add(ev)
         if commit:
             await db.commit()
+        else:
+            # 未提交时显式 flush：让刚记录的事件在本事务内可见
+            # （护照 hook 需要读到它；调用方后续 commit，回滚则一起回滚）
+            await db.flush()
         # 广播到 collab WS feed（无订阅为 no-op）
         _broadcast(trip_id, event_type, payload or {})
+        # 旅程护照 hook：事件后判定徽章（幂等；失败静默，绝不阻断事件本身）
+        try:
+            from sqlalchemy.orm import selectinload
+
+            from app.services import passport_service
+            from app.models import Trip, TripDay
+
+            # 显式 selectinload days/stops：hook 到的 trip 必须已加载行程站点，
+            # 否则 maybe_award 内访问 trip.days 触发 async 懒加载 → MissingGreenlet
+            stmt = (
+                select(Trip)
+                .options(
+                    selectinload(Trip.days).selectinload(TripDay.stops),
+                )
+                .where(Trip.id == trip_id)
+            )
+            trip = (await db.execute(stmt)).scalars().first()
+            if trip is not None:
+                await passport_service.maybe_award(db, trip)
+        except Exception:  # noqa: BLE001
+            logger.warning("护照徽章判定失败: %s/%s (%s)", trip_id, event_type, exc_info=True)
         return ev
     except Exception:  # noqa: BLE001 — 事件记录失败绝不影响业务动作
         logger.debug("行程事件记录失败: %s/%s", trip_id, event_type, exc_info=True)

@@ -13,6 +13,8 @@ import HotelRecommend from '@/components/HotelRecommend.vue'
 import TripServicing from '@/components/TripServicing.vue'
 import BookingPanel from '@/components/BookingPanel.vue'
 import JourneyTimeline from '@/components/JourneyTimeline.vue'
+import PassportPanel from '@/components/PassportPanel.vue'
+import StoryCardGenerator from '@/components/StoryCardGenerator.vue'
 import PackingList from '@/components/PackingList.vue'
 import TripEventFeed from '@/components/TripEventFeed.vue'
 import QualityCard from '@/components/QualityCard.vue'
@@ -30,9 +32,11 @@ const { t } = useI18n()
 
 // ── 核心加载域（trip/budget/plan/离线降级/行中/Plan B） ──
 const journeyRef = ref(null)  // JourneyTimeline 组件引用（打卡/跳过/顺延后刷新投影）
+const passportRef = ref(null)  // PassportPanel 组件引用（同样刷新）
 
 function refreshJourney() {
   journeyRef.value?.load()
+  passportRef.value?.load()
 }
 
 const core = useTripDetailLoad({ onJourneyChange: refreshJourney })
@@ -654,6 +658,19 @@ onBeforeUnmount(() => {
         <JourneyTimeline
           v-if="trip"
           ref="journeyRef"
+          :trip-id="trip.id"
+        />
+
+        <!-- 旅程护照（徽章墙：完成感 + 分享素材） -->
+        <PassportPanel
+          v-if="trip"
+          ref="passportRef"
+          :trip-id="trip.id"
+        />
+
+        <!-- 旅程故事（晒图高光卡：小红书/朋友圈/长图） -->
+        <StoryCardGenerator
+          v-if="trip"
           :trip-id="trip.id"
         />
 

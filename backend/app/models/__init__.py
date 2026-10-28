@@ -13,6 +13,7 @@ from app.models.trip import (
     TripEvent,
     TripExpense,
     TripFavorite,
+    TripPassport,
     TripPlan,
 )
 from app.models.user import User

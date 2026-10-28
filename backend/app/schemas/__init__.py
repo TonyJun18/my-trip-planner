@@ -78,3 +78,5 @@ from app.schemas.journey import (
     HighlightOut,
     JourneyOut,
 )
+from app.schemas.passport import BadgeOut, PassportOut
+from app.schemas.story import StoryOut, StoryRequest, StoryStatsOut
