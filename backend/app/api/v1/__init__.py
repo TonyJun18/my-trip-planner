@@ -3,7 +3,25 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1 import auth, email_import, expenses, export, health, inspiration, link_import, map_edit, note_import, plan_b, planner, profile, screenshot_import, social_import, trips, ws
+from app.api.v1 import (
+    auth,
+    chat,
+    email_import,
+    expenses,
+    export,
+    health,
+    inspiration,
+    link_import,
+    map_edit,
+    note_import,
+    plan_b,
+    planner,
+    profile,
+    screenshot_import,
+    social_import,
+    trips,
+    ws,
+)
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -27,3 +45,6 @@ api_router.include_router(plan_b.router, tags=["trips"])
 api_router.include_router(planner.router, prefix="/planner", tags=["planner"])
 api_router.include_router(ws.router, tags=["ws"])  # WebSocket 端点（prefix 在 ws.py 内）
 api_router.include_router(profile.router, prefix="/profile", tags=["profile"])
+# 对话式行程助手（B 期）：会话/消息 REST + WS 流式
+# chat.router 内部已带 prefix="/chat"（含 WS 端点 /ws/chat/...），这里不再重复前缀
+api_router.include_router(chat.router, tags=["chat"])

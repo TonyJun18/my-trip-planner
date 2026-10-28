@@ -75,6 +75,9 @@ function goHome() {
             <button class="nav-link" :class="{ active: $route.path === '/trips' }" @click="router.push('/trips')">
               {{ t('app.myTrips') }}
             </button>
+            <button class="nav-link" :class="{ active: $route.path === '/chat' }" @click="router.push('/chat')">
+              <el-icon style="margin-right: 4px"><ChatDotRound /></el-icon>{{ t('app.chatNav') }}
+            </button>
             <button class="nav-link" :class="{ active: $route.query.view === 'gallery' }" @click="router.push('/?view=gallery')">
               {{ t('app.galleryNav') }}
             </button>
@@ -138,6 +141,14 @@ function goHome() {
         >
           <el-icon :size="22"><MagicStick /></el-icon>
           <span class="tab-label">{{ t('app.planTrip') }}</span>
+        </button>
+        <button
+          class="tab-item"
+          :class="{ active: $route.path === '/chat' }"
+          @click="router.push('/chat')"
+        >
+          <el-icon :size="22"><ChatDotRound /></el-icon>
+          <span class="tab-label">{{ t('app.chatNav') }}</span>
         </button>
       </nav>
 

@@ -8,6 +8,7 @@ const routes = [
   // 登录后页面
   { path: '/trips', name: 'trips', component: () => import('@/views/TripListView.vue') },
   { path: '/plan', name: 'plan', component: () => import('@/views/PlanWizard.vue') },
+  { path: '/chat', name: 'chat', component: () => import('@/views/ChatView.vue') },
   {
     path: '/trips/:id',
     name: 'trip-detail',

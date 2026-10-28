@@ -40,7 +40,7 @@ from app.agent.providers import get_provider, invoke_with_resilience
 from app.common.config import settings
 from app.core.logging import get_logger
 from app.i18n import normalize_locale
-from app.i18n.prompts import get_prompt, plan_language_instruction, preference_keywords, preference_keys_to_keywords
+from app.i18n.prompts import get_prompt, preference_keys_to_keywords, preference_keywords
 from app.i18n.translations import t
 from app.schemas.plan import validate_critique, validate_plan
 from app.services.discount_service import discount_rules_for_request
@@ -751,34 +751,42 @@ async def planner_agent(
     materials: {"attractions": [...], "hotels": [...], "foods": [...], "weather": {...}}
     review_feedback: 可选；TravelCriticAgent 的修改反馈（Evaluator-Optimizer 第二轮起传入），
                      为空表示首次生成。
-    """
-    prov = get_provider(provider)
-    locale = _request_locale(request)
-    messages: list[Any] = [SystemMessage(content=get_prompt("planner", locale))]
-    messages.append(HumanMessage(content=_planner_user_text(request, materials, locale=locale)))
-    if review_feedback:
-        messages.append(SystemMessage(content=review_feedback))
 
-    corrections = 0
-    last_error: str | None = None
-    for _ in range(max_corrections + 1):
-        response = await invoke_with_resilience(prov, messages)
-        content = str(getattr(response, "content", ""))
-        final = _extract_json(content)
-        if not isinstance(final, dict):
-            corrections += 1
-            last_error = "未找到合法 JSON"
-            messages.append(SystemMessage(content=t(locale, "agent.ctx.msg_no_json_plan")))
-            continue
-        try:
-            clean = validate_plan(final)
-            return {"status": "completed", "plan": clean, "corrections": corrections}
-        except Exception as exc:  # noqa: BLE001 — Pydantic ValidationError
-            corrections += 1
-            last_error = str(exc)
-            logger.info("Planner 校验失败 (correction=%d): %s", corrections, exc)
-            messages.append(SystemMessage(content=_validation_feedback(exc, locale)))
-    return {"status": "failed", "error": f"Planner 多次校验失败: {last_error}", "plan": None}
+    2026-10-27 迁移：内芯改用 AgentLoop（runtime.py）+ validate_plan validator；
+    签名与返回契约保持不变（{"status", "plan", "corrections"} 或 {"status":"failed", ...}）。
+    """
+    from app.agent.runtime import AgentLoop
+
+    locale = _request_locale(request)
+
+    def _validate(out: Any) -> dict[str, Any]:
+        # 校验失败抛 ValidationError → loop 反馈重试；成功返回清理后的 plan
+        if not isinstance(out, dict):
+            raise TypeError("未找到合法 JSON")
+        return validate_plan(out)
+
+    loop = AgentLoop(
+        system_prompt=get_prompt("planner", locale),
+        provider=provider,
+        max_corrections=max_corrections,
+        validator=_validate,
+        validation_feedback=lambda exc: SystemMessage(content=_validation_feedback(exc, locale)),
+        # Planner 无工具（只整合），不传 tools
+    )
+
+    prompt_text = _planner_user_text(request, materials, locale=locale)
+    if review_feedback:
+        prompt_text += f"\n\n{review_feedback}"
+    result = await loop.run(prompt_text)
+
+    if result["status"] == "completed" and result["output"] is not None:
+        return {"status": "completed", "plan": result["output"], "corrections": result["corrections"]}
+    return {
+        "status": "failed",
+        "error": result.get("error") or f"Planner 多次校验失败: {result.get('error')}",
+        "plan": None,
+        "corrections": result["corrections"],
+    }
 
 
 def _planner_user_text(request: dict[str, Any], materials: dict[str, Any], *, locale: str = "zh-CN") -> str:

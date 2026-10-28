@@ -1,10 +1,7 @@
 {
-  "night": "2026-10-24",
-  "status": "in_progress",
+  "night": "2026-10-28",
+  "status": "completed_with_issues",
   "todo": [
-    "task-export-offline",
-    "task-expense-split-mini",
-    "task-social-collection-eval",
     "task-share-gate-eval",
     "task-price-realism-eval",
     "task-open-hours-real-eval",
@@ -13,21 +10,29 @@
     "task-booking-closure-eval"
   ],
   "completed": [
-    "task-export-offline",
-    "task-expense-split-mini",
-    "task-social-collection-eval"
+    "task-share-gate-eval",
+    "task-price-realism-eval",
+    "task-open-hours-real-eval",
+    "task-human-escalation-eval"
   ],
-  "current_index": 3,
+  "current_index": 4,
   "issues": [
-    "2026-10-24 worker-1：night-start 重建——核对上夜（10-23）报告：竞品分析已完成（branch nightly/2026-10-23/0-competitive-analysis 2 commits 未合并），其追加的 4 项行动项（export-offline/expense-split-mini/social-collection-eval/share-gate-eval）作为本夜 todo。10-23 夜间 worker 未执行这 4 项（报告已标异常），本夜从 task-export-offline 开始。",
-    "2026-10-24 worker-2：task-export-offline 完成（branch nightly/2026-10-24/0-task-export-offline，2 commits 3635401+f38cafa）。【抢断接管】开工时分支已存在且工作区有未提交实现（上夜/本夜 worker 被掐断遗留），按手册 3.5 核验质量：后端 458 测试全绿（含新增 5 例 export 专项）+ 前端 build 3.13s 通过 + 验收满足（双路径导出/预算口径/质检元信息/零令牌字段），补登记完成并分两段提交（backend/frontend）。无阻塞性问题。",
-    "2026-10-24 worker-3：task-expense-split-mini 完成（branch nightly/2026-10-24/1-task-expense-split-mini，commit fe1e309）。TripExpense 模型 + trip_expenses 迁移（alembic a1b2c3d4e5f6 head）+ expense_service（add/delete/list + compute_balance 纯函数：payer 自由文本零凭证、空 payer 计入 total 不参与分摊、travelers<1 防除零、四舍五入到分、append-only 记账）+ GET/POST/DELETE /trips/{id}/expenses（owner 隔离，分享只读链路不暴露财务）。18 例专项测试全绿，全套 471 测试通过。【分支基线说明】本夜真实 checkpoint（10-24 版）仅存在于 worker-2 未合并分支（main 为 10-22 旧版）；worker-3 从 worker-2 分支取回 docs/night-build-todo.md + checkpoint.json 基线继续推进，保证链条连续；代码从 main 拉出（铁律 5）。",
-    "2026-10-24 worker-4：task-social-collection-eval 完成（branch nightly/2026-10-24/2-task-social-collection-eval）。评估通过并实现：三路线对比（抓分享页反爬墙/接平台 API 需凭证/粘贴 caption 文本零凭证）→ C 路线可行，与 email-import 零凭证粘贴版同构；social_import.py parse_social 纯函数（URL 只识别平台不抓取、40+ 地名收尾词 + 顿号列举 + 标签/emoji/语气词/价格语/方位前缀剥离 + 类型推断 + 敌意输入复用 note_import _INJECTION_RE）+ POST /trips/social/import（登录必需、超长 422）+ 评估记录 docs/nightly/evaluations/task-social-collection-eval-2026-10-24.md。13 例专项测试全绿，全套 466 测试通过（main 453 + 本任务 13）。纯链接粘贴走 link_import 链接收藏兜底。",
-    "2026-10-27 白天（用户视角梳理立项）：docs/user-perspective-review-2026-10-27.md 输出 6 项产品短板（A1-A6），其中 A5（share-gate）已在既有 todo，本批新增 5 项候选评估（price-realism / open-hours-real / human-escalation / trip-rating-signal / booking-closure），按「评估 → 可行最小版 / 不可行关单」格式追加进 night-build-todo.md；checkpoint todo 已同步追加，completed/current_index 保持 3 不动（等下一夜 night-start 重建）"
+    "2026-10-27 night-start：项目路径已从 /Users/pengjun/Desktop/my-agent/my-trip-planner 迁移至 /Users/pengjun/Documents/my-agent/my-trip-planner（Desktop 下无此目录，docs/night-build-manual.md 第 8 行旧路径需更新）。本夜全部操作按新路径执行。",
+    "2026-10-27 night-start：自 2026-10-24 夜起跨夜（checkpoint night=2026-10-24），按手册第 59 行重建检查点。10-24 已完成 3 项（export-offline/expense-split-mini/social-collection-eval）已在 completed 且分支在案；本夜 todo 取自 night-build-todo.md 现存 6 个未勾选项（share-gate-eval 及其余 5 项 10-27 用户视角立项候选评估）。",
+    "2026-10-28 night-worker-1：跨夜重建（night=2026-10-27 → 2026-10-28）。10-27 夜 6 项候选评估无人完成（completed 空/branches 空），todo 从 night-build-todo.md 重建为同一 6 项。工作区存在大量未提交改动（chat B 期：backend/app/agent/runtime.py、app/api/v1/chat.py、app/models/chat.py、app/services/chat_service.py、alembic b7c8d9e0f1a2、frontend ChatView.vue、docs/agent-runtime-design.md 等，含已修改的 backend/app/agent/agents.py、api/v1/__init__.py、models/__init__.py、schemas/__init__.py、frontend App.vue/api/index.js/locales/router）——判定为白天用户开发遗留，非夜间 worker 产物，本夜不触碰、不 stash，commit 只 add 本 worker 自己的文件。",
+    "2026-10-28 night-worker-2：task-share-gate-eval 完成（branch nightly/2026-10-28/0-task-share-gate-eval，commits 5584710 + 126f929）。核验并纳入工作区遗留主体（share_lifecycle 密码门禁 + password_hash 列 + 读取侧透传，00:30-00:34 写入），补齐 owner 设置/清除端点 + 访客 verify 签发免验凭证 + tests/test_share_gate.py 9 例 + 评估记录；全套 529 测试全绿。遗留待处理：①前端 ShareView 密码设置/输入 UI 未接线（api/index.js 尚无 sharePassword/verifyPassword 封装，ShareView 无密码弹窗）；②ws.py share/edit WebSocket 订阅未做密码门禁；③免验凭证无主动吊销（改密码不撤销已发 gate_token，仅 12h 自然过期）；④docs/night-build-manual.md 第 8 行项目路径仍为旧 Desktop 路径，建议白天更新。",
+    "2026-10-28 night-worker-2：前端改动零（本任务纯 backend + docs），未跑 npm run build；后端 529 测试全绿后 commit。工作区 chat B 期遗留未触碰（git status 未变，除本 worker 已提交文件外）。",
+    "2026-10-28 night-worker-5：task-price-realism-eval 接管收尾（worker-3 被掐断遗留，认领超 90 分钟按重试协议接管）。核验发现 worker-3 三次产物：①branch nightly/2026-10-28/1-task-price-realism-eval commit 8462629（02:09，v1：biz_ext.cost 单读 + test_price_realism.py 8 例，基于 main 3a9cc3a，全套 498 测试）；②worktree /private/tmp/mtp-nightly-wt 未提交 v2 增强（顶层 cost/rating 优先 + biz_ext 兜底双读 + _parse_amap_rating + test_price_realism.py 11 例，全套 501 passed + 1 skipped）——对照高德官方文档（v3 place/text cost/rating 在 biz_ext 深度信息、POI 2.0 在顶层字段）判定双读版为正确实现，采纳；③主仓库工作区错误变体（顶层直读 item.cost 无兜底 + test_amap_poi_price.py 10 例 + 错误评估记录）——实战拿不到数据属静默失败，已 mv 到 /tmp 清理并还原 todo 勾选。worker-5 按 v2 更新评估记录（字段位置澄清 + 双读说明 + 11 例验收）、勾选 todo，提交 e3ffc94（backend 双读增强）+ b5a5077（docs）。遗留：前端候选卡展示 rating/cost 接线视窗口另立。",
+    "2026-10-28 night-worker-5：主仓库仍停留在 main（worktree 占用分支导致 checkout 冲突已用 stash/还原解决）；mechanics：worker-3 留了两个 worktree 残留（mtp-nightly-wt 已被本 worker 收编提交；mtp-wt8-20261004 为 10-04 旧 worktree prunable 待清理）。",
+    "2026-10-28 night-worker-6：task-open-hours-real-eval 评估降级关单（纯评估无代码改动）。数据源矩阵结论：高德 v3 place/text extensions=all 返回参数表无 opentime 字段（逐项核对 2026-07-15 官方文档）；v5 POI 2.0 show_fields=business 返回 opentime_today/opentime_week 但官方标注「企业开发者试用阶段，上线需工单确认配额」（未来路径，需用户申请配额后立项）；Google Places 需凭证（与 price-alert/price-realism 同构不做）；免费全局源不可靠 → 维持规则库+特例表运营维护路线。链路核验：time_validation._stop_open_hours 显式 open_hours 优先于规则库、dynamic_facts._weekly_closed 跳过已声明特例——真实营业时间未来透传到 stop.open_hours 即被现有校验消费；StopSchema 无 open_hours 字段（extra=ignore）为接入前置注意项。评估记录 docs/nightly/evaluations/task-open-hours-real-eval-2026-10-28.md，todo 勾选，branch nightly/2026-10-28/2-task-open-hours-real-eval commit a9b1e00；无 pytest/build（纯 docs）。白天 chat B 期遗留未触碰。",
+    "2026-10-28 night-worker-8：task-human-escalation-eval 完成（branch nightly/2026-10-28/3-task-human-escalation-eval，commits 3678194 + 6b4df8b）。认定 worker-7 被掐断遗留（工作区存在 escalation_service.py、test_escalation.py 15 例、评估记录及 trips.py/models/trip.py/schemas/_common.py 中 escalation 改动，均未提交；无遗留分支），按手册 3.5 重试协议核验质量后收编：escalate_from_quality 纯函数（finalized/passed=false/degraded 三信号派生）+ escalation_summary 失败摘要（issues 截断 5 条）+ list_escalations owner 隔离评审队列 + Trip.escalated 派生属性（零 schema 演进零迁移，plans relationship 倒序透出 TripOut.escalated）+ GET /trips/escalations（声明在 /{trip_id} 之前避免被路径参数吞）+ TRIP_LOADS selectinload(Trip.plans)。专项 15 例全绿、全套 535 测试通过。schemas/__init__.py 为混合文件（escalation + 白天 chat B 期遗留段），按 git apply 拆分 patch 只提交 escalation 段（git diff --cached 校验无 chat 行混入），工作区恢复完整版保留 chat 遗留供白天继续。评估记录修正 3 处函数名笔误（escalat_from_quality → escalate_from_quality）。遗留：前端接线窗口（TripDetailView 质检卡「建议人工复核」提示条 + 行程列表 escalated 徽标，评估记录 4.5）；本夜剩余任务 task-trip-rating-signal / task-booking-closure-eval 待下夜。",
+    "2026-10-28 night-worker-8：mechanics——本任务纯 backend + docs，未跑 npm run build；escalation 提交时 schemas 拆分用了 /tmp/escalation_schema.patch + /tmp/mtp_schemas_full.py 两个临时文件（未清理，mv 到 /tmp 无害）；确认无 push、无 merge、未动 main 与 chat B 期遗留之外的任何工作区文件。"
   ],
   "branches": [
-    "nightly/2026-10-24/0-task-export-offline",
-    "nightly/2026-10-24/1-task-expense-split-mini",
-    "nightly/2026-10-24/2-task-social-collection-eval"
-  ]
+    "nightly/2026-10-28/0-task-share-gate-eval",
+    "nightly/2026-10-28/1-task-price-realism-eval",
+    "nightly/2026-10-28/2-task-open-hours-real-eval",
+    "nightly/2026-10-28/3-task-human-escalation-eval"
+  ],
+  "claims": {}
 }
