@@ -843,4 +843,24 @@ export default {
     dayStatus: { completed: '已完成', partial: '部分完成', todo: '待打卡', skipped: '已跳过' },
     incomplete: '部分打卡数据缺失（可能来自历史导入），仅供参考。',
   },
+  // ── 旅程护照（徽章墙） ──────────────────────────────
+  passport: {
+    panelTitle: '旅程护照',
+    empty: '还没有徽章～打卡、记账、完成一天、订票订酒店都能点亮徽章。',
+    phase: { upcoming: '未出发', live: '进行中', finished: '已结束' },
+  },
+  // ── 旅程故事（晒图高光卡） ──────────────────────────
+  story: {
+    panelTitle: '旅程故事',
+    hint: '基于你的真实打卡/记账/徽章生成晒图文案，可复制到小红书或朋友圈。',
+    channel: { xhs: '小红书', moments: '朋友圈', poster: '长图' },
+    empty: '还没有行程数据，先去打卡或记一笔账，再生成旅程故事吧。',
+    generating: '正在生成故事…',
+    generateFailed: '生成失败，请重试',
+    copy: '复制文案',
+    regenerate: '换一个',
+    copied: '已复制，去粘贴发布吧',
+    copyFallback: '复制失败，请手动选择复制',
+    source: { llm: 'AI 生成', template: '模板生成' },
+  },
 }

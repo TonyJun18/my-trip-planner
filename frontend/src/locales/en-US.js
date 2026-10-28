@@ -843,4 +843,24 @@ export default {
     dayStatus: { completed: 'Done', partial: 'Partial', todo: 'To do', skipped: 'Skipped' },
     incomplete: 'Some check-in data missing (possibly from import). Approximate only.',
   },
+  // ── Journey passport (badges wall) ─────────────────────
+  passport: {
+    panelTitle: 'Journey Passport',
+    empty: 'No badges yet. Check in, record expenses, finish a day, or book travel to earn badges.',
+    phase: { upcoming: 'Upcoming', live: 'Live', finished: 'Finished' },
+  },
+  // ── Trip story (shareable highlight card) ──────────────
+  story: {
+    panelTitle: 'Trip Story',
+    hint: 'Generates shareable text from your real check-ins, expenses and badges. Copy to XHS or Moments.',
+    channel: { xhs: 'XHS', moments: 'Moments', poster: 'Poster' },
+    empty: 'No trip data yet. Check in or record an expense first, then generate your story.',
+    generating: 'Generating story…',
+    generateFailed: 'Generation failed, please retry',
+    copy: 'Copy text',
+    regenerate: 'Regenerate',
+    copied: 'Copied! Go paste and publish.',
+    copyFallback: 'Copy failed, please select manually',
+    source: { llm: 'AI generated', template: 'Template' },
+  },
 }

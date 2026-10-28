@@ -325,3 +325,27 @@ class TripExpense(Base):
     payer: Mapped[str] = mapped_column(String(50), default="", nullable=False)
     note: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class TripPassport(Base):
+    """旅程护照（task-journey-passport：行中激励 + 徽章体系）。
+
+    - 一行行程一条（trip_id 唯一）：phase（upcoming/live/finished）+ badges[] +
+      最近进度时间 + 状态快照；徽章为确定性规则触发（幂等，只增不减）。
+    - 与 TripEvent 联动：record_event 后 hook maybe_award；历史回填一次性投影。
+    - 徽章墙是「完成感 + 分享素材」，绝不做成营销追踪（不采集第三方转化）。
+    - 归属：owner 可写，受邀 share/edit token 只读（分享页徽章墙）。
+    """
+
+    __tablename__ = "trip_passports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), unique=True, index=True)
+    phase: Mapped[str] = mapped_column(String(20), default="upcoming", nullable=False)
+    badges: Mapped[list | None] = mapped_column(JSON, nullable=True)  # [{key,label,earned_at}]
+    last_progress_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    share_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
