@@ -281,6 +281,7 @@ async def send_message(
     # 4) 执行
     result = await loop.run(message)
     reply = ""
+    reasoning_text = result.get("reasoning") or None
     if result["status"] == "completed":
         # 输出是纯文本（无 validator → output 即 LLM 文本）
         reply = result["output"] if isinstance(result["output"], str) else json.dumps(result["output"], ensure_ascii=False)
@@ -291,6 +292,7 @@ async def send_message(
 
     # 5) 持久化最终 assistant 消息（事件回调里已存部分；这里只存最终一条避免重复）
     final_msg = await _add_message(db, session_id, role="assistant", content=reply,
+                                   reasoning=reasoning_text,
                                    error=result.get("error") if result["status"] != "completed" else None)
     await db.flush()
 
@@ -317,6 +319,14 @@ def _chat_event_sink(db: AsyncSession, session_id: str, broadcast: bool):
     # assistant 增量在 message_update 时拿到的是完整文本（非流式 delta），这里简单持久化
     async def _sink(event: AgentEvent) -> None:
         # 只关注需要持久化/广播的事件
+        if event.type == "reasoning_start":
+            # 思考过程：广播给前端（折叠块展示）
+            if broadcast and event.reasoning:
+                await hub.publish(f"{CHAT_BROADCAST_PREFIX}{session_id}", {
+                    "type": "reasoning_start",
+                    "reasoning": event.reasoning,
+                })
+            return
         if event.type == "message_start" and event.message is not None:
             # assistant 消息起始：不单独广播（等 message_end 汇总）
             return
@@ -371,6 +381,7 @@ def _msg_out(msg: ChatMessage) -> dict[str, Any]:
         "session_id": msg.session_id,
         "role": msg.role,
         "content": msg.content,
+        "reasoning": msg.reasoning,
         "tool_call": msg.tool_call,
         "tool_result": msg.tool_result,
         "error": msg.error,

@@ -42,6 +42,7 @@ class ChatMessageOut(BaseModel):
     session_id: str
     role: str
     content: str = ""
+    reasoning: str | None = None
     tool_call: dict | None = None
     tool_result: dict | None = None
     error: str | None = None

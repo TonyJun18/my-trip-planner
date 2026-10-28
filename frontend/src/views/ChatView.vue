@@ -55,7 +55,19 @@
               <template v-else-if="m.role === 'assistant'">
                 <div class="bubble assistant">
                   <el-icon class="bot-icon"><ChatDotRound /></el-icon>
-                  <span>{{ m.content || (isPending && i === messages.length - 1 ? '…' : '') }}</span>
+                  <div class="assistant-body">
+                    <!-- 思考过程（可折叠） -->
+                    <div v-if="m.reasoning" class="reasoning-block">
+                      <div class="reasoning-head" @click="toggleReasoning(m)">
+                        <el-icon :size="12"><ArrowDownBold :class="{ rotate: showReasoning[m.id] }" /></el-icon>
+                        <span>{{ $t('chat.thinkingTitle') }}</span>
+                        <el-icon class="reasoning-toggle"><CaretBottom /></el-icon>
+                      </div>
+                      <div v-show="showReasoning[m.id]" class="reasoning-body">{{ m.reasoning }}</div>
+                    </div>
+                    <div v-if="m.content" class="md-body" v-html="renderMarkdown(m.content)"></div>
+                    <span v-else-if="isPending && i === messages.length - 1" class="pending-text">{{ $t('chat.thinking') }}</span>
+                  </div>
                 </div>
               </template>
 
@@ -102,7 +114,17 @@
             <div v-if="isPending" class="msg-row assistant">
               <div class="bubble assistant thinking">
                 <el-icon class="bot-icon"><ChatDotRound /></el-icon>
-                <span>{{ streamingText || $t('chat.thinking') }}</span>
+                <div class="assistant-body">
+                  <div v-if="streamingReasoning" class="reasoning-block streaming">
+                    <div class="reasoning-head">
+                      <el-icon :size="12"><ArrowDownBold class="rotate" /></el-icon>
+                      <span>{{ $t('chat.thinkingTitle') }}</span>
+                    </div>
+                    <div class="reasoning-body">{{ streamingReasoning }}</div>
+                  </div>
+                  <span v-if="streamingText">{{ streamingText }}</span>
+                  <span v-else>{{ $t('chat.thinking') }}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -131,11 +153,13 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref, nextTick } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, Delete, Plus, Tools } from '@element-plus/icons-vue'
+import { ArrowDownBold, CaretBottom, ChatDotRound, Delete, Plus, Tools } from '@element-plus/icons-vue'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import {
   createChatSession,
   deleteChatSession,
@@ -155,8 +179,10 @@ const messages = ref([])
 const draft = ref('')
 const isPending = ref(false)
 const streamingText = ref('')
+const streamingReasoning = ref('')
 const loadingSessions = ref(false)
 const msgBox = ref(null)
+const showReasoning = reactive({}) // message.id -> true/false（思考过程折叠）
 
 let wsClose = null
 
@@ -203,6 +229,7 @@ async function openSession(id) {
   activeSessionId.value = id
   messages.value = []
   streamingText.value = ''
+  streamingReasoning.value = ''
   try {
     const data = await listChatMessages(id)
     messages.value = data.items || []
@@ -245,6 +272,7 @@ async function send() {
   scrollToBottom()
   isPending.value = true
   streamingText.value = ''
+  streamingReasoning.value = ''
   try {
     await sendChatMessage(activeSessionId.value, text)
     // WS 事件已实时更新；兜底：REST 刷新一次（防 WS 断开丢事件）
@@ -255,12 +283,17 @@ async function send() {
   } finally {
     isPending.value = false
     streamingText.value = ''
+    streamingReasoning.value = ''
     scrollToBottom()
   }
 }
 
 function handleWsEvent(msg) {
-  if (msg.type === 'assistant_delta') {
+  if (msg.type === 'reasoning_start') {
+    // 思考过程：流式占位展示（整段透传，不做增量拼接）
+    streamingReasoning.value = msg.reasoning || ''
+    scrollToBottom()
+  } else if (msg.type === 'assistant_delta') {
     streamingText.value = (streamingText.value || '') + (msg.delta || '')
     scrollToBottom()
   } else if (msg.type === 'tool_start') {
@@ -272,8 +305,27 @@ function handleWsEvent(msg) {
     scrollToBottom()
   } else if (msg.type === 'assistant_done') {
     streamingText.value = ''
+    streamingReasoning.value = ''
     scrollToBottom()
   }
+}
+
+// ── markdown 渲染（assistant 消息正文） ───────────────────────
+marked.setOptions({ breaks: true, gfm: true })
+
+function renderMarkdown(text) {
+  if (!text) return ''
+  try {
+    return DOMPurify.sanitize(marked.parse(text))
+  } catch {
+    // 渲染失败兜底：纯文本（防恶意/畸形 markdown 拖垮气泡）
+    return DOMPurify.sanitize(text)
+  }
+}
+
+function toggleReasoning(m) {
+  if (showReasoning[m.id]) showReasoning[m.id] = false
+  else showReasoning[m.id] = true
 }
 
 // ── 行程修改预览卡片（edit_trip 两阶段 HITL） ──────────────
@@ -303,6 +355,7 @@ async function confirmEdit(m) {
   if (!activeSessionId.value || isPending.value) return
   isPending.value = true
   streamingText.value = ''
+  streamingReasoning.value = ''
   try {
     await sendChatMessage(activeSessionId.value, '确认应用上述行程修改')
     const data = await listChatMessages(activeSessionId.value)
@@ -312,6 +365,7 @@ async function confirmEdit(m) {
   } finally {
     isPending.value = false
     streamingText.value = ''
+    streamingReasoning.value = ''
     scrollToBottom()
   }
 }
@@ -319,6 +373,7 @@ async function cancelEdit(m) {
   if (!activeSessionId.value || isPending.value) return
   isPending.value = true
   streamingText.value = ''
+  streamingReasoning.value = ''
   try {
     await sendChatMessage(activeSessionId.value, '取消刚才的行程修改建议')
     const data = await listChatMessages(activeSessionId.value)
@@ -328,6 +383,7 @@ async function cancelEdit(m) {
   } finally {
     isPending.value = false
     streamingText.value = ''
+    streamingReasoning.value = ''
     scrollToBottom()
   }
 }
@@ -472,6 +528,133 @@ function formatTime(iso) {
 }
 .bot-icon { margin-top: 2px; color: var(--el-color-primary); }
 .bubble.assistant.thinking { color: var(--el-text-color-secondary); font-style: italic; }
+
+/* ── assistant 消息体（markdown + 思考过程） ─────────────── */
+.assistant-body {
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+  word-break: break-word;
+}
+.pending-text {
+  font-style: italic;
+  color: var(--el-text-color-secondary);
+}
+/* 思考过程折叠块 */
+.reasoning-block {
+  margin-bottom: 8px;
+  border: 1px dashed var(--el-border-color);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+.reasoning-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-style: normal;
+}
+.reasoning-head .rotate {
+  transform: rotate(90deg);
+  transition: transform 0.15s;
+}
+.reasoning-toggle { margin-left: auto; }
+.reasoning-body {
+  padding: 6px 12px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow-y: auto;
+  border-top: 1px dashed var(--el-border-color);
+  font-style: normal;
+}
+.reasoning-block.streaming .reasoning-body {
+  border-top: none;
+}
+/* markdown 正文渲染（v-html 内容需 :deep 命中） */
+.md-body {
+  white-space: normal;
+  line-height: 1.65;
+}
+.md-body :deep(p) {
+  margin: 0 0 8px;
+}
+.md-body :deep(p:last-child) {
+  margin-bottom: 0;
+}
+.md-body :deep(h1),
+.md-body :deep(h2),
+.md-body :deep(h3),
+.md-body :deep(h4) {
+  margin: 12px 0 6px;
+  font-size: 1.1em;
+  font-weight: 600;
+}
+.md-body :deep(ul),
+.md-body :deep(ol) {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+.md-body :deep(li) {
+  margin: 2px 0;
+}
+.md-body :deep(code) {
+  background: var(--el-fill-color-darker);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.md-body :deep(pre) {
+  background: var(--el-fill-color-darker);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 6px 0 10px;
+}
+.md-body :deep(pre code) {
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+}
+.md-body :deep(table) {
+  border-collapse: collapse;
+  margin: 6px 0 10px;
+  max-width: 100%;
+  display: block;
+  overflow-x: auto;
+}
+.md-body :deep(th),
+.md-body :deep(td) {
+  border: 1px solid var(--el-border-color);
+  padding: 4px 10px;
+  font-size: 13px;
+}
+.md-body :deep(blockquote) {
+  margin: 6px 0 10px;
+  padding: 4px 12px;
+  border-left: 3px solid var(--el-color-primary-light-5);
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-lighter);
+  border-radius: 0 6px 6px 0;
+}
+.md-body :deep(a) {
+  color: var(--el-color-primary);
+  text-decoration: underline;
+}
+.md-body :deep(img) {
+  max-width: 100%;
+  border-radius: 6px;
+}
+.md-body :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--el-border-color);
+  margin: 10px 0;
+}
 .tool-call {
   display: flex;
   align-items: center;

@@ -784,6 +784,7 @@ export default {
     inputPlaceholder: '例如：杭州 3 天怎么安排？西湖附近有什么好吃的？',
     send: '发送',
     thinking: '正在思考…',
+    thinkingTitle: '思考过程',
     toolCalled: '正在查询',
     toolRan: '工具已执行',
     toolDone: '工具完成',

@@ -54,6 +54,7 @@ class AgentEvent:
     # message 相关
     message: Any | None = None
     delta: str | None = None               # message_update 的增量文本
+    reasoning: str | None = None           # 本条 LLM 响应的思考过程（如有）
     # tool 相关
     tool_name: str | None = None
     tool_call_id: str | None = None
@@ -217,6 +218,43 @@ class AgentLoop:
         """从 AIMessage 提取 tool_calls（兼容 OpenAI 格式，含 id/name/args）。"""
         return getattr(response, "tool_calls", None) or []
 
+    @staticmethod
+    def _extract_reasoning(response: Any) -> str | None:
+        """从 AIMessage 提取模型推理/思考过程（reasoning_content / additional_kwargs.reasoning）。
+
+        兼容多个推理模型约定：
+        - DeepSeek reasoner：``additional_kwargs.reasoning_content``（字符串）
+        - OpenAI（gpt-*）reasoning：``additional_kwargs.reasoning`` / 列表形式的
+          ``reasoning_effort`` 或 ``response_metadata`` 顶层 ``reasoning`` 段
+        - 其它字段（ ``reasoning_summary`` 等）未命中即 None——绝不让思考过程
+          破坏主回复契约（探测失败静默降级）。
+        """
+        if response is None:
+            return None
+        ak: dict[str, Any] = getattr(response, "additional_kwargs", None) or {}
+        candidates: list[Any] = [
+            ak.get("reasoning_content"),
+            ak.get("reasoning"),
+            getattr(response, "reasoning_content", None),
+            (getattr(response, "response_metadata", None) or {}).get("reasoning"),
+        ]
+        for c in candidates:
+            if isinstance(c, str) and c.strip():
+                return c.strip()
+            if isinstance(c, list):  # OpenAI 分段 reasoning（[{"type":"reasoning_text","text":...}]）
+                try:
+                    parts = [
+                        seg.get("text")
+                        for seg in c
+                        if isinstance(seg, dict) and seg.get("type") == "reasoning_text"
+                    ]
+                    text = "".join(p for p in parts if p)
+                    if text.strip():
+                        return text.strip()
+                except Exception:  # noqa: BLE001 — 结构不识别，静默放弃
+                    continue
+        return None
+
     # ── 主入口 ────────────────────────────────────────────
     async def run(self, human_message: str | list[Any]) -> dict[str, Any]:
         from langchain_core.messages import HumanMessage
@@ -229,6 +267,7 @@ class AgentLoop:
         trace: list[dict[str, Any]] = []
         iterations = 0
         corrections = 0
+        reasoning_accum: str | None = None
         last_output: Any = None
         last_status = "running"
         last_error: str | None = None
@@ -258,8 +297,13 @@ class AgentLoop:
                 )
 
                 await self._fire(AgentEvent(type="message_start", message=response))
+                reasoning_text = self._extract_reasoning(response)
+                if reasoning_text:
+                    reasoning_accum = reasoning_text if reasoning_accum is None else f"{reasoning_accum}\n\n{reasoning_text}"
+                    await self._fire(AgentEvent(type="reasoning_start", reasoning=reasoning_text))
                 content = str(getattr(response, "content", ""))
-                await self._fire(AgentEvent(type="message_update", message=response, delta=content))
+                await self._fire(AgentEvent(type="message_update", message=response, delta=content,
+                                            reasoning=reasoning_text))
                 await self._fire(AgentEvent(type="message_end", message=response))
                 self._messages.append(response)
 
@@ -386,6 +430,7 @@ class AgentLoop:
                 "trace": trace,
                 "corrections": corrections,
                 "error": last_error,
+                "reasoning": reasoning_accum,
                 "provider": getattr(self.provider_instance, "name", "?"),
                 "model": getattr(self.provider_instance, "model_id", None),
             }
@@ -394,6 +439,7 @@ class AgentLoop:
             await self._fire(AgentEvent(type="agent_end", status="failed", error=str(exc), messages=self._messages))
             return {"status": "failed", "output": None, "messages": self._messages,
                     "trace": trace, "corrections": corrections, "error": str(exc),
+                    "reasoning": reasoning_accum,
                     "provider": getattr(self.provider_instance, "name", "?") if self._provider is not None else self.provider,
                     "model": getattr(self.provider_instance, "model_id", None) if self._provider is not None else None}
 

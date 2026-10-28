@@ -55,6 +55,7 @@ def _msg_out(msg) -> ChatMessageOut:
         session_id=msg.session_id,
         role=msg.role,
         content=msg.content,
+        reasoning=msg.reasoning,
         tool_call=msg.tool_call,
         tool_result=msg.tool_result,
         error=msg.error,

@@ -784,6 +784,7 @@ export default {
     inputPlaceholder: 'e.g. How to spend 3 days in Hangzhou? Any good food near West Lake?',
     send: 'Send',
     thinking: 'Thinking…',
+    thinkingTitle: 'Thinking',
     toolCalled: 'Querying',
     toolRan: 'Tool executed',
     toolDone: 'Tool finished',
