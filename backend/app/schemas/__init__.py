@@ -66,3 +66,15 @@ from app.schemas.trip import (
     TripUpdate,
 )
 from app.schemas.xhs import XhsNoteOut, XhsNoteRequest
+from app.schemas.booking import (
+    BookingIn,
+    BookingListOut,
+    BookingOut,
+    BookingStatusIn,
+    BookingSuggestedOut,
+)
+from app.schemas.journey import (
+    DayJourneyOut,
+    HighlightOut,
+    JourneyOut,
+)

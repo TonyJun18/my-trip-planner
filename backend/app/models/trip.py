@@ -248,6 +248,43 @@ class TripFavorite(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class TripBooking(Base):
+    """预订条目（task-booking-outlink：行程内「可预订」建议 + 凭证回填）。
+
+    - 规划后由 BookingStep 产出「建议」（provider_url 直达 OTA 搜索页，用户自助完成交易），
+      与 expense 的「实付」、plan 的「估算」三者区分；
+    - ``reference``：plan.generated（编排层回填）/ user.confirmed（用户回填凭证）/
+      channel.callback（渠道回调，本期未接）；
+    - 状态机：suggested → pending → confirmed ⇄ cancelled。
+      只允许带凭证（order_no/credential）进入 confirmed；suggested 可重复 upsert（幂等）。
+    - 与 TripEvent 联动：confirm/cancel 记 booking.confirmed / booking.cancelled 事件；
+    - probe_plan 非空：为旅程追踪「预订状态」投影保留挂载点（本期不落 probe）。
+    - 归属：owner 可写，受邀 share/edit token 只读（与费用语义对齐）。
+    """
+
+    __tablename__ = "trip_bookings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(20), default="train", nullable=False)  # train/hotel
+    provider: Mapped[str] = mapped_column(String(20), default="ctrip", nullable=False)
+    title: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    provider_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    order_no: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    credential: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="suggested", nullable=False, index=True)
+    reference: Mapped[str] = mapped_column(String(20), default="plan.generated", nullable=False)
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str] = mapped_column(String(10), default="CNY", nullable=False)
+    probe_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class TripEvent(Base):
     """行程事件日志（task-trip-event-notify）：修订/打卡/投票/评论等业务动作的事件流。
 

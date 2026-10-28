@@ -1349,13 +1349,20 @@ async def run_planning_agents(
     #    ServicingStep 统一执行——finalize 回填 + MultiCity/TimeGate/DynamicFacts
     #    门控 + 市内通勤/入住/折扣。与原 agents.py 手写段行为等价：门控只报告不
     #    阻断、servicing 任一失败只记 warnings，事件/制品契约不变。）
-    from app.agent.pipeline import run_finalize_stage, run_servicing_stage
+    from app.agent.pipeline import (
+        run_booking_stage,
+        run_finalize_stage,
+        run_servicing_stage,
+    )
 
     await run_finalize_stage(
         plan, request, trace=trace,
         t_res=t_res, d_res=d_res, driving_reports=driving_reports,
     )
     await run_servicing_stage(plan, request, trace=trace, provider=provider)
+    # 预订化收尾（BookingStep）：从定稿 plan 产出可预订外链建议（plan.bookings）。
+    # 零 LLM、纯规则；失败降级为空数组，绝不阻断主流程。
+    await run_booking_stage(plan, request, trace=trace)
     _fire_phase("completed", "completed")
 
     return {

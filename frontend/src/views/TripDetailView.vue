@@ -11,6 +11,8 @@ import * as api from '@/api'
 import TripMap from '@/components/TripMap.vue'
 import HotelRecommend from '@/components/HotelRecommend.vue'
 import TripServicing from '@/components/TripServicing.vue'
+import BookingPanel from '@/components/BookingPanel.vue'
+import JourneyTimeline from '@/components/JourneyTimeline.vue'
 import PackingList from '@/components/PackingList.vue'
 import TripEventFeed from '@/components/TripEventFeed.vue'
 import QualityCard from '@/components/QualityCard.vue'
@@ -27,7 +29,13 @@ const router = useRouter()
 const { t } = useI18n()
 
 // ── 核心加载域（trip/budget/plan/离线降级/行中/Plan B） ──
-const core = useTripDetailLoad()
+const journeyRef = ref(null)  // JourneyTimeline 组件引用（打卡/跳过/顺延后刷新投影）
+
+function refreshJourney() {
+  journeyRef.value?.load()
+}
+
+const core = useTripDetailLoad({ onJourneyChange: refreshJourney })
 const {
   trip, loading, budget, plan, offlineFallback,
   live, liveLoading, liveOp,
@@ -633,6 +641,20 @@ onBeforeUnmount(() => {
           :checkin="servicingProps.checkin"
           :discount-rules="servicingProps.discountRules"
           :discounts="servicingProps.discounts"
+        />
+
+        <!-- 预订（可预订建议 + 凭证回填 + 状态机） -->
+        <BookingPanel
+          v-if="trip"
+          :trip-id="trip.id"
+          @changed="load"
+        />
+
+        <!-- 旅程全程追踪（打卡进度 / 按天状态 / 费用 / 预订 / 高光） -->
+        <JourneyTimeline
+          v-if="trip"
+          ref="journeyRef"
+          :trip-id="trip.id"
         />
 
         <!-- 打包清单（纯前端 localStorage · 零凭证） -->

@@ -7,6 +7,7 @@ from app.models.trip import (
     Stop,
     StopVote,
     Trip,
+    TripBooking,
     TripComment,
     TripDay,
     TripEvent,

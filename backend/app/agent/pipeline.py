@@ -696,3 +696,147 @@ async def run_servicing_stage(
     pipe.add(ServicingStep())
     await pipe.run(request, plan=plan, trace=trace or [], provider=provider)
     return plan
+
+
+# ── 可预订建议（第五批：BookingStep——纯规则零 LLM，失败降级不阻断） ──
+@dataclass
+class BookingStep(PipelineStep):
+    """预订化收尾：从定稿 plan 产出可预订外链建议（plan.bookings）。
+
+    **依赖注入（kwargs）**：
+    - ``plan``：已定稿 plan（原地修改：``bookings`` 回填为 BookingSuggestedOut 列表）
+
+    设计（与 servicing 同哲学，零 LLM）：
+    - 大交通：plan.transport 有方案 + request 有出发地 → 生成 train 建议；
+      价格取 transport.options 最低单程参考价（无则不填，绝不编造）；
+    - 酒店：days[].stops[type=hotel]（已安排酒店）→ 每个生成 hotel 建议；
+      未进 days 时兜底 plan.hotels 候选池前几项（复用 hotel 候选）；
+    - 每项 provider_url 由 booking_service.build_deeplink 纯规则组装；
+    - reference=plan.generated / status=suggested：明确定义为「建议跳转」，
+      绝不伪造成「已订」（confirmed 只经 trips_bookings API 凭证回填产生）；
+    - 失败（任一输入缺失/异常）→ 静默不产出（空数组），绝不阻断主流程。
+
+    返回：原地修改后的 plan。
+    """
+
+    def __init__(self) -> None:
+        super().__init__(name="booking", deps=[], on_failure="degrade")
+
+    async def run(self, ctx: PipelineContext, **kwargs: Any) -> Any:
+        from app.agent import agents as A
+        from app.i18n.translations import t
+
+        request = ctx.request
+        locale = A._request_locale(request)
+        plan = kwargs.get("plan")
+        if plan is None:
+            raise ValueError("BookingStep 需要 plan（来自 servicing 步骤）")
+        trace = kwargs.get("trace") or ctx.trace
+
+        def _append_trace(entry: dict[str, Any]) -> None:
+            trace.append(entry)
+            import asyncio
+
+            asyncio.create_task(A._emit_plan_event({"type": "trace", "trace": entry}))
+
+        from app.services.booking_service import build_deeplink
+
+        departure = (request.get("departure") or "").strip()
+        destination = (request.get("destination") or plan.get("destination") or "").strip()
+        start_date = (request.get("start_date") or "").strip()
+
+        bookings: list[dict[str, Any]] = []
+
+        # 1) 大交通（train）：有 transport 方案 + 出发地 → 生成 train 建议
+        transport = plan.get("transport") or {}
+        options = transport.get("options") if isinstance(transport, dict) else None
+        if departure and destination and isinstance(options, list):
+            price: float | None = None
+            for opt in options:
+                if not isinstance(opt, dict):
+                    continue
+                p = opt.get("price") or opt.get("price_estimate")
+                try:
+                    p = float(p) if p is not None else None
+                except (TypeError, ValueError):
+                    p = None
+                if p is not None:
+                    price = min(price, p) if price is not None else p
+            url = build_deeplink("ctrip", "train", {
+                "departure": departure, "destination": destination, "date": start_date,
+            })
+            if url:
+                bookings.append({
+                    "kind": "train",
+                    "provider": "ctrip",
+                    "title": f"{departure} → {destination}",
+                    "provider_url": url,
+                    "price_estimate": price,
+                    "currency": "CNY",
+                    "reference": "plan.generated",
+                    "status": "suggested",
+                })
+
+        # 2) 酒店：已安排酒店（days[].stops[type=hotel]）优先，候选池兜底
+        seen: set[str] = set()
+        hotel_names: list[tuple[str, float | None]] = []
+        for day in plan.get("days") or []:
+            for stop in day.get("stops") or []:
+                if isinstance(stop, dict) and stop.get("type") == "hotel":
+                    name = (stop.get("name") or "").strip()
+                    if name and name not in seen:
+                        seen.add(name)
+                        hotel_names.append((name, stop.get("estimated_cost")))
+        if destination and not hotel_names:
+            for h in plan.get("hotels") or []:
+                if len(hotel_names) >= 3:
+                    break
+                if not isinstance(h, dict):
+                    continue
+                name = (h.get("name") or "").strip()
+                if name and name not in seen:
+                    seen.add(name)
+                    hotel_names.append((name, h.get("estimated_cost")))
+        for name, price in hotel_names[:5]:
+            url = build_deeplink("ctrip", "hotel", {"city": destination})
+            if not url:
+                continue
+            bookings.append({
+                "kind": "hotel",
+                "provider": "ctrip",
+                "title": name,
+                "provider_url": url,
+                "price_estimate": float(price) if price is not None else None,
+                "currency": "CNY",
+                "reference": "plan.generated",
+                "status": "suggested",
+            })
+
+        plan["bookings"] = bookings
+        _append_trace({
+            "agent": "BookingGate",
+            "action": "generate_suggestions",
+            "observation": (
+                t(locale, "plan.trace.booking", n=len(bookings))
+                if bookings else t(locale, "plan.trace.booking.none")
+            ),
+            "status": "completed" if bookings else "warning",
+        })
+        A._fire_artifact("bookings", {
+            "count": len(bookings),
+            "items": bookings[:10],
+        })
+        return plan
+
+
+async def run_booking_stage(
+    plan: dict[str, Any],
+    request: dict[str, Any],
+    *,
+    trace: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """便捷入口：预订化收尾（BookingStep）。返回原地修改后的 plan。"""
+    pipe = PlanningPipeline()
+    pipe.add(BookingStep())
+    await pipe.run(request, plan=plan, trace=trace or [])
+    return plan
