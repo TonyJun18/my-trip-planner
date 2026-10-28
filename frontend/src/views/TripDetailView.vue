@@ -3,6 +3,10 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import {
+  MoreFilled, Upload, Star, Promotion, Setting, EditPen, Lock, Delete,
+  Picture, Document, Download, Printer, Top, Bottom, ChatDotRound,
+} from '@element-plus/icons-vue'
 import * as api from '@/api'
 import TripMap from '@/components/TripMap.vue'
 import HotelRecommend from '@/components/HotelRecommend.vue'
@@ -35,8 +39,8 @@ const {
 const share = useTripShareActions({ trip, afterChange: load })
 const {
   sharing, xhsNoteVisible, importVisible, doShare,
-  publishingGallery, publishGallery,
-  editSharing, editRevoking, doShareEdit, doRevokeShareEdit,
+  publishGallery,
+  doShareEdit, doRevokeShareEdit,
   shareSettingsVisible, lifecycleItems, lifecycleLoading, ttlUpdating, revokingKind,
   openShareSettings, loadShareLifecycle, lifecycleStatus, copyShareUrl, setTtl, revokeShareLink, ttlOptions,
   isFavorite, favoriting, hasSharedToken, toggleFavorite,
@@ -145,6 +149,71 @@ async function changeStatus() {
     await load()
   } finally {
     statusUpdating.value = false
+  }
+}
+
+// ── 更多操作（低频/管理/危险动作收纳，避免顶栏按钮堆积） ──────
+async function onMoreCommand(cmd) {
+  switch (cmd) {
+    case 'import':
+      importVisible.value = true
+      break
+    case 'gallery':
+      await publishGallery()
+      break
+    case 'xhs':
+      xhsNoteVisible.value = true
+      break
+    case 'share-settings':
+      openShareSettings()
+      break
+    case 'share-edit':
+      await doShareEdit()
+      break
+    case 'revoke-edit':
+      await doRevokeShareEdit()
+      break
+    case 'delete':
+      await removeTrip()
+      break
+    default:
+      break
+  }
+}
+
+// ── 问 AI：携带本行程上下文创建绑定会话（方案 1：行程感知对话） ──
+async function askAI() {
+  if (!trip.value?.id) return
+  try {
+    const s = await api.createChatSession({ context: { trip_id: trip.value.id } })
+    ElMessage.success(t('tripDetail.askAiOpened'))
+    // 跳转到聊天页并打开该会话（ChatView 按 query.session 打开）
+    router.push({ name: 'chat', query: { session: s.id } })
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
+
+// ── 每日站点操作（上移/下移/删除收进更多，仅编辑常驻） ──────
+function onStopCommand(day, stop, idx, cmd) {
+  switch (cmd) {
+    case 'up': moveStop(day, stop, -1); break
+    case 'down': moveStop(day, stop, 1); break
+    case 'delete': removeStop(day, stop); break
+    default: break
+  }
+}
+function onDayCommand(day, cmd) {
+  if (cmd === 'delete') removeDay(day)
+}
+
+// ── 导出 split（主按钮 PDF，其余收进下拉） ─────────────────
+async function doExportCommand(cmd) {
+  switch (cmd) {
+    case 'image': await doExportImage(); break
+    case 'json': await doExportJson(); break
+    case 'print': doPrint(); break
+    default: break
   }
 }
 
@@ -269,41 +338,37 @@ onBeforeUnmount(() => {
         >
           <el-icon style="margin-right: 4px"><StarFilled v-if="isFavorite" /><Star v-else /></el-icon>{{ isFavorite ? $t('tripDetail.favorited') : $t('tripDetail.favorite') }}
         </el-button>
-        <el-button type="success" plain :loading="sharing" @click="doShare">
+        <el-button @click="openEditTrip">{{ $t('tripDetail.editBasic') }}</el-button>
+        <el-button type="primary" plain :loading="sharing" @click="askAI">
+          <el-icon style="margin-right: 4px"><ChatDotRound /></el-icon>{{ $t('tripDetail.askAi') }}
+        </el-button>
+        <el-button type="primary" :loading="sharing" @click="doShare">
           <el-icon style="margin-right: 4px"><Share /></el-icon>{{ $t('tripDetail.shareTrip') }}
         </el-button>
-        <el-button plain :loading="publishingGallery" @click="publishGallery">
-          <el-icon style="margin-right: 4px"><Star /></el-icon>{{ $t('tripDetail.galleryPublish') }}
-        </el-button>
-        <el-button type="primary" plain @click="importVisible = true">
-          <el-icon style="margin-right: 4px"><Upload /></el-icon>{{ $t('tripDetail.importContent') }}
-        </el-button>
-        <el-button type="danger" plain @click="xhsNoteVisible = true">
-          <el-icon style="margin-right: 4px"><Promotion /></el-icon>{{ $t('tripDetail.shareToXhs') }}
-        </el-button>
-        <el-button plain @click="openShareSettings">
-          <el-icon style="margin-right: 4px"><Setting /></el-icon>{{ $t('tripDetail.shareSettings') }}
-        </el-button>
-        <el-button
-          v-if="!trip?.edit_token"
-          type="warning"
-          plain
-          :loading="editSharing"
-          @click="doShareEdit"
-        >
-          <el-icon style="margin-right: 4px"><EditPen /></el-icon>{{ $t('tripDetail.openEdit') }}
-        </el-button>
-        <el-button
-          v-else
-          type="warning"
-          plain
-          :loading="editRevoking"
-          @click="doRevokeShareEdit"
-        >
-          <el-icon style="margin-right: 4px"><Lock /></el-icon>{{ $t('tripDetail.revokeEdit') }}
-        </el-button>
-        <el-button @click="openEditTrip">{{ $t('tripDetail.editBasic') }}</el-button>
-        <el-button type="danger" plain @click="removeTrip">{{ $t('tripDetail.deleteTrip') }}</el-button>
+        <el-dropdown trigger="click" @command="onMoreCommand">
+          <el-button plain>
+            <el-icon style="margin-right: 4px"><MoreFilled /></el-icon>{{ $t('tripDetail.more') }}
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="import" :icon="Upload">{{ $t('tripDetail.importContent') }}</el-dropdown-item>
+              <el-dropdown-item command="gallery" :icon="Star">{{ $t('tripDetail.galleryPublish') }}</el-dropdown-item>
+              <el-dropdown-item command="xhs" :icon="Promotion">{{ $t('tripDetail.shareToXhs') }}</el-dropdown-item>
+              <el-dropdown-item command="share-settings" :icon="Setting" divided>{{ $t('tripDetail.shareSettings') }}</el-dropdown-item>
+              <el-dropdown-item
+                v-if="!trip?.edit_token"
+                command="share-edit"
+                :icon="EditPen"
+              >{{ $t('tripDetail.openEdit') }}</el-dropdown-item>
+              <el-dropdown-item
+                v-else
+                command="revoke-edit"
+                :icon="Lock"
+              >{{ $t('tripDetail.revokeEdit') }}</el-dropdown-item>
+              <el-dropdown-item command="delete" :icon="Delete" divided class="detail-dropdown-danger">{{ $t('tripDetail.deleteTrip') }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </div>
 
@@ -629,7 +694,16 @@ onBeforeUnmount(() => {
             </div>
             <div class="day-actions">
               <el-button size="small" type="primary" plain @click="openAddStop(day.id)">+ {{ $t('tripDetail.addStop') }}</el-button>
-              <el-button size="small" type="danger" plain @click="removeDay(day)">{{ $t('tripDetail.removeDay') }}</el-button>
+              <el-dropdown trigger="click" @command="(cmd) => onDayCommand(day, cmd)">
+                <el-button size="small" plain circle aria-label="Day actions">
+                  <el-icon><MoreFilled /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="delete" :icon="Delete" class="detail-dropdown-danger">{{ $t('tripDetail.removeDay') }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
           </div>
 
@@ -653,10 +727,19 @@ onBeforeUnmount(() => {
                 </div>
                 <div v-if="stop.description" class="stop-desc">{{ stop.description }}</div>
                 <div class="stop-actions">
-                  <el-button link size="small" @click="moveStop(day, stop, -1)" :disabled="idx === 0">{{ $t('tripDetail.moveUp') }}</el-button>
-                  <el-button link size="small" @click="moveStop(day, stop, 1)" :disabled="idx === day.stops.length - 1">{{ $t('tripDetail.moveDown') }}</el-button>
                   <el-button link type="primary" @click="openEditStop(day, stop)">{{ $t('tripDetail.editStop') }}</el-button>
-                  <el-button link type="danger" @click="removeStop(day, stop)">{{ $t('tripDetail.deleteStop') }}</el-button>
+                  <el-dropdown trigger="click" @command="(cmd) => onStopCommand(day, stop, idx, cmd)">
+                    <el-button link circle aria-label="Stop actions">
+                      <el-icon><MoreFilled /></el-icon>
+                    </el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item command="up" :icon="Top" :disabled="idx === 0">{{ $t('tripDetail.moveUp') }}</el-dropdown-item>
+                        <el-dropdown-item command="down" :icon="Bottom" :disabled="idx === day.stops.length - 1">{{ $t('tripDetail.moveDown') }}</el-dropdown-item>
+                        <el-dropdown-item command="delete" :icon="Delete" divided class="detail-dropdown-danger">{{ $t('tripDetail.deleteStop') }}</el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
                 </div>
               </div>
             </div>
@@ -669,18 +752,16 @@ onBeforeUnmount(() => {
       <div class="bottom-bar">
         <el-button @click="openAddDay"><el-icon style="margin-right: 4px"><Plus /></el-icon>{{ $t('tripDetail.addDay') }}</el-button>
         <el-button @click="genDaysVisible = true"><el-icon style="margin-right: 4px"><Calendar /></el-icon>{{ $t('tripDetail.genDays') }}</el-button>
-        <el-button type="success" plain :loading="exporting" @click="doExportImage">
-          <el-icon style="margin-right: 4px"><Picture /></el-icon>{{ $t('tripDetail.exportImage') }}
-        </el-button>
-        <el-button type="primary" plain :loading="exporting" @click="doExportPdf">
+        <el-dropdown split-button type="primary" :loading="exporting" @click="doExportPdf" @command="doExportCommand">
           <el-icon style="margin-right: 4px"><Document /></el-icon>{{ $t('tripDetail.exportPdf') }}
-        </el-button>
-        <el-button type="warning" plain :loading="exporting" @click="doExportJson">
-          <el-icon style="margin-right: 4px"><Download /></el-icon>{{ $t('tripDetail.exportJson') }}
-        </el-button>
-        <el-button plain @click="doPrint">
-          <el-icon style="margin-right: 4px"><Printer /></el-icon>{{ $t('tripDetail.exportPrint') }}
-        </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="image" :icon="Picture">{{ $t('tripDetail.exportImage') }}</el-dropdown-item>
+              <el-dropdown-item command="json" :icon="Download">{{ $t('tripDetail.exportJson') }}</el-dropdown-item>
+              <el-dropdown-item command="print" :icon="Printer">{{ $t('tripDetail.exportPrint') }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </template>
 
@@ -1189,9 +1270,11 @@ onBeforeUnmount(() => {
   .stop-body { padding: 12px 14px; }
   .stop-actions { flex-wrap: wrap; }
   .stop-actions :deep(.el-button) { min-height: 40px; }
-  /* 底部操作：2 列网格 + 44px 触控目标 */
+  /* 底部操作：2 列网格 + 44px 触控目标；导出 split 占整行 */
   .bottom-bar { gap: 8px; }
-  .bottom-bar :deep(.el-button) { flex: 1 1 calc(50% - 4px); margin-left: 0; min-height: 44px; }
+  .bottom-bar > :deep(.el-button) { flex: 1 1 calc(50% - 4px); margin-left: 0; min-height: 44px; }
+  .bottom-bar > :deep(.el-dropdown) { flex: 1 1 100%; }
+  .bottom-bar > :deep(.el-dropdown) :deep(.el-button-group) { width: 100%; }
   /* 编辑对话框：经纬度输入纵向（对话框已由全局断点收窄） */
   .latlng { flex-direction: column; }
 }

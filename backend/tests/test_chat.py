@@ -76,10 +76,21 @@ async def test_create_session_with_context_and_title(client, auth_user, mock_loo
         json={"title": "杭州攻略", "context": {"destination": "杭州", "trip_id": "t1"}},
         headers=headers,
     )
+    # 绑定行程校验：t1 非当前用户行程 → 403（设计契约：不静默解绑）
+    assert resp.status_code == 403, resp.text
+    data = resp.json()
+    assert data["error"]["code"] == "chat_bind_trip_forbidden"
+
+    # 不带 trip_id 的普通会话仍可创建
+    resp = await client.post(
+        "/api/v1/chat/sessions",
+        json={"title": "杭州攻略", "context": {"destination": "杭州"}},
+        headers=headers,
+    )
     assert resp.status_code == 201, resp.text
     data = resp.json()
     assert data["title"] == "杭州攻略"
-    assert data["context"] == {"destination": "杭州", "trip_id": "t1"}
+    assert data["context"] == {"destination": "杭州"}
 
 
 async def test_session_owner_isolation(client, auth_user):

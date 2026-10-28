@@ -129,7 +129,7 @@ async def test_send_message_with_tool_call(db_session, mock_llm):
         parameters=None,
     )
     original = chat_service._chat_tools
-    chat_service._chat_tools = lambda: [fake_tool]  # type: ignore[assignment]
+    chat_service._chat_tools = lambda **kwargs: [fake_tool]  # type: ignore[assignment]
     try:
         result = await chat_service.send_message(db_session, session, "杭州有什么好玩的", broadcast=False)
     finally:
@@ -196,7 +196,7 @@ async def test_tool_failure_error_persisted(db_session, mock_llm):
 
     fake_tool = AgentTool(name="query_weather", description="天气", execute=_boom, parameters=None)
     original = chat_service._chat_tools
-    chat_service._chat_tools = lambda: [fake_tool]  # type: ignore[assignment]
+    chat_service._chat_tools = lambda **kwargs: [fake_tool]  # type: ignore[assignment]
     try:
         session = await chat_service.create_session(db_session, "user-1", title="工具错误")
         result = await chat_service.send_message(db_session, session, "杭州天气", broadcast=False)

@@ -59,6 +59,35 @@
                 </div>
               </template>
 
+              <!-- 行程修改预览卡片（edit_trip 两阶段 HITL） -->
+              <template v-else-if="m.role === 'tool' && isEditPreview(m)">
+                <div class="edit-preview-card">
+                  <div class="edit-preview-head">
+                    <el-icon><Tools /></el-icon>
+                    <span>{{ $t('chat.editPreviewTitle') }}</span>
+                  </div>
+                  <ul class="edit-preview-actions">
+                    <li v-for="(a, ai) in editPreviewActions(m)" :key="ai">
+                      <span class="op-badge" :class="a.op">{{ a.op_label }}</span>
+                      <span class="target">{{ a.target_name }}</span>
+                      <span v-if="a.day_number" class="day">D{{ a.day_number }}</span>
+                      <span v-if="a.fields && a.fields.name" class="field">→ {{ a.fields.name }}</span>
+                    </li>
+                  </ul>
+                  <div v-if="editPreviewBudget(m)" class="edit-preview-budget">
+                    {{ $t('chat.editPreviewBudget') }}：¥{{ editPreviewBudget(m) }}
+                  </div>
+                  <div class="edit-preview-btns">
+                    <el-button size="small" type="primary" :loading="isPending" @click="confirmEdit(m)">
+                      {{ $t('chat.confirmEdit') }}
+                    </el-button>
+                    <el-button size="small" :loading="isPending" @click="cancelEdit(m)">
+                      {{ $t('chat.cancelEdit') }}
+                    </el-button>
+                  </div>
+                </div>
+              </template>
+
               <!-- 工具调用（折叠展示） -->
               <template v-else-if="m.role === 'tool'">
                 <div class="tool-call">
@@ -103,6 +132,7 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChatDotRound, Delete, Plus, Tools } from '@element-plus/icons-vue'
@@ -116,6 +146,8 @@ import {
 } from '@/api'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 
 const sessions = ref([])
 const activeSessionId = ref(null)
@@ -130,6 +162,13 @@ let wsClose = null
 
 onMounted(async () => {
   await loadSessions()
+  // 从详情页「问 AI」跳转过来：自动打开 query.session 指向的会话
+  const sessionId = route.query.session
+  if (sessionId) {
+    await openSession(String(sessionId))
+    // 清掉 query，避免手动切会话后刷新页面又跳回旧会话
+    await router.replace({ query: {} })
+  }
 })
 
 onBeforeUnmount(() => {
@@ -232,6 +271,62 @@ function handleWsEvent(msg) {
     streamingText.value = msg.is_error ? t('chat.toolError') : t('chat.toolDone')
     scrollToBottom()
   } else if (msg.type === 'assistant_done') {
+    streamingText.value = ''
+    scrollToBottom()
+  }
+}
+
+// ── 行程修改预览卡片（edit_trip 两阶段 HITL） ──────────────
+function parseEditPreview(m) {
+  if (!m || m.role !== 'tool' || m.tool_call?.name !== 'edit_trip') return null
+  if (!m.content || m.error) return null
+  try {
+    const data = JSON.parse(m.content)
+    return data && data.status === 'preview' ? data : null
+  } catch {
+    return null
+  }
+}
+function isEditPreview(m) {
+  return parseEditPreview(m) !== null
+}
+function editPreviewActions(m) {
+  const data = parseEditPreview(m)
+  return (data && data.changed) || []
+}
+function editPreviewBudget(m) {
+  const data = parseEditPreview(m)
+  const total = data?.budget_delta?.total_estimated
+  return typeof total === 'number' ? total.toFixed(0) : ''
+}
+async function confirmEdit(m) {
+  if (!activeSessionId.value || isPending.value) return
+  isPending.value = true
+  streamingText.value = ''
+  try {
+    await sendChatMessage(activeSessionId.value, '确认应用上述行程修改')
+    const data = await listChatMessages(activeSessionId.value)
+    messages.value = data.items || []
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    isPending.value = false
+    streamingText.value = ''
+    scrollToBottom()
+  }
+}
+async function cancelEdit(m) {
+  if (!activeSessionId.value || isPending.value) return
+  isPending.value = true
+  streamingText.value = ''
+  try {
+    await sendChatMessage(activeSessionId.value, '取消刚才的行程修改建议')
+    const data = await listChatMessages(activeSessionId.value)
+    messages.value = data.items || []
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    isPending.value = false
     streamingText.value = ''
     scrollToBottom()
   }
@@ -399,4 +494,64 @@ function formatTime(iso) {
   align-items: flex-end;
 }
 .chat-input .el-textarea { flex: 1; }
+
+/* 行程修改预览卡片（edit_trip 两阶段 HITL） */
+.edit-preview-card {
+  max-width: 75%;
+  background: var(--el-fill-color-lighter);
+  border: 1px solid var(--el-border-color);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.edit-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--el-text-color-primary);
+}
+.edit-preview-actions {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+.edit-preview-actions li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.op-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  flex-shrink: 0;
+}
+.op-badge.remove {
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
+}
+.op-badge.add {
+  background: var(--el-color-success-light-9);
+  color: var(--el-color-success);
+}
+.target { font-weight: 500; }
+.day { color: var(--el-text-color-secondary); font-size: 12px; }
+.field { color: var(--el-color-primary); }
+.edit-preview-budget {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 10px;
+}
+.edit-preview-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
 </style>

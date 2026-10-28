@@ -93,6 +93,9 @@ async def test_engine():
 async def db_session(test_engine) -> AsyncGenerator[AsyncSession]:
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as session:
+        # 预览轮（trip_edit_tool）要求 db 有 session_factory 开独立事务；
+        # 测试 fixture 的裸 session 也补上，指向测试库 factory。
+        session.session_factory = factory  # type: ignore[attr-defined]
         yield session
 
 

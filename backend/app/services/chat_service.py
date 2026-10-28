@@ -21,6 +21,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.runtime import AgentEvent, AgentLoop, AgentTool
+from app.core.exceptions import PermissionDeniedError
 from app.core.logging import get_logger
 from app.models import ChatMessage, ChatSession
 from app.services.ws_broadcast import hub
@@ -52,9 +53,15 @@ def _as_agent_tool(lc_tool: Any) -> AgentTool:
     )
 
 
-def _chat_tools() -> list[AgentTool]:
-    """对话助手可用工具：现有 6 个采集/查询工具（复用真实数据源 + 熔断降级）。"""
+def _chat_tools(*, db: AsyncSession, user_id: str | None, trip_id: str | None = None) -> list[AgentTool]:
+    """对话助手可用工具。
+
+    外部数据源工具（现有 6 个：复用真实数据源 + 熔断降级）+
+    行程感知工具（方案 1：get_my_trips / get_trip_overview，owner 隔离）。
+    trip_id 为会话绑定行程（context_json.trip_id），闭包注入行程工具。
+    """
     from app.agent import agents
+    from app.agent.trip_tools import make_trip_tools
 
     names = [
         "search_attractions",
@@ -64,31 +71,66 @@ def _chat_tools() -> list[AgentTool]:
         "search_transport",
         "collect_discount_rules",
     ]
-    tools = []
+    tools: list[AgentTool] = []
     for name in names:
         lc_tool = agents.TOOL_MAP.get(name) or agents.DISCOUNT_TOOLS[0] if name == "collect_discount_rules" else agents.TOOL_MAP.get(name)
         if lc_tool is not None:
             tools.append(_as_agent_tool(lc_tool))
+
+    # 行程感知工具：闭包注入当前用户 + 会话绑定行程
+    tools.extend(make_trip_tools(db=db, owner=user_id, trip_id=trip_id))
+
+    # 行程修改工具（方案 2：写操作，两阶段 HITL，retryable=False）
+    from app.agent.trip_edit_tool import make_edit_tool
+
+    tools.append(make_edit_tool(db=db, owner=user_id, trip_id=trip_id))
     return tools
 
 
 _SYSTEM_PROMPT = """你是一个智能旅行助手。你可以使用工具查询真实的景点、酒店、餐厅、天气、交通与折扣信息，
+也可以读取用户自己的行程数据（get_my_trips / get_trip_overview），还可以修改行程（edit_trip，两阶段确认），
 然后基于工具返回的结构化数据回答用户问题。
 
 规则：
 1. 需要城市/目的地信息时先调用对应工具获取真实数据，不要凭记忆编造景点/酒店/价格。
-2. 工具返回的数据是 JSON；回答时用自然语言总结关键信息（名称、位置、大概花费、亮点），
+2. **涉及用户自己的行程（如『我的行程第2天住哪』『我的杭州计划』）必须先调用行程工具**
+   （get_my_trips 定位行程，get_trip_overview 读取详情），再基于工具返回的真实行程数据回答；
+   **行程数据优先于外部搜索**，两者冲突时以行程工具返回的为准，并说明差异。
+3. 行程工具返回错误（如 trip_not_found / 无权限）时，如实告知用户「行程不存在或无权限」，
+   不要编造行程内容。
+4. **修改行程必须走 edit_trip 两阶段确认**：先把修改意图转成 diff 动作调用 edit_trip
+   （confirm=false 预览，不落库），把返回的预览用自然语言转述给用户（改了什么/在哪天/预算变化），
+   明确询问是否确认；用户确认后，再以 confirm=true + 预览返回的 expected_updated_at 调用 edit_trip 应用。
+   预览被拒（DrivingGate/站点名对不上）时，如实说明原因，缩小范围后重试（最多 2 次），仍未通过则告知用户。
+5. 工具返回的数据是 JSON；回答时用自然语言总结关键信息（名称、位置、大概花费、亮点），
    不要原样倾倒 JSON。
-3. 如果工具不可用（返回错误），明确告诉用户当前无法获取该信息，不要编造。
-4. 涉及「推荐理由/行程建议」时，基于工具结果给出合理建议；不确定的标注「建议以实际为准」。
-5. 回答语言与用户保持一致（中文/英文）。"""
+6. 如果工具不可用（返回错误），明确告诉用户当前无法获取该信息，不要编造。
+7. 涉及「推荐理由/行程建议」时，基于工具结果给出合理建议；不确定的标注「建议以实际为准」。
+8. 回答语言与用户保持一致（中文/英文）。"""
 
 
 # ═══════════════════════════════════════════════════════════
 #  会话 CRUD
 # ═══════════════════════════════════════════════════════════
 async def create_session(db: AsyncSession, user_id: str, *, title: str | None = None, context: dict | None = None) -> ChatSession:
-    """新建会话（属主 = user_id）。"""
+    """新建会话（属主 = user_id）。
+
+    context 若带 ``trip_id``：校验该行程属于当前用户（owner 隔离）。
+    不属于 → 抛 ``PermissionDeniedError``（403），不静默解绑。
+    """
+    bound_trip_id = (context or {}).get("trip_id")
+    if bound_trip_id:
+        from app.services import trip_service
+
+        try:
+            await trip_service._load_trip(db, bound_trip_id, owner=user_id)
+        except Exception as exc:  # noqa: BLE001 — 行程不存在或无权限，统一 403
+            raise PermissionDeniedError(
+                "绑定行程失败：行程不存在或无权限访问",
+                code="chat_bind_trip_forbidden",
+                detail={"trip_id": bound_trip_id},
+            ) from exc
+
     session = ChatSession(
         user_id=user_id,
         title=(title or "新对话"),
@@ -213,9 +255,11 @@ async def send_message(
 
     # 2) 组装 AgentLoop（系统提示 + 工具 + 上下文 = 历史消息 + 新用户消息）
     history = await _last_messages(db, session_id)
+    # 会话绑定行程（context_json.trip_id）注入行程工具；owner 隔离由工具内 owner 校验
+    bound_trip_id = (session.context_json or {}).get("trip_id")
     loop = AgentLoop(
         system_prompt=_SYSTEM_PROMPT,
-        tools=_chat_tools(),
+        tools=_chat_tools(db=db, user_id=session.user_id, trip_id=bound_trip_id),
         provider=provider,
         max_iterations=8,  # 对话型护栏：最多 8 轮工具/重生成
         max_corrections=2,
