@@ -23,9 +23,9 @@
     </div>
     <div v-else class="journey-empty">{{ t('journey.noStops') }}</div>
 
-    <!-- 费用汇总 -->
-    <div class="journey-stats" v-if="expenseTotal > 0 || bookingCount > 0">
-      <div class="stat-item">
+    <!-- 费用汇总（owner 页；分享页 hideExpense 时不显示财务数据） -->
+    <div class="journey-stats" v-if="!hideExpense && (expenseTotal > 0 || bookingCount > 0)">
+      <div class="stat-item" v-if="expenseTotal > 0">
         <div class="stat-value">{{ expenseTotal.toFixed(2) }}</div>
         <div class="stat-label">{{ t('journey.expenseTotal') }}</div>
       </div>
@@ -33,7 +33,7 @@
         <div class="stat-value">{{ perPerson.toFixed(2) }}</div>
         <div class="stat-label">{{ t('journey.perPerson') }}</div>
       </div>
-      <div class="stat-item">
+      <div class="stat-item" v-if="bookingCount > 0">
         <div class="stat-value">{{ bookingCount }}</div>
         <div class="stat-label">{{ t('journey.bookingCount') }}</div>
       </div>
@@ -66,10 +66,14 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getJourney } from '../api'
+import { getJourney, getSharedJourney } from '../api'
 
 const props = defineProps({
-  tripId: { type: String, required: true },
+  tripId: { type: String, required: false, default: null },
+  // 分享模式：传 share token（免登录只读，脱敏投影）
+  shareToken: { type: String, required: false, default: null },
+  // 隐藏财务区块（分享页脱敏；owner 页正常显示费用/人均）
+  hideExpense: { type: Boolean, default: false },
 })
 
 const { t } = useI18n()
@@ -106,9 +110,14 @@ function dayTagType(s) {
 
 async function load() {
   try {
-    journey.value = await getJourney(props.tripId)
+    if (props.shareToken) {
+      // 分享模式：免登录脱敏投影
+      journey.value = await getSharedJourney(props.shareToken)
+    } else if (props.tripId) {
+      journey.value = await getJourney(props.tripId)
+    }
   } catch (e) {
-    // 静默：追踪是可选的，失败不影响详情页
+    // 静默：追踪是可选的，失败不影响详情页/分享页
   }
 }
 

@@ -38,7 +38,17 @@ BADGE_LABELS: dict[str, str] = {
     "hotel_stayer": "酒店住客",
     "early_bird": "规划狂魔",
     "night_owl": "夜猫子",
+    "foodie": "饕客",
+    "all_days_done": "全程制霸",
+    "group_voter": "群众参与",
 }
+
+# 徽章唯一 key 全集（顺序即展示顺序：经典 7 + 新增 3）
+BADGE_KEYS: list[str] = [
+    "first_checkin", "full_day", "money_saver",
+    "train_goer", "hotel_stayer", "early_bird", "night_owl",
+    "foodie", "all_days_done", "group_voter",
+]
 
 
 def _badge(key: str, earned_at: datetime | None = None) -> dict[str, Any]:
@@ -148,6 +158,29 @@ def _rule_night_owl(events: list[TripEvent]) -> bool:
     return False
 
 
+def _rule_foodie(trip: Trip) -> bool:
+    """美食家：已打卡的美食站点数 ≥ 2（吃过两顿算探店）。"""
+    return sum(1 for d in trip.days or [] for s in d.stops or []
+               if s.stop_type == "food" and s.checked) >= 2
+
+
+def _rule_all_days_done(trip: Trip, events: list[TripEvent]) -> bool:
+    """全程制霸：所有天都完成（每天非酒店站点全部打卡；无站点的天跳过）。"""
+    skipped = _skip_days(events)
+    for day in trip.days or []:
+        if day.day_number in skipped:
+            continue
+        stops = [s for s in day.stops or [] if s.stop_type != "hotel"]
+        if stops and not all(s.checked for s in stops):
+            return False
+    return True
+
+
+def _rule_group_voter(events: list[TripEvent]) -> bool:
+    """有 ≥1 条投票/评论事件（同伴参与）。"""
+    return any(e.event_type in ("vote", "comment") for e in events)
+
+
 # ── 判定 + 落库 ────────────────────────────────────────────────
 async def _determine_badges(
     db: AsyncSession,
@@ -170,6 +203,12 @@ async def _determine_badges(
         keys.append("early_bird")
     if _rule_night_owl(events):
         keys.append("night_owl")
+    if _rule_foodie(trip):
+        keys.append("foodie")
+    if _rule_all_days_done(trip, events):
+        keys.append("all_days_done")
+    if _rule_group_voter(events):
+        keys.append("group_voter")
     return keys
 
 
@@ -265,5 +304,7 @@ def passport_out(passport: TripPassport) -> dict[str, Any]:
         "phase": passport.phase,
         "badges": badges,
         "badge_count": len(badges),
+        # 全量徽章 key 全集（顺序即展示顺序；前端据此渲染未获得徽章的锁定态）
+        "badge_keys": BADGE_KEYS,
         "last_progress_at": passport.last_progress_at.isoformat() if passport.last_progress_at else None,
     }

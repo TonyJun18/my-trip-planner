@@ -115,6 +115,36 @@ class TestBadgeRules:
         assert _rule_train_goer([b]) is True
         assert _rule_hotel_stayer([b]) is False
 
+    async def test_foodie_and_all_days_done(self):
+        """新增徽章：美食家（≥2 个已打卡美食）+ 全程制霸（所有天完成）。"""
+        from app.services.passport_service import _rule_all_days_done, _rule_foodie
+
+        trip = _make_trip(num_days=1)
+        trip.days[0].stops.append(Stop(name="楼外楼", stop_type="food", order_index=3, checked=True))
+        trip.days[0].stops.append(Stop(name="外婆家", stop_type="food", order_index=4, checked=True))
+        for s in trip.days[0].stops:
+            s.checked = True
+        events = [_ev("check", stop_id="s1", name="A", day_number=1)]
+        assert _rule_foodie(trip) is True
+        assert _rule_all_days_done(trip, events) is True
+
+    async def test_group_voter(self):
+        """群众参与：有 vote/comment 事件。"""
+        from app.services.passport_service import _rule_group_voter
+
+        assert _rule_group_voter([_ev("vote", stop_id="s1", value="up")]) is True
+        assert _rule_group_voter([_ev("check", stop_id="s1")]) is False
+
+    async def test_passport_out_has_badge_keys(self):
+        """passport_out 返回全量 badge_keys（前端锁定态渲染用）。"""
+        from app.services.passport_service import passport_out
+
+        trip = _make_trip()
+        p = TripPassport(trip_id=trip.id, phase="upcoming", badges=[])
+        out = passport_out(p)
+        assert "badge_keys" in out
+        assert "foodie" in out["badge_keys"]
+
     def test_early_bird_before_start(self):
         from app.services.passport_service import _rule_early_bird
 

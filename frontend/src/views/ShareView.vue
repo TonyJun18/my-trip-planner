@@ -6,6 +6,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import * as api from '@/api'
 import { readCachedJson, isOnline } from '@/utils/pwa'
 import TripMap from '@/components/TripMap.vue'
+import JourneyTimeline from '@/components/JourneyTimeline.vue'
 
 const route = useRoute()
 const { t } = useI18n()
@@ -544,6 +545,13 @@ function watchCollabFeed() {
                      @click="doDelayLiveTrip">{{ $t('share.liveDelay') }}</el-button>
         </div>
       </div>
+
+      <!-- 旅程追踪（分享页免登录只读 · 脱敏：不含费用/凭证） -->
+      <JourneyTimeline
+        v-if="trip"
+        :share-token="route.params.token"
+        :hide-expense="true"
+      />
 
       <!-- 每日行程 -->
       <div class="day-section" v-for="day in trip.days" :key="day.id">

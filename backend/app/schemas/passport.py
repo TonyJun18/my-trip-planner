@@ -19,4 +19,5 @@ class PassportOut(BaseModel):
     phase: str = "upcoming"
     badges: list[BadgeOut] = Field(default_factory=list)
     badge_count: int = 0
+    badge_keys: list[str] = Field(default_factory=list)
     last_progress_at: str | None = None

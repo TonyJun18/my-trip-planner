@@ -848,6 +848,18 @@ export default {
     panelTitle: '旅程护照',
     empty: '还没有徽章～打卡、记账、完成一天、订票订酒店都能点亮徽章。',
     phase: { upcoming: '未出发', live: '进行中', finished: '已结束' },
+    badges: {
+      first_checkin: '第一次打卡',
+      full_day: '完满一天',
+      money_saver: '省钱达人',
+      train_goer: '高铁行者',
+      hotel_stayer: '酒店住客',
+      early_bird: '规划狂魔',
+      night_owl: '夜猫子',
+      foodie: '美食家',
+      all_days_done: '全程制霸',
+      group_voter: '群众参与',
+    },
   },
   // ── 旅程故事（晒图高光卡） ──────────────────────────
   story: {
@@ -862,5 +874,13 @@ export default {
     copied: '已复制，去粘贴发布吧',
     copyFallback: '复制失败，请手动选择复制',
     source: { llm: 'AI 生成', template: '模板生成' },
+  },
+  // ── 旅程故事·长图海报卡 ──────────────────────────────
+  poster: {
+    days: '天数',
+    stops: '站点',
+    checked: '打卡',
+    expense: '花费(元)',
+    hint: '长图卡片：浏览器直接截图保存即可分享到朋友圈。',
   },
 }
