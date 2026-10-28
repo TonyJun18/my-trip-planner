@@ -293,6 +293,11 @@ onBeforeUnmount(() => {
             <div class="gallery-emoji">🗺️</div>
             <div class="gallery-name">{{ item.title }}</div>
             <div class="gallery-meta">{{ item.destination }} · {{ item.days }} 天{{ item.budget ? ' · ¥' + item.budget : '' }}</div>
+            <div v-if="item.rating_count > 0" class="gallery-rating">
+              <span class="stars">{{ '★'.repeat(Math.round(item.rating_avg || 0)) }}<span class="stars-empty">{{ '★'.repeat(5 - Math.round(item.rating_avg || 0)) }}</span></span>
+              <span class="rating-num">{{ item.rating_avg ? item.rating_avg.toFixed(1) : '—' }}（{{ item.rating_count }} 人评）</span>
+              <span v-if="item.visited_count > 0" class="visited-num">{{ item.visited_count }} 人去过</span>
+            </div>
             <div v-if="item.blurb" class="gallery-blurb">{{ item.blurb }}</div>
             <div class="gallery-cta">以此为基础创建 →</div>
           </article>
@@ -508,6 +513,11 @@ a.btn-ghost { text-decoration: none; }
 .gallery-name { margin-top: 6px; font-size: 15px; font-weight: 650; color: var(--ink); }
 .gallery-meta { margin-top: 4px; font-size: 12px; color: var(--muted); }
 .gallery-blurb { margin-top: 6px; font-size: 12.5px; color: var(--ink-2); }
+.gallery-rating { margin-top: 6px; font-size: 12px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.gallery-rating .stars { color: #f5a623; letter-spacing: 1px; }
+.gallery-rating .stars-empty { color: #ddd; }
+.gallery-rating .rating-num { color: var(--muted); }
+.gallery-rating .visited-num { color: var(--muted); }
 .gallery-cta { margin-top: 10px; font-size: 12.5px; font-weight: 600; color: var(--brand); }
 
 /* ── 最终 CTA ── */
