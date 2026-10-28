@@ -248,6 +248,32 @@ class TripFavorite(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class TripRating(Base):
+    """行程评分 / 信任信号（task-trip-rating-signal：画廊与灵感缺「多少人用过、几分」）。
+
+    - 登录用户对行程评分（1-5 星）+ 「我去过」标记（visited=True）；
+      同 user + trip 唯一（可改分 / 可翻转 visited，幂等）。
+    - 只读聚合（count / avg / visited_count）供画廊卡片透出热度；
+      评分本身不改变行程可见性——与 TripFavorite 同语义（存在即可见）。
+    - 信任口径：avg 为真实用户评分均值，绝不由系统编造/加权（诚实标注）。
+    - 归属：owner 与被评分行程无写扩散（任何登录用户可评公开可见行程，
+      与收藏一致）；仅评分者可改/删自己的评分。
+    """
+
+    __tablename__ = "trip_ratings"
+    __table_args__ = (UniqueConstraint("user_id", "trip_id", name="uq_trip_ratings_user_trip"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)  # 1-5
+    visited: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class TripBooking(Base):
     """预订条目（task-booking-outlink：行程内「可预订」建议 + 凭证回填）。
 
