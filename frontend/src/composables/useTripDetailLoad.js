@@ -14,7 +14,7 @@ import { readCachedJson } from '@/utils/pwa'
  * 收藏状态不在此组合（属于 useTripShareActions）；load() 通过
  * ``setCheckFavorite(fn)`` 注入收藏检查（主文件装配层接线）。
  */
-export function useTripDetailLoad() {
+export function useTripDetailLoad(opts = {}) {
   const route = useRoute()
   const { t } = useI18n()
 
@@ -63,10 +63,18 @@ export function useTripDetailLoad() {
     liveOp.value = 'check'
     try {
       live.value = await api.checkLiveStop(trip.value.id, stop.id, checked)
+      _refreshJourney()
     } catch {
       // 拦截器已 toast；保持原状态等待用户重试
     } finally {
       liveOp.value = ''
+    }
+  }
+
+  // 行中操作后刷新旅程追踪投影（若调用方注入了 onJourneyChange）
+  function _refreshJourney() {
+    if (typeof opts.onJourneyChange === 'function') {
+      opts.onJourneyChange()
     }
   }
 
@@ -82,6 +90,7 @@ export function useTripDetailLoad() {
     liveOp.value = 'skip'
     try {
       live.value = await api.skipLiveStop(trip.value.id, stop.id)
+      _refreshJourney()
       await load() // 同步主视图（站点被删）
     } catch {
     } finally {
@@ -101,6 +110,7 @@ export function useTripDetailLoad() {
     liveOp.value = 'delay'
     try {
       live.value = await api.delayLiveTrip(trip.value.id)
+      _refreshJourney()
       await load()
       ElMessage.success(t('tripDetail.liveDelayed'))
     } catch {

@@ -87,6 +87,10 @@ class PlanSchema(BaseModel):
     checkin: dict | None = None
     # 定稿后 servicing 产物：选定站点折扣/优惠比价（Tavily，无来源硬闸门丢弃）
     discounts: dict | None = None
+    # 可预订建议（BookingStep 编排层代码回填，LLM 不生成；未接/失败时为空数组）
+    # 字段语义见 schemas.booking.BookingSuggestedOut：reference=plan.generated 表示
+    # 「建议跳转」，绝不是「已订」；用户回填后由 trips_bookings API 落 TripBooking
+    bookings: list[dict] = Field(default_factory=list, max_length=20)
     # 规划的请求语种快照（i18n 方案 A：前端可读、落库可追踪；由编排层代码回填）
     language: str | None = Field(default=None, max_length=32)
 
