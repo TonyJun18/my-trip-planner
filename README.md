@@ -1,12 +1,12 @@
-# 智能旅行助手（my-trip-planner）
+# 随行 — AI 旅行规划（my-trip-planner）
 
 一个把 **多 Agent 协作**做成 **生产级工程** 的智能旅行应用（FastAPI + LangGraph + Vue3）。
 不是"调一个 LLM 生成 JSON"的 demo —— 它回答了这类系统真正难的问题：
 **怎么让多个 Agent 稳定、可靠、可测试地产出结构化业务数据。**
 
 > 核心看点（技术向）：
-> - **多 Agent 单一职责编排**：3 个采集 Agent 并行（`asyncio.gather`）+ 1 个规划 Agent 只整合不调工具，
->   编排层代码补位（餐饮搜索）——不是把所有逻辑塞进一个超长 prompt
+> - **多 Agent 单一职责编排**：Collect 阶段 6 个采集 Agent 并行（`asyncio.gather`）+ Planner 只整合不调工具，
+>   编排层代码补位（餐饮搜索、预算校准）——不是把所有逻辑塞进一个超长 prompt
 > - **Evaluator-Optimizer 质检闭环**：Planner 产出后由 TravelCriticAgent（无工具质检专家）按
 >   日程/预算/地理/完整性四维评分，不过审带反馈重生成（最多 2 轮后强制定稿，质检失败自动降级放行）
 > - **对话式行程修订（AI 出 diff，代码执行）**：用户自然语言改行程 → PlanReviseAgent 生成结构化
@@ -18,106 +18,234 @@
 > - **可测试性当一等公民**：FakeLLM 测试替身让 **453 个测试**不耗 token、不依赖网络
 > - **全链路可观测**：异步规划任务 + 前端实时 T-A-O（Thought-Action-Observation）轨迹
 
+## 界面速览
+
+从一片空白，到一份可分享的完整行程，只需几分钟：
+
+| 首页 | AI 助手（规划 / 修订） | 行程详情 |
+|---|---|---|
+| 城市模板 + 示例行程，一键开始规划 | 自然语言对话：规划、细化、一句话改行程 | 预算明细 + 行程地图 + 日程编排 |
+| ![首页](img/index_1.png) | ![AI 助手](img/ai_chat.png) | ![行程详情](img/img_6.png) |
+
+| 登录 / 注册 | 我的行程 | 灵感画廊 |
+|---|---|---|
+| 邮箱/手机号 + Google 登录 | 行程管理与导入入口 | 城市模板 + 示例行程，改造即用 |
+| ![登录](img/login.png) | ![我的行程](img/img_5.png) | ![灵感画廊](img/img_4.png) |
+
+| 酒店推荐 | AI 质检 + 备选方案 | 首页亮点区 |
+|---|---|---|
+| AI 酒店专家筛选，可直接安排进日程 | 质检专家逐日评审 + 确定性 Plan B 对照 | 价值主张与三步工作流介绍 |
+| ![酒店推荐](img/detail_0.png) | ![质检报告](img/img_7.png) | ![首页亮点](img/img_3.png) |
+
+首页完整价值主张区：
+
+![它能帮你做什么](img/img_2.png)
+
+> 还有更多：一句话改行程（`AI 出 diff`）、自驾校验、打包清单、协作投票、行程事件流、小红书笔记生成。
+> 前端为桌面 Web 设计，支持中/英双语（vue-i18n 643+ 键）。
+
 ## 核心功能
 
-1. **多 Agent 智能规划**：用户输入目的地、日期、偏好，**4 个角色 Agent 协作**生成完整行程——
-   `AttractionSearchAgent`（景点搜索专家）、`WeatherQueryAgent`（天气查询专家）、
-   `HotelAgent`（酒店推荐专家）、`PlannerAgent`（行程规划专家）。
-2. **单一职责提示词**：每个搜索 Agent 只做一件事——理解偏好/需求 → 选关键词 → 调工具；
-   PlannerAgent 不调用工具，只整合团队产出，输出经 Pydantic 强校验的行程 JSON（失败自动自纠正）。
-3. **真实数据搜索**：景点/酒店/餐厅用**高德地图 POI**（`AMAP_API_KEY`），天气用**高德天气**；
-   未配置高德 key 时自动降级 Tavily Search + Nominatim / wttr.in——没有硬编码假数据。
-4. **并行编排**：三个采集 Agent 并行执行（`asyncio.gather`），快且互不阻塞；
-   编排层补充餐饮，Planner 最后统一整合，预算按真实站点费用代码校准。
-5. **异步规划任务**：规划提交后立即返回 `task_id`，前端轮询实时展示多 Agent 的 T-A-O 轨迹（含 agent 名）。
-6. **LLM 输出强校验**：所有 Agent 最终行程 JSON 都经过 Pydantic Schema 校验（字段/类型/日期/预算），失败自动让 LLM 自纠正（最多 3 次）。
-7. **行程质检（Evaluator-Optimizer）**：Planner 产出后由 `TravelCriticAgent` 从日程/预算/地理/完整性四维审查，
-   不过审把结构化 issues 反馈给 Planner 重生成，最多 `AGENT_MAX_REVIEW_ROUNDS`（默认 2）轮后强制定稿；
-   质检自身失败自动降级「通过放行」，绝不阻断主流程。
-8. **对话式行程修订（方案 B）**：`POST /trips/{id}/revise` 用一句话改行程——`PlanReviseAgent` 把用户请求解析为
-   结构化 diff（replace/add/remove/reorder），编排层代码**原子应用**（目标/类型/位置校验，任一失败整体回滚，
-   数据库事务不提交），预算由代码重算，前端详情页「让 AI 调整行程」直接对话操作。
-9. **LLM 容错**：统一重试（指数退避）+ 进程内熔断器，保护下游 LLM。
-10. **预算计算**：按站点类型（景点/餐饮/住宿）自动汇总预算明细。
-11. **行程管理**：行程 / 日程 / 站点的增删改查（CRUD）。
-12. **轻量多用户隔离**：前端自动生成用户 token 随请求头发送，行程与任务按用户隔离。
-13. **行程分享与多人协作**：`share_token` 免登录只读分享链接（含预算汇总，幂等复用）；分享页支持评论 + 每日站点 👍/👎 投票；`edit_token` 受邀编辑权与只读分享分离——受邀者免登录受限编辑（站点名称/备注/勾选/顺序），owner 可随时收回。
-14. **自驾模式校验（DrivingGate）**：同一天相邻站点单段驾车距离/时长上限（120km / 150min）与单日累计里程上限（300km）确定性校验，超限标记 critical 反馈 Planner 带问题重生成；对话式修订同样受该门约束。
-15. **手动细粒度编辑**：站点行内编辑（PATCH）+ 整日站点顺序重排（PUT，幂等），与 AI 对话式修订并存、互不覆盖。
-16. **主动提问 + 用户画像记忆**：规划请求可携带 Questions Q&A（人群/节奏/避峰/备选方案），答案并入规划上下文；跨会话用户画像（GET/PUT `/profile`）自动注入规划上下文。
-17. **Google 登录 + 多语言壳层**：Google ID Token 登录（`POST /auth/google`，前端 `VITE_GOOGLE_CLIENT_ID` 留空则隐藏按钮）；vue-i18n 9 + zh-CN/en-US + 顶栏切换器 + Element Plus locale 联动（三大业务视图文案已迁移，643+ i18n 键）。
-18. **攻略/截图/链接/邮件导入（OCR + 分享链接）**：上传小红书截图 → macOS Vision OCR → 站点候选；粘贴社交分享链接（小红书/马蜂窝/携程/大众点评等）→ 提取结构化信息（失败静默降级为链接收藏）；邮件转发导入；统一走 `note-import` 管线（敌意输入剥离、类型/价格/时长推断）。
-19. **确定性 Plan B 备选方案**：`GET /trips/{id}/plan-b` 基于规则引擎生成另一套行程（无 LLM 成本、毫秒返回），与 AI 方案对照选择。
-20. **地图拖拽修订**：`POST /trips/{id}/map-edit` 拖动地图 marker 改坐标 → 最小 diff 原子应用（复用 revise 原子内核，受 DrivingGate 约束）。
-21. **分享令牌生命周期管理**：分享/编辑令牌支持 TTL（`/share/ttl`）、吊销（`/share/revoke`）、使用审计（`/share/lifecycle`），过期令牌返回 410、吊销返回 403。
-22. **收藏灵感夹**：登录用户可将他人分享的行程收藏进自己的灵感夹（`/trips/favorites`）。
-23. **实时候车 WebSocket**：规划任务 T-A-O 轨迹流式推送（`/ws/planner/tasks/{task_id}`，断线由轮询兜底）+ 行程协作实时同步（`/ws/trips/{trip_id}/collab`，评论/投票/受邀编辑增量事件广播，免登录令牌鉴权）。
-24. **定稿后服务（servicing 阶段）**：行程定稿后可兑现的服务层产物——市内通勤视图（相邻站点公共交通/步行/驾车建议）、酒店入住办理指引（模板基座 + LLM 润色，不收集证件号）、折扣规则（确定性本地规则库，零幻觉可审计）；三个子任务相互独立，任一失败不影响其他，全程失败降级不阻断主流程。
-25. **小红书笔记生成**：`POST /trips/{id}/xhs-note` 为行程生成适配小红书发布的种草笔记（标题/正文/话题），LLM 主路径 + 规则模板兜底（`source` 标注 llm/template），发布由用户复制到小红书 App 完成，接口无自动发布副作用。
-26. **营业时间/游玩时长校验（TimeGate）**：POI 类目基准营业时段 + 建议游玩时长规则库（零外部依赖、无 LLM），排程校验「闭馆到达（<30min 缓冲）」「单日过饱和（>5 站或 >480 分钟游玩）」，产出 warning + 调整建议，注入 `plan.time_gate` 供前端质检卡展示；对话式修订后同步重算；真实营业时间以 POI 现场为准（`basis=rule_based` 诚实标注）。
-27. **体力负荷提示**：`EXERTION_BY_TYPE` 体力系数表 + 名称关键词规则库（登山/徒步/雪山/峡谷等），单日体力负荷累计超限 + 高强度站点「实际耗时可能显著上浮」提示，复用质检卡通道（`basis=rule_based`）。
-28. **动态事实校验**：行程日期 × POI 特例规则表（周一闭馆 / 每月免费日 / 节假日窗口），命中即 warning + 「出行前再次确认」诚实标注（`dynamic_facts.py`，零凭证路线）。
-29. **行程事件流 + 主动通知**：修订/打卡/跳过/顺延/评论/投票 append-only 记录到 `trip_events`，owner 与受邀者（share/edit token 免登录）可读事件流；前端未读红点 + PWA Notification（`event_service.py` + `TripEventFeed.vue`）。
-30. **多城市衔接**：`cities` 有序城市列表 → 按天数分段排程 + 段间插入交通占位站（球面距离按均速估算）+ 衔接缓冲校验 warning（`multi_city.py`）。
-31. **公开灵感画廊 + 城市模板**：owner 一键把已分享行程发布到精选（目的地/天数/预算/一句话卖点），访客「以此为基础创建」复制到自己的账号；城市模板由 23 目的地知识库规则生成深链预填（`gallery_service.py`）。
-32. **打包清单**：按行程隔离的本地打包清单（5 套预设模板 + 自定义 + 勾选进度 + 清除已完成，纯前端零凭证）。
+### 🧩 多 Agent 智能规划
+
+用户输入目的地、日期、偏好，**多位角色 Agent 协作**生成完整行程：
+- **AttractionSearchAgent**（景点搜索专家）→ **WeatherQueryAgent**（天气查询专家）→
+  **HotelAgent**（酒店推荐专家）→ **FoodAgent**（餐饮专家）→ **TransportAgent**（大交通）、**DiscountAgent**（折扣规则），
+  最后由 **PlannerAgent**（行程规划专家）统一整合。
+- **单一职责提示词**：每个搜索 Agent 只做一件事——理解偏好/需求 → 选关键词 → 调工具；
+  PlannerAgent 不调用工具，只整合团队产出，输出经 Pydantic 强校验的行程 JSON（失败自动自纠正）。
+
+![AI 助手 — 自然语言规划与修订](img/ai_chat.png)
+
+### ☀️ 真实数据搜索
+
+- 景点/酒店/餐厅用**高德地图 POI**（`AMAP_API_KEY`），天气用**高德天气**；
+  未配置高德 key 时自动降级 Tavily Search + Nominatim / wttr.in——没有硬编码假数据。
+- **并行编排**：三个采集 Agent 并行执行（`asyncio.gather`），快且互不阻塞；
+  编排层补充餐饮，Planner 最后统一整合，预算按真实站点费用代码校准。
+
+### ⚙️ 异步规划任务 + T-A-O 轨迹
+
+规划提交后立即返回 `task_id`，前端轮询/WebSocket 实时展示多 Agent 的
+Thought-Action-Observation 轨迹（含 agent 名）。
+
+### ✅ LLM 输出强校验
+
+所有 Agent 最终行程 JSON 都经过 Pydantic Schema 校验（字段/类型/日期/预算），
+失败自动让 LLM 自纠正（最多 3 次）。
+
+### 🔍 行程质检（Evaluator-Optimizer）
+
+Planner 产出后由 `TravelCriticAgent` 从日程/预算/地理/完整性四维审查，
+不过审把结构化 issues 反馈给 Planner 重生成，最多 `AGENT_MAX_REVIEW_ROUNDS`（默认 2）轮后强制定稿；
+质检自身失败自动降级「通过放行」，绝不阻断主流程。
+
+![质检专家逐日评审报告](img/img_7.png)
+
+### 🏨 酒店推荐
+
+`HotelAgent` 按住宿需求（经济型/豪华型/亲子…）筛选真实酒店 POI，展示价格与位置，可直接安排进日程。
+
+![AI 酒店专家筛选与安排](img/detail_0.png)
+
+### ✍️ 对话式行程修订（AI 出 diff，代码执行）
+
+`POST /trips/{id}/revise` 用一句话改行程——`PlanReviseAgent` 把用户请求解析为
+结构化 diff（replace/add/remove/reorder），编排层代码**原子应用**（目标/类型/位置校验，任一失败整体回滚，
+数据库事务不提交），预算由代码重算，前端详情页「让 AI 调整行程」直接对话操作。
+
+> 「第三天太赶了，西湖只留半天」→ AI 精确改好 → 预算重算 → 可回滚。
+
+### 🗺️ 地图拖拽修订
+
+`POST /trips/{id}/map-edit` 拖动地图 marker 改坐标 → 最小 diff 原子应用（复用 revise 原子内核，受 DrivingGate 约束）。
+
+### 🚗 自驾模式校验（DrivingGate）
+
+同一天相邻站点单段驾车距离/时长上限（120km / 150min）与单日累计里程上限（300km）确定性校验，
+超限标记 critical 反馈 Planner 带问题重生成；对话式修订同样受该门约束。
+
+### 📋 预算计算
+
+按站点类型（景点/餐饮/住宿）自动汇总预算明细，含大交通往返估算与酒店城市基准价。
+
+### 🧳 手动细粒度编辑
+
+- 站点行内编辑（PATCH）+ 整日站点顺序重排（PUT，幂等），与 AI 对话式修订并存、互不覆盖。
+
+### 👥 轻量多用户隔离
+
+前端自动生成用户 token 随请求头发送，行程与任务按用户隔离。
+
+### 🔗 行程分享与多人协作
+
+- `share_token` 免登录只读分享链接（含预算汇总，幂等复用）；
+- 分享页支持评论 + 每日站点 👍/👎 投票；
+- `edit_token` 受邀编辑权与只读分享分离——受邀者免登录受限编辑（站点名称/备注/勾选/顺序），owner 可随时收回；
+- **分享令牌生命周期管理**：TTL（`/share/ttl`）、吊销（`/share/revoke`）、使用审计（`/share/lifecycle`），
+  过期令牌返回 410、吊销返回 403；
+- **收藏灵感夹**：登录用户可将他人分享的行程收藏进自己的灵感夹（`/trips/favorites`）。
+
+### 💡 主动提问 + 用户画像记忆
+
+- 规划请求可携带 Questions Q&A（人群/节奏/避峰/备选方案），答案并入规划上下文；
+- 跨会话用户画像（GET/PUT `/profile`）自动注入规划上下文。
+
+### 🔐 Google 登录 + 多语言
+
+Google ID Token 登录（`POST /auth/google`，前端 `VITE_GOOGLE_CLIENT_ID` 留空则隐藏按钮）；
+vue-i18n 9 + zh-CN/en-US + 顶栏切换器 + Element Plus locale 联动（643+ i18n 键）。
+
+![登录 / 注册](img/login.png)
+
+### 📥 攻略/截图/链接/邮件导入（OCR + 分享链接）
+
+- 上传小红书截图 → macOS Vision OCR → 站点候选；
+- 粘贴社交分享链接（小红书/马蜂窝/携程/大众点评等）→ 提取结构化信息（失败静默降级为链接收藏）；
+- 邮件转发导入；统一走 `note-import` 管线（敌意输入剥离、类型/价格/时长推断）。
+
+### 🔄 确定性 Plan B 备选方案
+
+`GET /trips/{id}/plan-b` 基于规则引擎生成另一套行程（无 LLM 成本、毫秒返回），与 AI 方案对照选择。
+
+### 🛰️ 实时候车 WebSocket
+
+规划任务 T-A-O 轨迹流式推送（`/ws/planner/tasks/{task_id}`，断线由轮询兜底）+
+行程协作实时同步（`/ws/trips/{trip_id}/collab`，评论/投票/受邀编辑增量事件广播，免登录令牌鉴权）。
+
+### 🧭 定稿后服务（servicing 阶段）
+
+行程定稿后可兑现的服务层产物——市内通勤视图（相邻站点公共交通/步行/驾车建议）、
+酒店入住办理指引（模板基座 + LLM 润色，不收集证件号）、折扣规则（确定性本地规则库，零幻觉可审计）；
+三个子任务相互独立，任一失败不影响其他，全程失败降级不阻断主流程。
+
+### 📕 小红书笔记生成
+
+`POST /trips/{id}/xhs-note` 为行程生成适配小红书发布的种草笔记（标题/正文/话题），
+LLM 主路径 + 规则模板兜底（`source` 标注 llm/template），发布由用户复制到小红书 App 完成，接口无自动发布副作用。
+
+### ⏰ 营业时间/游玩时长校验（TimeGate）
+
+POI 类目基准营业时段 + 建议游玩时长规则库（零外部依赖、无 LLM），排程校验
+「闭馆到达（<30min 缓冲）」「单日过饱和（>5 站或 >480 分钟游玩）」，产出 warning + 调整建议，
+注入 `plan.time_gate` 供前端质检卡展示；对话式修订后同步重算；真实营业时间以 POI 现场为准（`basis=rule_based` 诚实标注）。
+
+### 🏃 体力负荷提示
+
+`EXERTION_BY_TYPE` 体力系数表 + 名称关键词规则库（登山/徒步/雪山/峡谷等），
+单日体力负荷累计超限 + 高强度站点「实际耗时可能显著上浮」提示，复用质检卡通道（`basis=rule_based`）。
+
+### 📅 动态事实校验
+
+行程日期 × POI 特例规则表（周一闭馆 / 每月免费日 / 节假日窗口），命中即 warning +
+「出行前再次确认」诚实标注（`dynamic_facts.py`，零凭证路线）。
+
+### 🔔 行程事件流 + 主动通知
+
+修订/打卡/跳过/顺延/评论/投票 append-only 记录到 `trip_events`，owner 与受邀者（share/edit token 免登录）可读事件流；
+前端未读红点 + PWA Notification（`event_service.py` + `TripEventFeed.vue`）。
+
+### 🏙️ 多城市衔接
+
+`cities` 有序城市列表 → 按天数分段排程 + 段间插入交通占位站（球面距离按均速估算）+ 衔接缓冲校验 warning（`multi_city.py`）。
+
+### 🎨 公开灵感画廊 + 城市模板
+
+owner 一键把已分享行程发布到精选（目的地/天数/预算/一句话卖点），访客「以此为基础创建」复制到自己的账号；
+城市模板由 23 目的地知识库规则生成深链预填（`gallery_service.py`）。
+
+![灵感画廊 — 城市模板与示例行程](img/img_4.png)
+
+### 🎒 打包清单
+
+按行程隔离的本地打包清单（5 套预设模板 + 自定义 + 勾选进度 + 清除已完成，纯前端零凭证）。
+
+### 💬 AI 助手（随行对话）
+
+侧边栏常驻 AI 助手，可全程自然语言对话：行程问答、一句话改行程、细化/调整建议，
+回复实时流式展示（AgentLoop）。与行程详情页修订共用同一个原子修订内核。
 
 ## 技术栈
 
 - **FastAPI** — Web 框架，自动生成 OpenAPI 文档（`/docs`）
-- **LangGraph / LangChain** — Agent 状态图与工具编排（多 Agent 流水线；目前编排逻辑主要收敛在 `app/agent/`，LangGraph 原型保留于 `app/agent/graph.py`）
+- **LangGraph / LangChain** — Agent 状态图与工具编排（多 Agent 流水线；编排核心收敛在 `app/agent/pipeline.py` 4 个 PipelineStep，LangGraph 原型保留于 `app/agent/graph.py`）
 - **PostgreSQL 17** — 数据库（Docker 部署）
 - **SQLAlchemy 2 (async) + asyncpg** — ORM 与异步驱动
 - **Alembic** — 数据库迁移
 - **Pydantic v2 + pydantic-settings** — 数据校验与配置管理
 - **高德开放平台（POI / 天气）+ Tavily + wttr.in** — 真实数据源
-- **Vue3 + Vite + Element Plus + Leaflet + vue-i18n** — 前端（可选）
+- **Vue3 + Vite + Element Plus + Leaflet + vue-i18n + Pinia** — 前端
 - **pytest + httpx** — 测试（FakeLLM 测试替身，不消耗 token、不依赖网络）
 
 ## 目录结构
 
 ```
-backend/
-├── app/
-│   ├── main.py              # FastAPI 应用工厂（lifespan 启动规划执行器）
-│   ├── run_server.py        # uvicorn 启动入口
-│   ├── common/config.py     # pydantic-settings 配置
-│   ├── core/                # logging / exceptions / database / auth(用户隔离)
-│   ├── models/              # SQLAlchemy ORM（Trip/TripDay/Stop/TripPlan/PlanTask/UserProfile/评论/投票）
-│   ├── schemas/             # Pydantic 请求/响应模型 + Agent 输出强校验
-│   ├── services/            # 业务逻辑（trip / budget / planning / revise / collab / driving / profile / auth / google_auth）
-│   │   └── _common.py       # 共享工具（服务间复用）
-│   ├── agent/               # 多 Agent（agents.py 编排 / tools.py 高德·Tavily·天气 / providers.py LLM / graph.py LangGraph 原型）
-│   └── api/v1/              # 路由（health / auth / trips / planner / profile）
-├── alembic/                 # 数据库迁移
-├── tests/                   # pytest 测试（453 个：FakeLLM 替身，覆盖协作/自驾/画像/编辑/恢复/时间校验/事件流/多城市/画廊等）
-├── pyproject.toml           # uv 工程配置
-├── .env / .env.example      # 环境变量
-└── uv.lock
+my-trip-planner/
+├── img/                      # README 截图（首页/登录/详情/酒店/质检/画廊等）
+├── backend/
+│   ├── app/
+│   │   ├── main.py           # FastAPI 应用工厂（lifespan 启动规划执行器 + AgentLoop）
+│   │   ├── run_server.py     # uvicorn 启动入口
+│   │   ├── common/config.py  # pydantic-settings 配置
+│   │   ├── core/             # logging / tracing / exceptions / database / auth
+│   │   ├── models/           # SQLAlchemy ORM（Trip/Day/Stop/Plan/PlanTask/Profile/Chat/评论/投票/事件）
+│   │   ├── schemas/          # Pydantic 请求/响应模型 + Agent 输出强校验 + AgentLoop 协议
+│   │   ├── services/         # 业务逻辑（trip/budget/planning/revise/collab/driving/profile/auth/google/event/servicing/multi_city/chat/expense/...）
+│   │   ├── agent/            # 多 Agent 编排：
+│   │   │   ├── pipeline.py   #   PipelineStep（Collect→Assemble→Finalize→Servicing 四步）
+│   │   │   ├── agents.py     #   Agent 定义 + 编排主流程（采集六路并行 + Planner + Critic）
+│   │   │   ├── runtime.py    #   通用 AgentLoop（turn/事件流/工具编排/终止护栏/校验重试）
+│   │   │   ├── tools.py      #   高德·Tavily·天气/工具
+│   │   │   └── providers.py  #   LLM 提供商（deepseek/openai/ollama + 重试/熔断/兜底）
+│   │   └── api/v1/           # 路由（health/auth/trips/planner/profile/chat/share/ws/import/export/...）
+│   ├── alembic/              # 数据库迁移
+│   ├── tests/                # pytest 测试（453 个：FakeLLM 替身，覆盖协作/自驾/画像/编辑/恢复/时间校验/事件流/多城市/画廊等）
+│   ├── pyproject.toml        # uv 工程配置
+│   ├── .env / .env.example   # 环境变量
+│   └── uv.lock
+└── frontend/                 # Vue3 + Vite + Element Plus + Leaflet + vue-i18n
+    └── src/views/            #   LandingPage / AuthView / PlanWizard / TripListView / TripDetailView / ChatView / ShareView / ...
 ```
-
-### 前端（可选）
-
-```
-frontend/                    # Vue3 + Vite + Element Plus + Leaflet
-```
-
-## 技术文章
-
-这套多 Agent 工程化经验已沉淀为系列文章（`docs/articles/`），发布在掘金/知乎/公众号，欢迎交流：
-
-| 文章 | 话题 | 适合谁 |
-|---|---|---|
-| [多 Agent 编排不是堆 Agent](docs/articles/01-multi-agent-orchestration.md) | 单一职责拆分、并行采集、编排层补位 | 用 LangGraph/LangChain 做多 Agent 的工程师 |
-| [让 Agent 稳定输出：Pydantic 强校验 + 失败自纠正](docs/articles/02-structured-output-validation.md) | LLM 输出不可信，schema 才可信，错误摘要回喂自纠正 | 被 LLM 输出 flaky 折磨的人 |
-| [Agent 的容错工程：重试、熔断、降级、FakeLLM](docs/articles/03-resilience-engineering.md) | 指数退避重试、滑动窗口熔断、多源降级、不耗 token 的测试 | 要把 Agent 放进生产的工程师 |
-| [为什么 AI 行程工具应该把「修订」做成一等公民](docs/articles/04-diff-positioning.md) | 修订的四个设计决策：AI 出 diff、代码执行、修订后强校验、diff 预览 + 质检 trace；借 Tripnotes.ai 停运窗口立差异化定位 | 正在做 AI 行程/生成类产品的 PM 与工程师 |
-| [表单、对话、地图拖拽：三种行程修订范式的工程代价](docs/articles/05-map-edit-paradigms.md) | 对比三种修订范式的体验与工程代价，为地图拖拽修订铺路 | 协作者 / 潜在贡献者 / 技术决策者 |
-| [AI 旅行规划正在变成预订漏斗——独立工具的机会在「规划层」](docs/articles/06-planning-vs-booking.md) | 行业分层观察（agentic 订票 / OTA 收购），独立工具把规划层做深 | AI 行程/规划类产品 PM 与工程师 |
-| [当 AI 旅行工具都在抢着替你花钱：独立规划层的生存策略](docs/articles/07-open-planning-layer.md) | 规划与预订分离哲学：免费、透明、可修订、可协作、可自托管 | AI 行程/规划类产品 PM 与工程师 |
-| [AI 旅行翻车实录：从闭馆景点到悬崖救援，规划工具的质检底线](docs/articles/12-ai-travel-crashes.md) | 五类真实翻车归因 + 确定性质检层（规则/代码/特例表/降级/来源） | AI 规划/生成类产品工程师与 PM |
-| [第一次尝试就翻车：AI 旅行工具的信任缺口](docs/articles/13-trust-gap.md) | 可验证/可修订/不套模板三属性的工程实现 | AI 消费级产品工程师与 PM |
-| [巨头免费化之后：独立 AI 旅行规划工具还剩下什么](docs/articles/14-independent-planner-survival.md) | 2026 行业时间线 + 独立规划层四个生存条件与四条明确不做 | 独立开发者与产品负责人 |
 
 ## 快速启动
 
@@ -162,7 +290,7 @@ uv run uvicorn app.main:app --reload
 
 访问 http://127.0.0.1:8090/docs 查看 API 文档。
 
-前端（可选）：
+前端：
 
 ```bash
 cd frontend && npm install && npm run dev   # http://localhost:5173
@@ -223,6 +351,7 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 | GET | `/api/v1/trips/{id}/budget` | 预算明细（含酒店城市基准价估算） |
 | GET | `/api/v1/trips/{id}/plan` | 行程完整方案（Agent 输出快照，含酒店推荐） |
 | POST | `/api/v1/trips/{id}/revise` | **对话式修订行程（AI 出 diff，代码原子执行）** |
+| POST | `/api/v1/trips/{id}/map-edit` | **地图拖拽修订（复用 revise 原子内核）** |
 | POST | `/api/v1/trips/{id}/share` | 生成只读分享链接（幂等复用） |
 | GET | `/api/v1/trips/share/{token}` | 按分享令牌免登录只读查看（含预算汇总） |
 | GET | `/api/v1/trips/share/{token}/comments` | 分享页评论列表（免登录） |
@@ -236,8 +365,47 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 | PUT | `/api/v1/trips/edit/{token}/days/{day_id}/stops/order` | 受邀者重排整日站点顺序 |
 | POST | `/api/v1/planner/plan` | **提交 AI 规划任务（异步，需登录；支持 questions 主动提问）** |
 | GET | `/api/v1/planner/tasks/{task_id}` | **轮询规划任务状态（含实时 trace，需登录）** |
+| POST | `/api/v1/chat/sessions` | 创建 AI 助手会话 |
+| GET | `/api/v1/chat/sessions` | 列出我的会话 |
+| GET | `/api/v1/chat/sessions/{session_id}` | 会话详情 |
+| DELETE | `/api/v1/chat/sessions/{session_id}` | 删除会话 |
+| GET | `/api/v1/chat/sessions/{session_id}/messages` | 会话历史消息 |
+| POST | `/api/v1/chat/sessions/{session_id}/messages` | 发送消息并获取回复 |
+| POST | `/api/v1/trips/{id}/xhs-note` | 生成小红书笔记（标题/正文/话题） |
+| GET | `/api/v1/trips/{id}/plan-b` | 生成确定性 Plan B 备选方案 |
+| POST | `/api/v1/trips/{id}/gallery/publish` | 发布行程到灵感画廊（owner） |
+| DELETE | `/api/v1/trips/{id}/gallery/publish` | 取消发布（owner） |
+| GET | `/api/v1/gallery` | 公开灵感画廊（已发布行程摘要，免登录） |
+| GET | `/api/v1/gallery/templates` | 城市模板卡（23 目的地知识库，免登录） |
+| POST | `/api/v1/gallery/{source_id}/clone` | 以画廊行程为基础创建副本（复制到自己账号） |
+| GET | `/api/v1/trips/favorites` | 我的收藏灵感夹 |
+| POST | `/api/v1/trips/favorites` | 收藏他人分享的行程 |
+| DELETE | `/api/v1/trips/favorites` | 取消收藏 |
+| GET | `/api/v1/trips/{id}/events` | 行程事件流（owner + 受邀者） |
+| POST | `/api/v1/trips/email/import` | 邮件转发导入（粘贴预订确认邮件 → 预订条目 + 站点候选） |
+| POST | `/api/v1/trips/screenshot/import` | 上传截图 → OCR → 站点候选 |
+| POST | `/api/v1/trips/link/import` | 粘贴分享链接 → 结构化信息 |
+| POST | `/api/v1/trips/note/import` | 文本笔记导入站点候选 |
+| GET | `/api/v1/expenses` | 支出记录列表 |
+| POST | `/api/v1/expenses` | 添加支出记录 |
+| DELETE | `/api/v1/expenses` | 删除支出记录 |
+| GET | `/api/v1/trips/{trip_id}/export` | 导出行程 JSON（owner，完整数据备份） |
+| GET | `/api/v1/trips/share/{token}/export` | 导出行程 JSON（免登录，凭 share_token 只读） |
+| GET | `/api/v1/trips/share/{token}/live` | 行中「今日视图」快照（免登录只读，凭 share_token） |
+| GET | `/api/v1/trips/{trip_id}/live` | 行中「今日视图」快照（owner，归一化阶段/今日站点/打卡进度） |
+| POST | `/api/v1/trips/{trip_id}/live/stops/{stop_id}/check` | 打卡/取消打卡（owner 行中） |
+| POST | `/api/v1/trips/{trip_id}/live/stops/{stop_id}/skip` | 跳过今日站点（owner 行中） |
+| POST | `/api/v1/trips/{trip_id}/live/delay` | 迟到一键顺延（owner，今日及之后整体后移一天） |
+| POST | `/api/v1/trips/{trip_id}/share/ttl` | 设置分享/受邀编辑令牌有效期（days=0 永久） |
+| POST | `/api/v1/trips/{trip_id}/share/revoke` | 吊销分享/受邀编辑令牌（幂等，链接立即失效） |
+| GET | `/api/v1/trips/{trip_id}/share/lifecycle` | 分享/受邀编辑令牌生命周期状态（owner，含最近使用审计） |
+| POST | `/api/v1/trips/edit/{token}/live/stops/{stop_id}/check` | 打卡/取消打卡（受邀者，免登录） |
+| POST | `/api/v1/trips/edit/{token}/live/stops/{stop_id}/skip` | 跳过今日站点（受邀者，免登录） |
+| POST | `/api/v1/trips/edit/{token}/live/delay` | 迟到一键顺延（受邀者，免登录） |
+| WS | `/ws/planner/tasks/{task_id}` | 规划任务 T-A-O 实时轨迹 |
+| WS | `/ws/trips/{trip_id}/collab` | 行程协作实时同步（评论/投票/编辑） |
 
-> 除 `/auth/*` 与 `/health` 外，所有接口都需要 `Authorization: Bearer <token>`。
+> 除 `/auth/*`、`/health`、`/gallery`、分享令牌（`/share/*`、`/edit/*`）与灵感画廊外，多数接口需要 `Authorization: Bearer ***`
 
 ### 注册 / 登录示例
 
@@ -255,7 +423,7 @@ curl -X POST http://127.0.0.1:8090/api/v1/auth/login \
 
 # 用 token 访问受保护接口
 curl http://127.0.0.1:8090/api/v1/trips \
-  -H "Authorization: Bearer eyJ..."
+  -H "Authorization: Bearer ***"
 ```
 
 ### 调用 Agent 规划行程（异步）
@@ -268,7 +436,7 @@ TOKEN=$(curl -s -X POST http://127.0.0.1:8090/api/v1/auth/login \
 
 curl -X POST http://127.0.0.1:8090/api/v1/planner/plan \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer ***" \
   -d '{
     "destination": "杭州",
     "start_date": "2026-10-01",
@@ -285,65 +453,74 @@ curl -X POST http://127.0.0.1:8090/api/v1/planner/plan \
 # → { "task_id": "xxx", "status": "pending", ... }
 
 curl http://127.0.0.1:8090/api/v1/planner/tasks/xxx \
-  -H "Authorization: Bearer $TOKEN"
+  -H "Authorization: Bearer ***"
 # → { "task_id": "xxx", "status": "completed", "trip_id": "...", "plan": {...}, "trace": [...] }
 ```
 
 ## 多 Agent 架构
 
-### 规划主链路（含质检闭环）
+### 编排流水线（Collect → Assemble → Finalize → Servicing）
+
+`app/agent/pipeline.py` 用**声明式 PipelineStep** 收敛编排：新增一步只需注册一个步骤。
+四个阶段（前两段为当前迁移主战场）：
 
 ```
-                        用户输入（目的地/日期/人数/预算/偏好）
-                                      │
-                                      ▼
-                              ┌─────────────────┐
-                              │  编排层（代码）    │
-                              │  run_planning_   │
-                              │  agents()        │
-                              └─────────────────┘
-                                      │  asyncio.gather（并行）
-              ┌───────────────────────┼───────────────────────┐
-              ▼                       ▼                       ▼
-   ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
-   │ AttractionSearch │   │ WeatherQueryAgent │   │   HotelAgent     │
-   │ Agent（景点专家）  │   │ （天气专家·纯工具） │   │（酒店推荐专家）    │
-   │  偏好→关键词→POI  │   │  城市→天气预报    │   │ 需求→关键词→POI   │
-   └──────────────────┘   └──────────────────┘   └──────────────────┘
-              │                     │                    │
-              ▼                     ▼                    ▼
-      ┌──────────────────────────────────────────────────────┐
-      │              编排层代码补齐（非 LLM）：                 │
-      │  · 餐饮 POI 搜索（美食是行程必备）                      │
-      │  · 预算用 compute_budget 代码校准（LLM 估值不可信）     │
-      └──────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-                        ┌─────────────────────────┐
-                        │  PlannerAgent（规划专家） │
-                        │  · 不调用任何工具         │
-                        │  · 只整合团队产出         │
-                        │  · 输出经 PlanSchema     │
-                        │    强校验 + 失败自纠正    │
-                        └─────────────────────────┘
-                                      │
-                                      ▼
-                        ┌─────────────────────────┐
-                        │ TravelCriticAgent（质检） │
-                        │  · 无工具，按 schedule / │
-                        │    budget / geography / │
-                        │    logistics 四维打分    │
-                        │  · 自驾 Gate（Driving-  │
-                        │    Gate）并入评审历史     │
-                        │  · 输出 CritiqueSchema   │
-                        └─────────────────────────┘
-                           │                │
-             未通过(score<80)│                │通过 / 达最大轮数
-                           ▼                ▼
-              带 issues 反馈 Planner   完整行程 JSON（落库）
-              重新生成（≤2 轮后强制
-              定稿；Critic 故障降级放行）
+用户输入（目的地/日期/人数/预算/偏好/画像/questions）
+                    │
+                    ▼
+┌───────────────────────────────────────────────────────────────┐
+│ ① CollectAgentsStep —— 采集（六路并行 asyncio.gather）          │
+│   AttractionSearchAgent  景点搜索专家（偏好→关键词→POI）        │
+│   WeatherQueryAgent      天气查询专家（纯工具·确定性路径）       │
+│   HotelAgent             酒店推荐专家（需求→关键词→POI）        │
+│   FoodAgent              餐饮专家（美食必备，失败编排层降级补位） │
+│   TransportAgent         大交通参考（往返价并入预算）            │
+│   DiscountAgent          折扣规则（确定性规则库·零幻觉）         │
+│   —— 单 agent 失败不整体抛错（return_exceptions，产物标记 failed）│
+└───────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+┌───────────────────────────────────────────────────────────────┐
+│ ② PlanAssembleStep —— Planner + 评审循环 + DrivingGate         │
+│   PlannerAgent（不调用工具，只整合团队产出）                    │
+│     → 预算校准 compute_budget（代码覆盖 LLM 估值）              │
+│     → DrivingGate 自驾校验（未过 → 带自驾反馈重生成，不进 Critic）│
+│     → TravelCriticAgent 四维质检（schedule/budget/geography/   │
+│       logistics；未过 → 优先 Critic fix（站点级精确修订），     │
+│       fix 失败回退整段重生成；达 max_review_rounds 强制定稿）   │
+└───────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+┌───────────────────────────────────────────────────────────────┐
+│ ③ FinalizePlanStep —— 定稿回填 + 门控（全部只报告不阻断）        │
+│   采集产物回填（transport/discount_rules/driving 报告）          │
+│   MultiCity 多城市分段 + 段间交通占位                           │
+│   TimeGate 营业时间/游玩时长校验 → plan.time_gate               │
+│   DynamicFacts 日期特例（周一闭馆/免费日/节假日） → warnings     │
+└───────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+┌───────────────────────────────────────────────────────────────┐
+│ ④ ServicingStep —— 定稿后服务（三个子任务独立，失败只记 warning）│
+│   市内通勤视图（相邻站点公交/步行/驾车建议）                    │
+│   酒店入住办理指引（模板基座 + LLM 润色，不收集证件号）          │
+│   折扣规则（确定性本地规则库，零幻觉可审计）                    │
+└───────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+              完整行程 JSON（落库）+ T-A-O trace 流式推送
 ```
+
+**为什么这样拆**（而不是一个超长 prompt 大杂烩）：
+- **单一职责**：每个 Agent 只做一件事，提示词极简（< 30 行），行为可预期
+- **并行**：六个采集 Agent 互不依赖，`asyncio.gather` 秒级完成，单 agent 失败可降级
+- **确定性兜底**：天气是"城市→数据"的确定性路径，干脆做成纯工具（零 token、零幻觉）；
+  预算是纯计算，交给 `compute_budget` 代码——**LLM 只做它擅长的"理解 + 编排"，数学和事实交给代码**
+- **编排层补位**：Agent 不会主动想起"还要吃顿饭"，编排层用代码补上餐饮——不依赖 prompt 自觉
+- **质检用独立角色**：Evaluator（Critic）与 Generator（Planner）是不同的 system prompt + 独立调用，
+  避免共享盲点——生成者不会自己审自己的错
+- **修订"AI 出题、代码执行"**：PlanReviseAgent 只产 diff 指令，落库由代码原子应用——
+  任一动作非法就整体回滚，杜绝 LLM 直接改库带来的半生效状态
 
 ### 修订链路（方案 B：对话改行程）
 
@@ -372,42 +549,32 @@ curl http://127.0.0.1:8090/api/v1/planner/tasks/xxx \
             新行程落库 + 变更摘要
 ```
 
-**为什么这样拆**（而不是一个超长 prompt 大杂烩）：
-- **单一职责**：每个 Agent 只做一件事，提示词极简（< 30 行），行为可预期
-- **并行**：三个采集 Agent 互不依赖，`asyncio.gather` 秒级完成，可水平扩展
-- **确定性兜底**：天气是"城市→数据"的确定性路径，干脆做成纯工具（零 token、零幻觉）；
-  预算是纯计算，交给 `compute_budget` 代码——**LLM 只做它擅长的"理解 + 编排"，数学和事实交给代码**
-- **编排层补位**：Agent 不会主动想起"还要吃顿饭"，编排层用代码补上餐饮——不依赖 prompt 自觉
-- **质检用独立角色**：Evaluator（Critic）与 Generator（Planner）是不同的 system prompt + 独立调用，
-  避免共享盲点——生成者不会自己审自己的错
-- **修订"AI 出题、代码执行"**：PlanReviseAgent 只产 diff 指令，落库由代码原子应用——
-  任一动作非法就整体回滚，杜绝 LLM 直接改库带来的半生效状态
+## Agent 运行时（AgentLoop）
 
-## T-A-O Agent 工作原理
+`app/agent/runtime.py` 提供通用 Agent 循环（移植 pi-agent-core 设计理念，Python 重写）：
 
 ```
 用户请求
    │
    ▼
-┌─► agent_node（Thought/Action）
+┌─► agent_start → turn_start → message_start/update/end
 │     │
-│     ├── 需要信息？ ──► 调用 search_attractions / compute_budget（真实数据）
+│     ├── 需要信息？ ──► tool_execution_start/end（执行真实工具）
 │     │                        │
 │     │                        ▼
-│     └── 信息足够？      tools_node（执行工具，回填 Observation）
-│                              │
-│                              └── Observation 回填 ──┘
-│
-└──► 校验通过？ ──► 输出最终行程 JSON（Pydantic 强校验）
+│     └── 信息足够？      Observation 回填 ──┐
+│                                          │
+└──► turn_end → validator 校验通过？ → agent_end（输出最终行程 JSON）
          │失败
          ▼
    反馈 LLM 自纠正（最多 AGENT_MAX_CORRECTIONS 次）
 ```
 
-- `agent_node`：调用 LLM（带重试 + 熔断），产出下一步动作（工具调用或最终计划）
-- `tools_node`：真正执行工具（Tavily 搜索 + 地理编码），把结果作为 Observation 回填
-- 循环直到产出通过校验的完整计划，或达到最大迭代次数
-- 最终 JSON 经 `PlanSchema` 强校验，失败自动让 LLM 自纠正
+- **事件流**：`agent_start → turn_start → message_start/update/end → tool_execution_start/end → turn_end → (validator 失败 → 反馈重试) → agent_end`，兼容 WS 增量推送
+- **护栏（防无限循环）**：`max_iterations` 全局迭代上限（含工具轮 + 校验重生成轮）+
+  `max_corrections` validator 失败反馈重试上限 + `should_stop_after_turn` / tool `terminate` 提前结束信号
+- **截断保护**：输出 token 截断（stop_reason=length）→ 工具参数可能被截断 → 一律按 `is_error` 拒绝执行
+- **LLM 统一调用**：`invoke_with_resilience`（保留重试/熔断/兜底/结构化观测）
 
 **LLM Provider**：配置 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY`（或本地 Ollama）后即可使用真实模型。
 未配置任何 key 时，`/planner/plan` 返回明确错误（**不再有 mock 降级**）。
@@ -498,5 +665,3 @@ uv run alembic downgrade -1                        # 回滚
 ## 开源许可
 
 本项目采用 [MIT License](LICENSE) 开源。欢迎 fork、提 issue、提 PR。
-
-> 说明：本项目处于快速迭代期，功能与接口可能频繁变动；如要基于本项目二次开发，建议锁定 commit 或与我们同步跟进。
