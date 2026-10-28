@@ -187,3 +187,48 @@ class TestJourneyProjection:
         await _record_event(db_session, trip.id, "skip", {"day_number": 2, "stop_id": "x", "name": "站点2A"})
         proj = await journey_projection(db_session, trip)
         assert proj["days"][1]["status"] == "skipped"
+
+
+# ── 分享页脱敏投影（journey_projection_shared） ───────────────
+class TestSharedProjection:
+    async def test_shared_has_no_expense(self, db_session):
+        """分享版不返回费用（财务脱敏）。"""
+        from app.services.journey_service import journey_projection_shared
+
+        trip = _make_trip(travelers=2)
+        await _add(db_session, trip)
+        from app.schemas import ExpenseIn
+        from app.services.expense_service import add_expense
+
+        await add_expense(db_session, trip.id, ExpenseIn(category="food", amount=120, payer="小彭"), owner="u-journey")
+        proj = await journey_projection_shared(db_session, trip)
+        assert proj["expense_total"] is None
+        assert proj["per_person"] is None
+        assert proj["by_category"] == {}
+
+    async def test_shared_has_progress_and_bookings_count(self, db_session):
+        """分享版保留打卡进度 + 预订计数（不含凭证字段）。"""
+        from app.schemas import BookingIn
+        from app.services.booking_service import upsert_booking
+        from app.services.journey_service import journey_projection_shared
+
+        trip = _make_trip()
+        await _add(db_session, trip)
+        await upsert_booking(
+            db_session, trip.id,
+            BookingIn(kind="train", status="confirmed", order_no="X1", credential="C1", reference="user.confirmed"),
+            owner="u-journey",
+        )
+        proj = await journey_projection_shared(db_session, trip)
+        assert proj["booking_status"]["confirmed"] == 1
+        assert proj["journey_progress"] == 0.0
+        assert proj["total_stops"] == 4
+        # 凭证/订单号绝不出现
+        assert "X1" not in str(proj.get("highlights", []))
+        assert "C1" not in str(proj)
+
+    async def test_shared_api_requires_valid_token(self, client, db_session):
+        """非分享 token 拿不到（404 share_token_invalid）。"""
+        resp = await client.get("/api/v1/trips/share/nonexistent-token/journey")
+        assert resp.status_code == 404
+        assert "share_token_invalid" in resp.text

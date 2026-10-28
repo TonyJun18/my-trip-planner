@@ -848,6 +848,18 @@ export default {
     panelTitle: 'Journey Passport',
     empty: 'No badges yet. Check in, record expenses, finish a day, or book travel to earn badges.',
     phase: { upcoming: 'Upcoming', live: 'Live', finished: 'Finished' },
+    badges: {
+      first_checkin: 'First check-in',
+      full_day: 'Full day',
+      money_saver: 'Money saver',
+      train_goer: 'Train rider',
+      hotel_stayer: 'Hotel guest',
+      early_bird: 'Early planner',
+      night_owl: 'Night owl',
+      foodie: 'Foodie',
+      all_days_done: 'All days done',
+      group_voter: 'Group voter',
+    },
   },
   // ── Trip story (shareable highlight card) ──────────────
   story: {
@@ -862,5 +874,13 @@ export default {
     copied: 'Copied! Go paste and publish.',
     copyFallback: 'Copy failed, please select manually',
     source: { llm: 'AI generated', template: 'Template' },
+  },
+  // ── Trip story poster card ────────────────────────────
+  poster: {
+    days: 'Days',
+    stops: 'Stops',
+    checked: 'Done',
+    expense: 'Spent(¥)',
+    hint: 'Poster card: screenshot directly in the browser and share to Moments.',
   },
 }

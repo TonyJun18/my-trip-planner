@@ -29,6 +29,78 @@ from app.models import Stop, Trip, TripBooking, TripDay, TripEvent
 from app.services.live_service import trip_phase
 
 
+# ── 分享页脱敏投影 ────────────────────────────────────────────
+async def journey_projection_shared(
+    db: AsyncSession,
+    trip: Trip,
+    *,
+    today: date | None = None,
+) -> dict[str, Any]:
+    """分享页「旅程追踪」投影（免登录只读，**脱敏**）。
+
+    与 owner 版 journey_projection 的差异：
+    - **不含费用**：expense_total / by_category / per_person 一律不返回
+      （财务数据只对 owner 与受邀编辑者开放，与费用 API 同信任语义）；
+    - **不含凭证**：预订只给计数（不返回 order_no/credential 等）；
+    - 保留：打卡进度 / 按天状态 / 高光 / booking_status 计数（同伴围观进度用）。
+
+    分享只读链路用（share_token），受邀编辑（edit_token）仍走 owner 投影。
+    """
+    today = today or datetime.now(timezone.utc).date()
+    phase = trip_phase(trip, today=today)
+
+    completed, total, progress = journey_progress(trip)
+    day_map = _day_map(trip)
+    stop_name_map = _stop_name_map(trip)
+    events = await _load_events(db, trip.id)
+    skipped = _skipped_days(events)
+
+    days_out: list[dict[str, Any]] = []
+    for day in trip.days or []:
+        stops = day.stops or []
+        non_hotel = [s for s in stops if s.stop_type != "hotel"]
+        day_completed = sum(1 for s in non_hotel if s.checked)
+        status = "skipped" if day.day_number in skipped and day_completed == 0 else _day_status(day, stops)
+        day_highlights = [
+            h["summary"]
+            for h in (_highlight(ev, stop_name_map) for ev in events)
+            if h and h.get("day_number") == day.day_number
+        ]
+        days_out.append({
+            "day_number": day.day_number,
+            "date": day.date.isoformat() if day.date else None,
+            "theme": day.note,
+            "status": status,
+            "completed": day_completed,
+            "total": len(non_hotel),
+            "highlights": day_highlights[:5],
+        })
+
+    # 预订只给计数（脱敏：不返回凭证/订单号）
+    booking_stmt = select(TripBooking).where(TripBooking.trip_id == trip.id)
+    bookings = list((await db.execute(booking_stmt)).scalars().all())
+    booking_status: dict[str, int] = {"suggested": 0, "pending": 0, "confirmed": 0, "cancelled": 0}
+    for b in bookings:
+        booking_status[b.status] = booking_status.get(b.status, 0) + 1
+
+    highlights = [h for h in (_highlight(ev, stop_name_map) for ev in events) if h][:10]
+
+    return {
+        "trip_id": trip.id,
+        "phase": phase,
+        "journey_progress": progress,
+        "completed_stops": completed,
+        "total_stops": total,
+        "days": days_out,
+        "booking_status": booking_status,
+        "highlights": highlights,
+        # 分享版不返回费用与 per_person（财务脱敏）
+        "expense_total": None,
+        "by_category": {},
+        "per_person": None,
+    }
+
+
 # ── 打卡进度（纯函数） ──────────────────────────────────────────
 def _non_hotel_stops(trip: Trip) -> list[Stop]:
     """行中打卡只针对 attraction/food；酒店/交通占位不计入。"""
@@ -109,6 +181,23 @@ def _highlight(ev: TripEvent, stop_names: dict[str, str]) -> dict[str, Any] | No
             "day_number": day_number,
             "created_at": ev.created_at.isoformat() if ev.created_at else None,
         }
+    # booking.* 事件（预订确认/取消）也进高光（凭证号绝不进文案）
+    if ev.event_type in ("booking.confirmed", "booking.cancelled", "booking.pending"):
+        title = payload.get("title") or ""
+        kind = payload.get("kind") or ""
+        kind_label = "酒店" if kind == "hotel" else ("火车" if kind == "train" else kind)
+        if ev.event_type == "booking.confirmed":
+            summary = f"预订确认：{kind_label} {title}".strip()
+        elif ev.event_type == "booking.cancelled":
+            summary = f"预订取消：{kind_label} {title}".strip()
+        else:
+            summary = f"预订处理中：{kind_label} {title}".strip()
+        return {
+            "event_type": ev.event_type,
+            "summary": summary,
+            "day_number": day_number,
+            "created_at": ev.created_at.isoformat() if ev.created_at else None,
+        }
     return None
 
 
@@ -123,18 +212,40 @@ async def _load_events(db: AsyncSession, trip_id: str, *, limit: int = 200) -> l
 
 
 # ── 主入口 ──────────────────────────────────────────────────────
+def _timeline_entries(
+    events: list[TripEvent], stop_names: dict[str, str],
+) -> list[dict[str, Any]]:
+    """把事件流转成结构化时间线序列（倒序，最新在前；脱敏：凭证号不进）。"""
+    entries: list[dict[str, Any]] = []
+    for ev in events:
+        payload = ev.payload or {}
+        entry: dict[str, Any] = {
+            "event_type": ev.event_type,
+            "created_at": ev.created_at.isoformat() if ev.created_at else None,
+        }
+        name = payload.get("name") or stop_names.get(str(payload.get("stop_id")), "")
+        if name:
+            entry["name"] = name
+        if payload.get("day_number") is not None:
+            entry["day_number"] = payload["day_number"]
+        if ev.event_type in ("check", "skip", "delay", "revise", "booking.confirmed", "booking.cancelled"):
+            entry["summary"] = (_highlight(ev, stop_names) or {}).get("summary", "")
+        entries.append(entry)
+    return list(reversed(entries))  # 倒序（最新在前）
+
+
 async def journey_projection(
     db: AsyncSession,
     trip: Trip,
     *,
     today: date | None = None,
+    public: bool = False,
 ) -> dict[str, Any]:
     """旅程全程追踪投影（读时聚合，零新表）。
 
-    依赖 trip.days 已加载（relationship 已由 trip_service._TRIP_LOADS 懒加载，
-    或调用方已 flush）；events / expenses / bookings 从 db 读取。
-
-    返回值结构与 JourneyOut schema 一致。
+    Args:
+        public: True 表示分享视图（脱敏：不含费用 per_person 与预订状态，
+            只保留打卡进度/按天状态/高光/时间线——财务与凭证不进分享页）。
     """
     today = today or datetime.now(timezone.utc).date()
     phase = trip_phase(trip, today=today)
@@ -168,22 +279,28 @@ async def journey_projection(
             "highlights": day_highlights[:5],
         })
 
-    # 2) 费用投影（复用 expense.compute_balance）
-    from app.services.expense_service import _load_expenses, compute_balance
-
-    records = await _load_expenses(db, trip.id)
-    balance = compute_balance(records, travelers=trip.travelers or 1)
+    # 2) 费用投影（复用 expense.compute_balance）——public 分享视图不暴露
+    expense_total = 0.0
     by_category: dict[str, float] = {}
-    for r in records:
-        cat = r.category or "other"
-        by_category[cat] = round(by_category.get(cat, 0.0) + (r.amount or 0.0), 2)
+    per_person = 0.0
+    if not public:
+        from app.services.expense_service import _load_expenses, compute_balance
 
-    # 3) 预订状态投影（接 TripBooking）
-    booking_stmt = select(TripBooking).where(TripBooking.trip_id == trip.id)
-    bookings = list((await db.execute(booking_stmt)).scalars().all())
+        records = await _load_expenses(db, trip.id)
+        balance = compute_balance(records, travelers=trip.travelers or 1)
+        expense_total = balance.get("total", 0.0)
+        per_person = balance.get("per_person", 0.0)
+        for r in records:
+            cat = r.category or "other"
+            by_category[cat] = round(by_category.get(cat, 0.0) + (r.amount or 0.0), 2)
+
+    # 3) 预订状态投影（接 TripBooking）——public 分享视图只给计数脱敏
     booking_status: dict[str, int] = {"suggested": 0, "pending": 0, "confirmed": 0, "cancelled": 0}
-    for b in bookings:
-        booking_status[b.status] = booking_status.get(b.status, 0) + 1
+    if not public:
+        booking_stmt = select(TripBooking).where(TripBooking.trip_id == trip.id)
+        bookings = list((await db.execute(booking_stmt)).scalars().all())
+        for b in bookings:
+            booking_status[b.status] = booking_status.get(b.status, 0) + 1
 
     # 4) 高光（全行程，最多 10 条，倒序即最新在前）
     highlights = [
@@ -196,6 +313,9 @@ async def journey_projection(
     check_event_count = sum(1 for ev in events if ev.event_type == "check")
     data_complete = completed <= check_event_count
 
+    # 6) 时间线（结构化事件序列，倒序最新在前；脱敏）
+    timeline = _timeline_entries(events, stop_name_map)
+
     return {
         "trip_id": trip.id,
         "phase": phase,
@@ -203,10 +323,11 @@ async def journey_projection(
         "completed_stops": completed,
         "total_stops": total,
         "days": days_out,
-        "expense_total": balance.get("total", 0.0),
+        "expense_total": expense_total,
         "by_category": by_category,
-        "per_person": balance.get("per_person", 0.0),
+        "per_person": per_person,
         "booking_status": booking_status,
         "highlights": highlights,
+        "timeline": timeline,
         "data_complete": data_complete,
     }

@@ -319,6 +319,20 @@ async def list_shared_trip_events(
     )
 
 
+# ── 分享页旅程追踪（免登录只读，脱敏：不含费用/凭证） ─────────────
+@router.get("/share/{token}/journey", response_model=dict, summary="分享页旅程追踪（免登录只读，脱敏）")
+async def get_shared_trip_journey(
+    token: str,
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    """凭 share_token 免登录查看旅程追踪（脱敏版：只有打卡进度/按天状态/高光/预订计数，
+    不含费用与凭证——财务数据只对 owner 与受邀编辑者开放，与费用 API 同信任语义）。"""
+    from app.services import journey_service
+
+    trip = await trip_service.get_trip_by_share_token(db, token)
+    return await journey_service.journey_projection_shared(db, trip)
+
+
 @router.get("/edit/{token}/events", response_model=TripEventListOut, summary="行程事件流（免登录，凭 edit_token）")
 async def list_editable_trip_events(
     token: str,

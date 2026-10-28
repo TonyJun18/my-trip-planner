@@ -35,9 +35,12 @@ class JourneyOut(BaseModel):
     - journey_progress: 已打卡站点数 / 总站点数 × 100（只算非酒店站点；
       行中打卡只针对 attraction/food，酒店/交通占位不计入）
     - day_status[]: 按天分组（completed/partial/todo/skipped + 高光）
-    - expense_total / by_category / per_person: 复用 expense.compute_balance 口径
-    - booking_status[]: suggested/pending/confirmed/cancelled 计数（接预订方案 TripBooking）
-    - highlights[]: 从事件流里挑「有故事」的（check/delay/vote/comment）
+    - timeline[]: 结构化事件序列（倒序最新在前；脱敏不含凭证号/费用）
+    - expense_total / by_category / per_person: 复用 expense.compute_balance
+      （public 分享视图不暴露，恒为 0）
+    - booking_status[]: suggested/pending/confirmed/cancelled 计数（接 TripBooking，
+      public 分享视图不暴露，恒为 0）
+    - highlights[]: 从事件流里挑「有故事」的（check/delay/vote/comment/booking.*）
     """
 
     trip_id: str
@@ -51,4 +54,5 @@ class JourneyOut(BaseModel):
     per_person: float = 0.0
     booking_status: dict[str, int] = Field(default_factory=dict)
     highlights: list[HighlightOut] = Field(default_factory=list)
+    timeline: list[dict] = Field(default_factory=list)
     data_complete: bool = True  # 事件流缺失部分站点时 False（诚实口径）
