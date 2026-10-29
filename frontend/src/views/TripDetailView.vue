@@ -3,15 +3,18 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { Calendar } from '@element-plus/icons-vue'
 import * as api from '@/api'
 // 阶段一拆分：TripDetailView 收敛为 orchestrator（装配 + 共享状态 + 对话框）
-// 组件树见 docs/plans/2026-10-29-trip-detail-refactor-solution.md §1.1
-import TripDetailTopBar from '@/components/trip-detail/TripDetailTopBar.vue'
-import TripDetailHero from '@/components/trip-detail/TripDetailHero.vue'
+// 阶段二信息架构：头部合并（Header）+ 次级工具按时机收纳（Workspace）
+// 组件树见 docs/plans/2026-10-29-trip-detail-refactor-solution.md §1.1 / §2.1
+import TripDetailHeader from '@/components/trip-detail/TripDetailHeader.vue'
 import TripDetailLiveToday from '@/components/trip-detail/TripDetailLiveToday.vue'
 import TripDetailMapCard from '@/components/trip-detail/TripDetailMapCard.vue'
+import TripDetailPlanTools from '@/components/trip-detail/TripDetailPlanTools.vue'
 import TripDetailDayCard from '@/components/trip-detail/TripDetailDayCard.vue'
 import TripDetailToolbox from '@/components/trip-detail/TripDetailToolbox.vue'
+import TripDetailWorkspace from '@/components/trip-detail/TripDetailWorkspace.vue'
 import TripDetailSidebar from '@/components/trip-detail/TripDetailSidebar.vue'
 import TripDetailBottomBar from '@/components/trip-detail/TripDetailBottomBar.vue'
 import TripDetailDialogs from '@/components/trip-detail/TripDetailDialogs.vue'
@@ -21,6 +24,8 @@ import { useEditDialog } from '@/composables/useEditDialog'
 import { useTripShareActions } from '@/composables/useTripShareActions'
 import { useExport } from '@/composables/useExport'
 import { useTripTypes } from '@/composables/useTripTypes'
+import { isFlagOn } from '@/utils/flags'
+import { detailPhase, currentDayNumber } from '@/utils/tripPhase'
 import { trackEvent, ANALYTICS_EVENTS, tripPhase } from '@/api/modules/analytics'
 
 const route = useRoute()
@@ -151,7 +156,240 @@ const activeDay = ref(null)
 const exportAll = ref(false)
 
 function focusDay(dayNumber) {
-  activeDay.value = activeDay.value === dayNumber ? null : dayNumber
+  const on = activeDay.value === dayNumber ? null : dayNumber
+  activeDay.value = on
+  // 聚焦某日 → 顺带展开该日，避免「地图高亮但下方看不到站点」
+  if (on != null && iaV2.value) openDayByNumber(on)
+}
+
+// ── 时机（planning / prep / live / finished）────────────────
+// 四态只服务版面与操作换血；埋点仍用三态 tripPhase（基线口径不能漂移）
+const phase = computed(() => (trip.value ? detailPhase(trip.value) : 'planning'))
+
+// ── 信息架构 v2（feature flag 可回滚）────────────────────
+// flag off = 恢复「三段式工具箱全部平铺」，用于 G1 工具流失对照组
+const iaV2 = ref(isFlagOn('tripDetail.ia.v2'))
+
+// ── 次级工作台：按时机收纳面板（tab + 全部工具开关）──────────
+const WS_PLAN_KEYS = ['revise', 'planb', 'timegate', 'quality', 'hotel']
+const WS_PREP_KEYS = ['booking', 'hotel', 'servicing', 'packing', 'events']
+const WS_LIVE_KEYS = ['journey', 'passport', 'story']
+
+const wsTab = ref('')
+const wsShowAll = ref(false)
+// 非规划时机：规划面板默认隐藏，由「更多 → 调整行程」或 tab 显式打开
+const wsPlanExtra = ref(false)
+
+const planIssues = computed(() => {
+  const q = plan.value?.quality?.issues?.length || 0
+  const g = plan.value?.time_gate?.issues?.length || 0
+  return q + g
+})
+
+const journeyProgress = computed(() => {
+  const j = tripSummaries.value?.journey
+  if (!j?.total_stops) return ''
+  return `${j.completed_stops || 0}/${j.total_stops}`
+})
+
+const phaseTabs = computed(() => {
+  const p = phase.value
+  if (p === 'prep') {
+    return [{ key: 'prep', label: t('tripDetail.tabs.prep'), keys: WS_PREP_KEYS, badge: bookingBadge.value }]
+  }
+  if (p === 'live' || p === 'finished') {
+    return [{ key: 'live', label: t('tripDetail.tabs.live'), keys: WS_LIVE_KEYS, badge: journeyProgress.value }]
+  }
+  return [planTab.value]
+})
+
+const planTab = computed(() => ({
+  key: 'plan',
+  label: t('tripDetail.tabs.plan'),
+  keys: WS_PLAN_KEYS,
+  badge: planIssues.value ? String(planIssues.value) : '',
+}))
+
+const wsTabs = computed(() => {
+  const tabs = phaseTabs.value
+  if (wsPlanExtra.value && !tabs.some((x) => x.key === 'plan')) return [...tabs, planTab.value]
+  return tabs
+})
+
+const activeTab = computed(() => wsTabs.value.find((x) => x.key === wsTab.value) || wsTabs.value[0] || null)
+
+// 传给工具箱的面板白名单：null = 全部（全部工具 / 导出模式）
+const wsKeys = computed(() => {
+  if (!iaV2.value || wsShowAll.value || exportAll.value) return null
+  return activeTab.value?.keys || null
+})
+
+// ── 规划修订 + 行程备选：提到主路径（地图与行程大纲之间）──────
+// 这两个是规划阶段的高频主操作，收在工作台底部需要先滚完整段大纲才够得着。
+// 时机规则与工作台一致：规划期常驻；非规划期由「更多 → 调整行程」显式展开。
+// 导出时隐藏（导出物是给同行人看的行程，不该出现输入框）。
+const planToolsVisible = computed(
+  () => iaV2.value && !exportAll.value && (phase.value === 'planning' || wsPlanExtra.value),
+)
+// 交给工具箱的「已提升」名单：IA v2 下这两个面板永远不在工具箱里渲染，避免同屏两份
+const hoistedPlanKeys = computed(() => (iaV2.value ? ['revise', 'planb'] : []))
+
+// 时机切换后重定位到该时机的主 tab（并收起「额外打开的规划」）
+watch(phase, () => {
+  wsPlanExtra.value = false
+  wsShowAll.value = false
+  wsTab.value = phaseTabs.value[0]?.key || ''
+}, { immediate: true })
+
+// 用户手动切 tab 时退出「全部工具」态
+function onWsTabChange(key) {
+  wsShowAll.value = false
+  wsTab.value = key
+}
+
+function toggleWsAll() {
+  wsShowAll.value = !wsShowAll.value
+}
+
+// ── 逐日折叠：默认只展开当天（行中）/ 第一天，导出全开 ────────
+const openDayIds = ref(new Set())
+
+function initOpenDays() {
+  const days = trip.value?.days || []
+  if (!days.length) {
+    openDayIds.value = new Set()
+    return
+  }
+  const cur = phase.value === 'live' ? currentDayNumber(trip.value) : null
+  const target = days.find((d) => d.day_number === cur) || days[0]
+  openDayIds.value = new Set(target ? [target.id] : [])
+}
+
+function isDayOpen(day) {
+  if (exportAll.value) return true
+  return openDayIds.value.has(day.id)
+}
+
+function toggleDayOpen(day) {
+  const next = new Set(openDayIds.value)
+  if (next.has(day.id)) next.delete(day.id)
+  else next.add(day.id)
+  openDayIds.value = next
+}
+
+function openDayByNumber(dayNumber) {
+  const day = (trip.value?.days || []).find((d) => d.day_number === dayNumber)
+  if (!day) return
+  const next = new Set(openDayIds.value)
+  next.add(day.id)
+  openDayIds.value = next
+}
+
+const allDaysOpen = computed(() => {
+  const days = trip.value?.days || []
+  return days.length > 0 && days.every((d) => openDayIds.value.has(d.id))
+})
+
+function toggleAllDays() {
+  const days = trip.value?.days || []
+  if (allDaysOpen.value) {
+    // 全收 → 保留当天/第一天，避免页面彻底空白
+    initOpenDays()
+    return
+  }
+  openDayIds.value = new Set(days.map((d) => d.id))
+}
+
+// 行程大纲概览（天/站/预估花费）——首屏给一行可判断的量级
+const itinerarySummary = computed(() => {
+  const days = trip.value?.days || []
+  let stops = 0
+  let cost = 0
+  for (const d of days) {
+    for (const s of d.stops || []) {
+      stops += 1
+      cost += Number(s.estimated_cost) || 0
+    }
+  }
+  return { days: days.length, stops, cost }
+})
+
+const itineraryMeta = computed(() =>
+  // 只给「天 / 站」两个量级；花费一律交给侧栏预算明细（那里口径含往返交通，
+  // 站点合计与它会差出一个交通费，同屏两个 ¥ 数字是纯噪音）
+  t('tripDetail.itineraryMeta', {
+    days: itinerarySummary.value.days,
+    stops: itinerarySummary.value.stops,
+  }),
+)
+
+// 带偏移的滚动：顶部导航是 sticky（桌面 64px / 移动 56px），
+// scrollIntoView({block:'start'}) 会把目标顶到视口 0 点、被导航遮住 → 统一手算偏移
+function scrollToEl(el) {
+  if (!el) return false
+  const navH = document.querySelector('.app-header')?.getBoundingClientRect().height || 0
+  const top = el.getBoundingClientRect().top + window.scrollY - navH - 12
+  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+  return true
+}
+// 目标元素可能是条件渲染的（如工作台/规划工具点击后才挂载）→ 轮询等待再滚，
+// 固定 setTimeout 在慢设备上会滚到空气，是「点了没反应」的常见来源
+function scrollToSelector(sel, tries = 0) {
+  if (scrollToEl(document.querySelector(sel))) return
+  if (tries >= 20) return
+  setTimeout(() => scrollToSelector(sel, tries + 1), 50)
+}
+
+// 行中「打卡」：滚到今日视图；无今日视图则滚到当天日程并高亮
+function scrollToToday() {
+  if (scrollToEl(document.querySelector('.live-card'))) return
+  const cur = currentDayNumber(trip.value)
+  if (cur) openDayByNumber(cur)
+  // 当天卡片的展开是异步渲染的 → 轮询到出现再滚
+  let tries = 0
+  const go = () => {
+    const el = document.querySelectorAll('.day-card')[Math.max(0, (cur || 1) - 1)]
+    if (el && scrollToEl(el)) return
+    if (tries++ >= 20) return
+    setTimeout(go, 50)
+  }
+  setTimeout(go, 50)
+}
+
+// 行中「追踪」：切到行中面板并滚到工作台
+function openTrackTab() {
+  wsPlanExtra.value = false
+  wsShowAll.value = false
+  wsTab.value = 'live'
+  scrollToSelector('.workspace')
+}
+
+function scrollToWorkspace() {
+  scrollToSelector('.workspace')
+}
+
+// 「更多 → 调整行程」：非规划时机打开规划工具（AI 修订的唯一入口）。
+// 规划工具已提到主路径（地图与大纲之间），滚动目标随之改为那里。
+function openPlanTool() {
+  wsPlanExtra.value = true
+  wsShowAll.value = false
+  wsTab.value = 'plan'
+  onToolOpen('ai_revise')
+  if (planToolsVisible.value) scrollToSelector('.plan-tools')
+  else scrollToWorkspace()
+}
+
+// 头部主操作（按时机换血，事件名保持与埋点一致）
+function onHeaderAction(key) {
+  switch (key) {
+    case 'edit': onEditTrip(); break
+    case 'askAi': askAI(); break
+    case 'share': onShare(); break
+    case 'checkin': scrollToToday(); break
+    case 'track': openTrackTab(); break
+    case 'export': doExportPdfAll(); break
+    default: break
+  }
 }
 
 // 导出前强制展开全部分区（forceOpen 接线），导出后恢复
@@ -241,6 +479,9 @@ async function onMoreCommand(cmd) {
     return
   }
   switch (cmd) {
+    case 'adjust':
+      openPlanTool()
+      break
     case 'import':
       importVisible.value = true
       break
@@ -475,6 +716,14 @@ watch(
   },
   { immediate: true },
 )
+// 逐日折叠默认态：行程/天数变化后重置（默认只展开当天或第一天）
+watch(
+  () => [trip.value?.id, trip.value?.days?.length || 0, phase.value],
+  (id) => {
+    if (id?.[0]) initOpenDays()
+  },
+  { immediate: true },
+)
 // 行程加载完成后观测逐日首屏（等 DOM 渲染，nextTick 后）
 watch(
   () => trip.value?.id,
@@ -498,19 +747,29 @@ onBeforeUnmount(() => {
 
 <template>
   <div v-loading="loading" class="detail-page">
-    <!-- 顶栏（返回 / 编辑 / 问AI / 分享 / 更多） -->
-    <TripDetailTopBar
+    <!-- 合并头部（返回 / 封面 / 标题+状态 chip / 主操作≤3 / 更多） -->
+    <TripDetailHeader
+      v-if="trip"
+      :trip="trip"
+      :phase="phase"
+      :status-map="statusMap"
+      :status-options="statusOptions"
+      :status-updating="statusUpdating"
+      :trip-type-display="tripTypeDisplay"
       :sharing="sharing"
+      :exporting="exporting"
       :is-favorite="isFavorite"
       :favoriting="favoriting"
       :has-shared-token="hasSharedToken"
-      :edit-token="trip?.edit_token || ''"
+      :edit-token="trip.edit_token || ''"
       @back="router.push('/trips')"
-      @edit="onEditTrip"
-      @ask-ai="askAI"
-      @share="onShare"
+      @action="onHeaderAction"
       @more="onMoreCommand"
+      @status-change="changeStatus"
     />
+    <div v-else class="detail-back-fallback">
+      <el-button link @click="router.push('/trips')">← {{ $t('tripDetail.backToTrips') }}</el-button>
+    </div>
 
     <template v-if="trip">
       <!-- 离线模式标识（PWA：网络失败时读缓存展示） -->
@@ -528,16 +787,6 @@ onBeforeUnmount(() => {
 
       <!-- 导出区（截图/PDF 抓取范围） -->
       <div ref="exportEl" class="export-area">
-        <!-- 段1 头部：紧凑摘要条 -->
-        <TripDetailHero
-          :trip="trip"
-          :status-map="statusMap"
-          :status-options="statusOptions"
-          :status-updating="statusUpdating"
-          :trip-type-display="tripTypeDisplay"
-          @status-change="changeStatus"
-        />
-
         <!-- 行中「今日视图」（live 期间全宽置顶） -->
         <TripDetailLiveToday
           :live="live"
@@ -549,7 +798,7 @@ onBeforeUnmount(() => {
           @delay="doDelayTrip"
         />
 
-        <!-- 段2 主内容：地图 + 逐日大纲 + 侧栏仪表盘 -->
+        <!-- 主路径：地图 + 逐日大纲（永不进 tab）+ 侧栏仪表盘 -->
         <div class="detail-layout">
           <div class="main-col">
             <!-- 地图 -->
@@ -562,36 +811,14 @@ onBeforeUnmount(() => {
               @map-move="onMapMove"
             />
 
-            <!-- 逐日行程大纲 -->
-            <TripDetailDayCard
-              v-for="(day, i) in trip.days"
-              :key="day.id"
-              :day="day"
-              :active-day="activeDay"
-              :day-index="i"
-              @focus-day="focusDay"
-              @add-stop="openAddStop"
-              @day-cmd="onDayCommand"
-              @stop-cmd="onStopCommand"
-              @stop-edit="openEditStop"
-            />
-
-            <!-- 段3 工具箱（规划修订 / 旅程执行 / 装备素材） -->
-            <TripDetailToolbox
-              ref="toolboxRef"
-              :trip="trip"
-              :plan="plan"
+            <!-- 规划工具：AI 调整行程 + 行程备选方案（地图下方，主路径上的高频操作） -->
+            <TripDetailPlanTools
+              v-if="planToolsVisible"
               :plan-b="planB"
               :active-plan="activePlan"
               :plan-options="planOptions"
               :plan-b-budget="planBBudget"
               :plan-b-total="planBTotal"
-              :hotel-candidates="hotelCandidates"
-              :servicing-props="servicingProps"
-              :booking-badge="bookingBadge"
-              :journey-badge="journeyBadge"
-              :passport-badge="passportBadge"
-              :export-all="exportAll"
               :revise-msg="reviseMsg"
               :revising="revising"
               :revise-error="reviseError"
@@ -606,9 +833,88 @@ onBeforeUnmount(() => {
               @revise="revise"
               @revise-input="(v) => (reviseMsg = v)"
               @tool-open="onToolOpen"
-              @changed="load"
-              @arranged="load"
             />
+
+            <!-- 逐日大纲：标题行（概览 + 批量展开）+ 可折叠日程卡 -->
+            <div class="itinerary-head">
+              <span class="itinerary-title">
+                <el-icon><Calendar /></el-icon>{{ $t('tripDetail.itineraryTitle') }}
+              </span>
+              <span class="itinerary-meta">{{ itineraryMeta }}</span>
+              <button class="itinerary-toggle" type="button" @click="toggleAllDays">
+                {{ allDaysOpen ? $t('tripDetail.collapseAllDays') : $t('tripDetail.expandAllDays') }}
+              </button>
+            </div>
+
+            <TripDetailDayCard
+              v-for="(day, i) in trip.days"
+              :key="day.id"
+              :day="day"
+              :active-day="activeDay"
+              :day-index="i"
+              :open="isDayOpen(day)"
+              @toggle-open="toggleDayOpen"
+              @focus-day="focusDay"
+              @add-stop="openAddStop"
+              @day-cmd="onDayCommand"
+              @stop-cmd="onStopCommand"
+              @stop-edit="openEditStop"
+            />
+
+            <!-- 日程操作条（加天 / 批量生成 / 导出） -->
+            <TripDetailBottomBar
+              :exporting="exporting"
+              @add-day="openAddDay"
+              @gen-days="genDaysVisible = true; onToolOpen('batch_gen')"
+              @export="doExportPdfAll"
+              @export-cmd="onExportCommand"
+            />
+
+            <!-- 次级工作台：按时机收纳 12 个工具面板 -->
+            <TripDetailWorkspace
+              :tabs="wsTabs"
+              :model-value="wsTab"
+              :show-all="wsShowAll || exportAll"
+              :title="$t('tripDetail.workspaceTitle')"
+              @update:model-value="onWsTabChange"
+              @toggle-all="toggleWsAll"
+            >
+              <TripDetailToolbox
+                ref="toolboxRef"
+                :trip="trip"
+                :plan="plan"
+                :plan-b="planB"
+                :active-plan="activePlan"
+                :plan-options="planOptions"
+                :plan-b-budget="planBBudget"
+                :plan-b-total="planBTotal"
+                :hotel-candidates="hotelCandidates"
+                :servicing-props="servicingProps"
+                :booking-badge="bookingBadge"
+                :journey-badge="journeyBadge"
+                :passport-badge="passportBadge"
+                :export-all="exportAll"
+                :keys="wsKeys"
+                :flat="!(wsShowAll || exportAll)"
+                :hoisted-keys="hoistedPlanKeys"
+                :revise-msg="reviseMsg"
+                :revising="revising"
+                :revise-error="reviseError"
+                :last-revise-summary="lastReviseSummary"
+                :revise-done="reviseDone"
+                :last-revise-diff="lastReviseDiff"
+                :visible-revise-diff="visibleReviseDiff"
+                :revise-diff-more="reviseDiffMore"
+                :last-revise-quality="lastReviseQuality"
+                :diff-text="diffText"
+                @plan-change="onPlanChange"
+                @revise="revise"
+                @revise-input="(v) => (reviseMsg = v)"
+                @tool-open="onToolOpen"
+                @changed="load"
+                @arranged="load"
+              />
+            </TripDetailWorkspace>
           </div>
 
           <!-- 侧栏：仪表盘（sticky 常驻） -->
@@ -623,15 +929,6 @@ onBeforeUnmount(() => {
           />
         </div>
       </div>
-
-      <!-- 底部操作 -->
-      <TripDetailBottomBar
-        :exporting="exporting"
-        @add-day="openAddDay"
-        @gen-days="genDaysVisible = true; onToolOpen('batch_gen')"
-        @export="doExportPdfAll"
-        @export-cmd="onExportCommand"
-      />
     </template>
 
     <!-- 对话框（小红书 / 导入 / 批量生成 / 分享设置 / 编辑三合一） -->
@@ -682,10 +979,13 @@ onBeforeUnmount(() => {
 <style scoped>
 .detail-page { max-width: 1080px; margin: 0 auto; }
 
+/* 未加载完成时的返回兜底 */
+.detail-back-fallback { margin-bottom: 16px; }
+
 /* PWA 离线模式标识 */
 .offline-banner { margin-bottom: 16px; }
 
-/* 双栏布局：主列（地图 + 每日行程）/ 侧栏（仪表盘） */
+/* 双栏布局：主列（地图 + 每日行程 + 工作台）/ 侧栏（仪表盘） */
 .detail-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
@@ -695,15 +995,57 @@ onBeforeUnmount(() => {
 }
 .main-col { min-width: 0; }
 
+/* 逐日大纲标题行：标题 + 概览 + 批量展开 */
+.itinerary-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 10px;
+}
+.itinerary-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.itinerary-title .el-icon { color: var(--brand); }
+.itinerary-meta {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.itinerary-toggle {
+  margin-left: auto;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: color 0.18s, border-color 0.18s;
+}
+.itinerary-toggle:hover { color: var(--brand); border-color: var(--brand); }
+.itinerary-toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
 /* 窄屏：双栏降级单列 */
 @media (max-width: 960px) {
   .detail-layout { grid-template-columns: 1fr; }
 }
 
+@media (max-width: 640px) {
+  .itinerary-head { flex-wrap: wrap; gap: 6px 10px; margin: 14px 0 8px; }
+  .itinerary-toggle { margin-left: 0; }
+}
+
 /* 打印样式：只打印导出区，隐藏交互 */
 @media print {
-  .topbar, .bottom-bar, .revise-card, .day-actions, .stop-quick, .live-card,
-  .map-hint, .status-switch, .map-drag-error,
+  .bottom-bar, .revise-card, .day-actions, .stop-quick, .live-card,
+  .map-hint, .map-drag-error, .itinerary-toggle, .workspace .ws-all,
   .share-settings-hint, .share-settings-body, .gen-days-hint,
   .el-dialog__wrapper, .el-overlay,
   .trip-servicing, .packing-list, .trip-event-feed, .quality-card {

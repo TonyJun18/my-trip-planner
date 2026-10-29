@@ -164,9 +164,12 @@ export function useTripDetailLoad(opts = {}) {
     }
   }
 
-  // Plan B 切换：切回主案时重新加载权威数据
+  // Plan B 切换：备选仅作对比预览，不改动当前行程（见 planBHint）
+  // 修复：原实现只处理「切回主案」的重载，从未写入 activePlan → 点「备选方案」无反应
   function onPlanChange(p) {
-    if (p === 'main' && activePlan.value !== 'main') load()
+    if (!p || p === activePlan.value) return
+    activePlan.value = p
+    if (p === 'main') load() // 切回主案：重新拉取权威数据（可能已被 AI 修订）
   }
 
   return {

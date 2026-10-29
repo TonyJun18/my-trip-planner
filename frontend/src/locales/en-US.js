@@ -355,13 +355,25 @@ export default {
   },
   tripDetail: {
     backToTrips: 'My Trips',
-    // ── Tabbed trip workspace (task-trip-detail-tabs) ──
+    // ── Secondary workspace (stage 2: phase-based grouping) ──
     tabs: {
-      overview: 'Overview',
-      itinerary: 'Itinerary',
-      ops: 'Tracking',
-      gear: 'Gear',
+      plan: 'Planning',
+      prep: 'Pre-trip',
+      live: 'On the trip',
     },
+    workspaceTitle: 'Tools',
+    toolsAll: 'All tools',
+    toolsCategorized: 'Group by phase',
+    itineraryTitle: 'Itinerary',
+    itineraryMeta: '{days}d · {stops} stops',
+    expandAllDays: 'Expand all',
+    collapseAllDays: 'Collapse all',
+    dayStops: '{n} stop(s)',
+    dayActions: 'Day actions',
+    stopActions: 'Stop actions',
+    actionCheckin: 'Check in',
+    actionTrack: 'Track',
+    quickRevise: 'Adjust plan',
     exportAllNote: 'Export mode: all expanded',
     // ── Three-section trip workspace (task-trip-detail-triptych) ──
     toolboxPlan: 'Plan & Revise',

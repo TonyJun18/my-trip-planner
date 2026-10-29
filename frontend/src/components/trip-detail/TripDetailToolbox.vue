@@ -48,6 +48,13 @@ const props = defineProps({
   reviseDiffMore: { type: Number, default: 0 },
   lastReviseQuality: { type: Object, default: null },
   diffText: { type: Function, default: () => (a) => a?.op || '' },
+  // 面板白名单：null = 全部（v1 分组平铺）；数组 = 只渲染列出的面板（阶段二时机收纳）
+  keys: { type: Array, default: null },
+  // flat：嵌在 Tab / 工作台卡内 → 不渲染分组标题与虚线分隔
+  flat: { type: Boolean, default: false },
+  // 已被提到主路径（地图与行程大纲之间）的工具：此处跳过渲染，避免同屏两份。
+  // flag 关闭（v1 平铺）时传空数组 → 修订/备选仍留在工具箱内，G1 对照组成立。
+  hoistedKeys: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits([
@@ -57,19 +64,32 @@ const emit = defineEmits([
 const planBDisplay = computed(() => props.planB)
 const timeGateIssues = computed(() => props.plan?.time_gate?.issues || [])
 const quality = computed(() => props.plan?.quality || null)
+
+// 面板存在性判定（keys 为 null 时全部渲染）
+function has(key) {
+  return !props.keys || props.keys.includes(key)
+}
+
+// 是否已被提到主路径（由 TripDetailPlanTools 承载）
+function isHoisted(key) {
+  return props.hoistedKeys.includes(key)
+}
+
 </script>
 
 <template>
-  <!-- ═══ 段3 · 工具箱：规划修订 ═══ -->
-  <div class="toolbox-group">
-    <div class="toolbox-label"><el-icon style="margin-right: 5px"><MagicStick /></el-icon>{{ $t('tripDetail.toolboxPlan') }}</div>
+  <div class="toolbox" :class="{ flat }">
+  <!-- ═══ 工具箱：规划修订 ═══ -->
+  <div v-if="['revise', 'planb', 'timegate', 'quality'].some((k) => has(k) && !isHoisted(k))" class="toolbox-group" :class="{ first: flat }">
+    <div v-if="!flat" class="toolbox-label"><el-icon style="margin-right: 5px"><MagicStick /></el-icon>{{ $t('tripDetail.toolboxPlan') }}</div>
     <div class="aux-area">
-      <!-- AI 调整行程（规划修订入口，默认收起） -->
+      <!-- AI 调整行程（若已被提到主路径则跳过，见 TripDetailPlanTools） -->
       <CollapsibleSection
+        v-if="has('revise') && !isHoisted('revise')"
         plain
         :default-open="false"
         :force-open="exportAll"
-        :storage-key="`tripDetail.aux.revise.${trip.id}`"
+        :storage-key="`tripDetail.aux.v2.revise.${trip.id}`"
         @click="emit('tool-open', 'ai_revise')"
       >
         <template #title>{{ $t('tripDetail.reviseTitle') }}</template>
@@ -155,13 +175,13 @@ const quality = computed(() => props.plan?.quality || null)
         </div>
       </CollapsibleSection>
 
-      <!-- 行程：Plan B 备选 -->
+      <!-- 行程：Plan B 备选（若已被提到主路径则跳过） -->
       <CollapsibleSection
-        v-if="planBDisplay"
+        v-if="has('planb') && !isHoisted('planb') && planBDisplay"
         plain
         :default-open="false"
         :force-open="exportAll"
-        :storage-key="`tripDetail.aux.planb.${trip.id}`"
+        :storage-key="`tripDetail.aux.v2.planb.${trip.id}`"
         @click="emit('tool-open', 'plan_b')"
       >
         <template #title>{{ $t('tripDetail.planBTitle') }}</template>
@@ -193,11 +213,11 @@ const quality = computed(() => props.plan?.quality || null)
 
       <!-- TimeGate 时间校验 -->
       <CollapsibleSection
-        v-if="timeGateIssues.length"
+        v-if="has('timegate') && timeGateIssues.length"
         plain
         :default-open="false"
         :force-open="exportAll"
-        :storage-key="`tripDetail.aux.timegate.${trip.id}`"
+        :storage-key="`tripDetail.aux.v2.timegate.${trip.id}`"
       >
         <template #title>{{ $t('tripDetail.timeGateTitle') }}</template>
         <div class="timegate-card aux-child">
@@ -218,10 +238,11 @@ const quality = computed(() => props.plan?.quality || null)
 
       <!-- AI 质检 -->
       <CollapsibleSection
+        v-if="has('quality')"
         plain
         :default-open="false"
         :force-open="exportAll"
-        :storage-key="`tripDetail.aux.quality.${trip.id}`"
+        :storage-key="`tripDetail.aux.v2.quality.${trip.id}`"
         @click="emit('tool-open', 'qa')"
       >
         <template #title>{{ $t('quality.reportTitle') }}</template>
@@ -232,15 +253,16 @@ const quality = computed(() => props.plan?.quality || null)
     </div>
   </div>
 
-  <!-- ═══ 段3 · 工具箱：旅程执行 ═══ -->
-  <div class="toolbox-group">
-    <div class="toolbox-label"><el-icon style="margin-right: 5px"><DataLine /></el-icon>{{ $t('tripDetail.toolboxOps') }}</div>
+  <!-- ═══ 工具箱：旅程执行 ═══ -->
+  <div v-if="['booking', 'journey', 'passport', 'story'].some((k) => has(k))" class="toolbox-group">
+    <div v-if="!flat" class="toolbox-label"><el-icon style="margin-right: 5px"><DataLine /></el-icon>{{ $t('tripDetail.toolboxOps') }}</div>
     <div class="aux-area">
       <CollapsibleSection
+        v-if="has('booking')"
         plain
         :default-open="true"
         :force-open="exportAll"
-        :storage-key="`tripDetail.aux.booking.${trip.id}`"
+        :storage-key="`tripDetail.aux.v2.booking.${trip.id}`"
       >
         <template #title>{{ $t('booking.panelTitle') }}</template>
         <template #extra>
@@ -250,10 +272,11 @@ const quality = computed(() => props.plan?.quality || null)
       </CollapsibleSection>
 
       <CollapsibleSection
+        v-if="has('journey')"
         plain
         :default-open="true"
         :force-open="exportAll"
-        :storage-key="`tripDetail.aux.journey.${trip.id}`"
+        :storage-key="`tripDetail.aux.v2.journey.${trip.id}`"
       >
         <template #title>{{ $t('journey.panelTitle') }}</template>
         <template #extra>
@@ -263,10 +286,11 @@ const quality = computed(() => props.plan?.quality || null)
       </CollapsibleSection>
 
       <CollapsibleSection
+        v-if="has('passport')"
         plain
         :default-open="false"
         :force-open="exportAll"
-        :storage-key="`tripDetail.aux.passport.${trip.id}`"
+        :storage-key="`tripDetail.aux.v2.passport.${trip.id}`"
       >
         <template #title>{{ $t('passport.panelTitle') }}</template>
         <template #extra>
@@ -276,10 +300,11 @@ const quality = computed(() => props.plan?.quality || null)
       </CollapsibleSection>
 
       <CollapsibleSection
+        v-if="has('story')"
         plain
         :default-open="false"
         :force-open="exportAll"
-        :storage-key="`tripDetail.aux.story.${trip.id}`"
+        :storage-key="`tripDetail.aux.v2.story.${trip.id}`"
       >
         <template #title>{{ $t('story.panelTitle') }}</template>
         <StoryCardGenerator :trip-id="trip.id" />
@@ -287,25 +312,27 @@ const quality = computed(() => props.plan?.quality || null)
     </div>
   </div>
 
-  <!-- ═══ 段3 · 工具箱：装备素材 ═══ -->
-  <div class="toolbox-group">
-    <div class="toolbox-label"><el-icon style="margin-right: 5px"><Suitcase /></el-icon>{{ $t('tripDetail.toolboxGear') }}</div>
+  <!-- ═══ 工具箱：装备素材 ═══ -->
+  <div v-if="['packing', 'servicing', 'hotel', 'events'].some((k) => has(k))" class="toolbox-group">
+    <div v-if="!flat" class="toolbox-label"><el-icon style="margin-right: 5px"><Suitcase /></el-icon>{{ $t('tripDetail.toolboxGear') }}</div>
     <div class="aux-area">
       <CollapsibleSection
+        v-if="has('packing')"
         plain
         :default-open="false"
         :force-open="exportAll"
-        :storage-key="`tripDetail.aux.packing.${trip.id}`"
+        :storage-key="`tripDetail.aux.v2.packing.${trip.id}`"
       >
         <template #title>{{ $t('packing.title') }}</template>
         <PackingList :trip-id="trip.id" />
       </CollapsibleSection>
 
       <CollapsibleSection
+        v-if="has('servicing')"
         plain
         :default-open="false"
         :force-open="exportAll"
-        :storage-key="`tripDetail.aux.servicing.${trip.id}`"
+        :storage-key="`tripDetail.aux.v2.servicing.${trip.id}`"
       >
         <template #title>{{ $t('servicing.panelTitle') }}</template>
         <TripServicing
@@ -318,25 +345,28 @@ const quality = computed(() => props.plan?.quality || null)
       </CollapsibleSection>
 
       <CollapsibleSection
+        v-if="has('hotel')"
         plain
         :default-open="false"
         :force-open="exportAll"
-        :storage-key="`tripDetail.aux.hotel.${trip.id}`"
+        :storage-key="`tripDetail.aux.v2.hotel.${trip.id}`"
       >
         <template #title>{{ $t('hotel.recommendTitle') }}</template>
         <HotelRecommend :hotels="hotelCandidates" :days="trip.days" actionable @arranged="emit('arranged')" />
       </CollapsibleSection>
 
       <CollapsibleSection
+        v-if="has('events')"
         plain
         :default-open="false"
         :force-open="exportAll"
-        :storage-key="`tripDetail.aux.events.${trip.id}`"
+        :storage-key="`tripDetail.aux.v2.events.${trip.id}`"
       >
         <template #title>{{ $t('events.title') }}</template>
         <TripEventFeed :trip-id="trip.id" />
       </CollapsibleSection>
     </div>
+  </div>
   </div>
 </template>
 
@@ -345,6 +375,32 @@ const quality = computed(() => props.plan?.quality || null)
   margin-top: 22px;
   border-top: 1px dashed var(--line);
   padding-top: 14px;
+}
+/* flat：嵌在工作台卡内（tab 收纳）——去掉首组的虚线分隔与外部间距 */
+.toolbox.flat .toolbox-group {
+  margin-top: 0;
+  border-top: none;
+  padding-top: 0;
+}
+/* flat 模式（嵌在工作台 tab 内）收起子面板自带的重复标题：
+   折叠头已给出标题，面板内再写一遍「预订 / 旅程追踪 / 护照 / 故事卡」是纯噪音。
+   - 预订 / 故事卡：内部头只有「标题 + ？提示」，整行隐藏
+   - 追踪 / 护照：内部头还带状态标签与徽章计数，只隐藏标题并把剩余内容靠右 */
+.toolbox.flat :deep(.booking-header),
+.toolbox.flat :deep(.story-header) {
+  display: none;
+}
+.toolbox.flat :deep(.journey-title),
+.toolbox.flat :deep(.passport-title) {
+  display: none;
+}
+.toolbox.flat :deep(.passport-header) {
+  justify-content: flex-end;
+  gap: 8px;
+}
+/* 追踪面板的状态标签折叠头已经有了（「2/11 · 进行中」），内部再放一遍是同屏重复 */
+.toolbox.flat :deep(.journey-header) {
+  display: none;
 }
 .toolbox-label {
   display: flex;

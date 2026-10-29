@@ -355,13 +355,25 @@ export default {
   },
   tripDetail: {
     backToTrips: '我的行程',
-    // ── Tab 化旅程工作台（task-trip-detail-tabs） ──
+    // ── 次级工作台（阶段二：按时机收纳） ──
     tabs: {
-      overview: '概览',
-      itinerary: '行程',
-      ops: '追踪',
-      gear: '装备',
+      plan: '规划',
+      prep: '行前',
+      live: '行中',
     },
+    workspaceTitle: '工具',
+    toolsAll: '全部工具',
+    toolsCategorized: '按时机显示',
+    itineraryTitle: '行程大纲',
+    itineraryMeta: '{days} 天 · {stops} 站',
+    expandAllDays: '展开全部日程',
+    collapseAllDays: '收起全部日程',
+    dayStops: '{n} 站',
+    dayActions: '日程操作',
+    stopActions: '站点操作',
+    actionCheckin: '打卡',
+    actionTrack: '追踪',
+    quickRevise: '调整行程',
     exportAllNote: '导出模式：全部展开',
     // ── 三段式旅程工作台（task-trip-detail-triptych） ──
     toolboxPlan: '规划与修订',

@@ -159,29 +159,36 @@ def _budget_variant(days: list[dict[str, Any]], locale: str = "zh-CN") -> dict[s
     """预算档变体：全部酒店按经济档 ×0.7 下调，预算重算。
 
     失败条件：行程里没有酒店站点 → 返回 None（调用方降级）。
+
+    金额口径：**只传裸数字**，货币符号由文案模板承载（`planb.budget.delta.*` 里的 ¥）。
+    平台记账币种统一 CNY（_sum_budget 返回 currency=CNY），英文界面同样显示 ¥——
+    旧实现按语种切 "$"，既与真实币种不符，又和模板自带的符号叠加成 "¥¥1080" / "$$1080"。
     """
     locale = normalize_locale(locale)
     result = _clone_days(days)
     hotel_diffs: list[str] = []
     total_saved = 0.0
-    currency = "¥" if locale == "zh-CN" else "$"
     for day in result:
         for stop in day.get("stops") or []:
             if stop.get("stop_type") == "hotel":
                 old = stop.get("estimated_cost") or 0.0
+                # 未填价格（0/null）的住宿不参与预算档对比：
+                # 否则会生成「约 ¥0 → ¥0」这种无信息量的差异行
+                if old <= 0:
+                    continue
                 new = round(old * BUDGET_TIER_MULTIPLIER, 2)
                 stop["estimated_cost"] = new
                 saved = round(old - new, 2)
                 total_saved += saved
                 hotel_diffs.append(
                     t(locale, "planb.budget.delta.hotel", name=stop["name"],
-                      old=f"{currency}{_money(old)}", new=f"{currency}{_money(new)}")
+                      old=_money(old), new=_money(new))
                 )
 
     if not hotel_diffs:
         return None
 
-    deltas = hotel_diffs + [t(locale, "planb.budget.delta.total", saved=f"{currency}{_money(round(total_saved, 2))}")]
+    deltas = hotel_diffs + [t(locale, "planb.budget.delta.total", saved=_money(round(total_saved, 2)))]
     return {
         "label": t(locale, "planb.budget.label"),
         "description": t(locale, "planb.budget.description"),

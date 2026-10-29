@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useI18n } from 'vue-i18n'
@@ -26,6 +26,25 @@ const mapEl = ref(null)
 let map = null
 let markerLayer = null
 let polylines = [] // 按日连线：每天一条（task-map-pin-cards 当日路线视觉化）
+
+// ── 高度：单一事实来源（移动端压缩）──
+// 旧实现是「内联 height=360px」+ 媒体查询 `height:300px !important` 打架：
+// 元素最终 300px，但 Leaflet 在 onMounted 时按 360px 量了容器 → 画布/瓦片
+// 按 360 布局，底部 60px 被裁（露出灰带），拖动与 fitBounds 也偏。
+// 现在高度由 JS 算出来直接绑定，尺寸变化时 invalidateSize() 重算。
+const MOBILE_MAX_HEIGHT = 300
+const isNarrow = ref(typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches)
+const heightPx = computed(() => {
+  const raw = parseInt(String(props.height), 10)
+  const base = Number.isFinite(raw) && raw > 0 ? raw : 480
+  return isNarrow.value ? Math.min(base, MOBILE_MAX_HEIGHT) : base
+})
+const mapStyle = computed(() => ({ height: `${heightPx.value}px` }))
+
+let narrowMq = null
+function onViewportChange(e) {
+  isNarrow.value = e.matches
+}
 
 const typeColors = { attraction: '#ff385c', food: '#c2410c', hotel: '#0d8a5f' }
 const typeLabel = { attraction: () => t('common.typeAttraction'), food: () => t('common.typeFood'), hotel: () => t('common.typeHotel') }
@@ -225,6 +244,19 @@ onMounted(() => {
   }).addTo(map)
   markerLayer = L.layerGroup().addTo(map)
   renderMarkers(props.markers)
+
+  // 视口跨过断点（手机 ↔ 桌面）时高度会变 → 让 Leaflet 重新量容器
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    narrowMq = window.matchMedia('(max-width: 640px)')
+    narrowMq.addEventListener?.('change', onViewportChange)
+  }
+})
+
+// 高度变化（移动端压缩 / 父组件换尺寸）→ Leaflet 必须 invalidateSize，
+// 否则瓦片仍按旧尺寸排布，底部露灰
+watch(heightPx, async () => {
+  await nextTick()
+  map?.invalidateSize()
 })
 
 watch(
@@ -240,13 +272,15 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  narrowMq?.removeEventListener?.('change', onViewportChange)
+  narrowMq = null
   map?.remove()
   map = null
 })
 </script>
 
 <template>
-  <div ref="mapEl" class="trip-map" :style="{ height }" />
+  <div ref="mapEl" class="trip-map" :style="mapStyle" />
 </template>
 
 <style>
@@ -345,8 +379,7 @@ onBeforeUnmount(() => {
     min-width: 0;
   }
 }
-/* 移动端地图高度压缩：height 由父组件内联传入，必须 !important 覆盖（task-mobile-views） */
-@media (max-width: 640px) {
-  .trip-map { height: 300px !important; }
-}
+/* 移动端地图高度压缩已改为 JS 计算（见 script 里的 heightPx / MOBILE_MAX_HEIGHT）。
+   不要再用 `height: 300px !important` 覆盖内联样式——那会让 Leaflet 量到的容器
+   与初始化尺寸不一致（底部裁切露灰）。 */
 </style>
