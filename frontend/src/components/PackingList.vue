@@ -19,14 +19,15 @@ import { ElMessageBox, ElMessage } from 'element-plus'
 
 const props = defineProps({
   tripId: { type: [String, Number], required: true },
-  // 可选：从行程数据推断出行类型（默认/亲子/商务…），用于模板推荐
-  tripType: { type: String, default: '' },
 })
 
 const { t } = useI18n()
 
 // ── 数据模型 ─────────────────────────────────────────────
-// items: [{ id, label, done }]
+// items: [{ id, label, tpl?, done }]
+//  - 模板条目：label 存 i18n key（如 'packing.general.docs'），tpl=true，
+//    渲染时 t(label) 跟随语言实时翻译；切换语言自动更新文案。
+//  - 自定义条目：label 存用户输入原文，tpl 缺省 false，原样展示（用户文字不翻译）。
 const items = ref([])
 const newItemLabel = ref('')
 const storageKey = computed(() => `packing:${props.tripId}`)
@@ -62,22 +63,22 @@ const TEMPLATES = () => ({
   ],
 })
 
-// 出行类型 → 模板键映射
-const typeToTemplate = {
-  family: 'family',
-  business: 'business',
-  honeymoon: 'beach',
-  visiting: 'general',
-  leisure: 'general',
-}
-
 // ── 持久化 ───────────────────────────────────────────────
 function load() {
   try {
     const raw = localStorage.getItem(storageKey.value)
     if (raw) {
       const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed.items)) items.value = parsed.items
+      if (Array.isArray(parsed.items)) {
+        items.value = parsed.items.map((it) => {
+          // 旧数据迁移：早期版本模板条目 label 存 i18n key 但无 tpl 标志；
+          // 以 'packing.' 开头的视为 key → 补 tpl=true（自定义文本不会以该前缀开头）。
+          if (it.tpl == null && typeof it.label === 'string' && it.label.startsWith('packing.')) {
+            return { ...it, tpl: true }
+          }
+          return { ...it, tpl: it.tpl === true }
+        })
+      }
     }
   } catch (e) {
     // localStorage 不可用（隐私模式）→ 静默降级为内存态
@@ -101,6 +102,7 @@ onMounted(load)
 function addItem() {
   const label = newItemLabel.value.trim()
   if (!label) return
+  // 自定义条目：原样保存用户输入（不翻译），tpl 缺省 false
   items.value.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, label, done: false })
   newItemLabel.value = ''
 }
@@ -133,18 +135,13 @@ function applyTemplate(templateKey) {
   const existing = new Set(items.value.map((i) => i.label))
   for (const key of template) {
     if (!existing.has(key)) {
-      items.value.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, label: key, done: false })
+      items.value.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, label: key, tpl: true, done: false })
     }
   }
   ElMessage.success(t('packing.templateApplied'))
 }
 
-// 推荐模板（基于 tripType，可选）
-const recommendedTemplate = computed(() => {
-  const key = typeToTemplate[props.tripType] || 'general'
-  return key
-})
-
+// 推荐模板（基于 tripType；当前 UI 由用户手动选模板，未接入自动推荐）
 const doneCount = computed(() => items.value.filter((i) => i.done).length)
 const progress = computed(() => (items.value.length ? Math.round((doneCount.value / items.value.length) * 100) : 0))
 const hasItems = computed(() => items.value.length > 0)
@@ -179,7 +176,7 @@ const hasItems = computed(() => items.value.length > 0)
     <ul v-if="hasItems" class="packing-list">
       <li v-for="it in items" :key="it.id" class="packing-item" :class="{ done: it.done }">
         <el-checkbox :model-value="it.done" @change="toggleItem(it.id)" size="small" />
-        <span class="packing-label">{{ t(it.label) }}</span>
+        <span class="packing-label">{{ it.tpl ? t(it.label) : it.label }}</span>
         <el-button size="small" text class="packing-del" @click="removeItem(it.id)">
           <el-icon><Close /></el-icon>
         </el-button>

@@ -811,7 +811,6 @@ onBeforeUnmount(() => {
                   <template #title>{{ $t('packing.title') }}</template>
                   <PackingList
                     :trip-id="trip.id"
-                    :trip-type="trip.trip_type"
                   />
                 </CollapsibleSection>
 
