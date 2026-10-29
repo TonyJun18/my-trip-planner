@@ -119,6 +119,38 @@ MAX_PLAY_MINUTES_PER_DAY = 480  # 8 小时（景点本身游玩，不含交通�
 # 一天排程起点（无 visit_start 时按此推算）
 DAY_START = (9, 0)
 
+# ── 餐饮时段锚定（task-meal-walk-anchors-eval）───────────────────
+# Passage AI「Need tickets?」同源实证（2026-10-30 竞品分析）：餐饮放进合理时段
+# 是步行体验核心；我们 time_validation 已有类目营业基准/体力系数，缺餐饮窗口锚定。
+# 纯规则、零凭证：常见用餐窗口表 + 到达时刻明显偏离 → warning（basis=rule_based）。
+# 窗口（半开区间 [lo, hi)，宽口径，不误伤）：
+#   breakfast 07:00-10:00 / lunch 11:30-14:00 / dinner 17:00-21:00
+# 间隙（真正值得提醒的明确偏离）：
+#   <07:00 过早：绝大多数餐厅未开门
+#   10:00-11:30 早午空档：多数餐厅午市未开（若计划午餐建议 11:30 后）
+#   14:00-17:00 午晚空档：多数餐厅午市已收、晚市未开——最典型翻车场景
+#   ≥21:00 深夜：多数餐厅已收市（夜市/夜宵/烧烤/咖啡馆/甜品等全天候类目豁免）
+# 全天候餐饮类目豁免：名称命中即不提醒（夜市/烧烤/咖啡/甜品/快餐/小吃等
+# 在宽时段正常营业，不受用餐窗口约束）。
+# 真实营业时间以现场为准；只提示不裁决（与闭馆到达/体力负荷同哲学）。
+MEAL_WINDOWS: dict[str, tuple[tuple[int, int], tuple[int, int]]] = {
+    "breakfast": ((7, 0), (10, 0)),
+    "lunch": ((11, 30), (14, 0)),
+    "dinner": ((17, 0), (21, 0)),
+}
+# 全天候餐饮类目名称关键词：命中即豁免（宽时段营业，不受用餐窗口约束）
+_ALL_DAY_MEAL_EXEMPT_KEYWORDS: tuple[str, ...] = (
+    "夜市", "夜宵", "烧烤", "大排档", "酒吧", "精酿", "居酒屋",
+    "咖啡", "茶馆", "甜品", "下午茶", "面包", "烘焙", "奶茶", "快餐", "便利店", "小吃",
+)
+# 间隙 → 建议挪到的用餐窗口（文案用）
+_MEAL_GAP_SUGGEST_WINDOW: dict[str, str] = {
+    "gap_early": "breakfast",
+    "gap_brunch": "lunch",
+    "gap_afternoon": "dinner",
+    "gap_late": "dinner",
+}
+
 
 def _parse_clock(value: str | None) -> tuple[int, int] | None:
     """解析 "HH:MM" → (hour, minute)；非法/None 返回 None。"""
@@ -217,6 +249,43 @@ def _stop_exertion_coef(stop: dict[str, Any]) -> float:
         return _MOUNTAIN_SUFFIX_COEF
     # 类目基准（世界级博物馆/餐饮等属低强度）
     return EXERTION_BY_TYPE.get(stop_type, 1.0)
+
+
+def _classify_meal_window(arrival_minutes: int) -> tuple[str, tuple[tuple[int, int], tuple[int, int]]] | None:
+    """把到达时刻分类到用餐窗口或间隙。
+
+    返回 (key, window)：
+    - 在窗口内 → ("breakfast"|"lunch"|"dinner", 对应窗口)（调用方判定偏离）
+    - 在明确间隙 → ("gap_early"|"gap_brunch"|"gap_afternoon"|"gap_late", 建议窗口)
+    - 意外值 → (None, None)（保持沉默）
+    间隙定义（宽口径但只覆盖真正值得提醒的明确偏离）：
+      gap_early   < 07:00                        多数餐厅未开门
+      gap_brunch  10:00-11:30                    多数餐厅午市未开
+      gap_afternoon 14:00-17:00                  午市收、晚市未开——最典型翻车
+      gap_late    ≥ 21:00                        多数餐厅已收市
+    """
+    if arrival_minutes < 0 or arrival_minutes > 1439:
+        return None
+    for key in ("dinner", "lunch", "breakfast"):
+        window = MEAL_WINDOWS[key]
+        lo = _minutes(window[0])
+        hi = _minutes(window[1])
+        if lo <= arrival_minutes < hi:
+            return key, window
+    # 明确间隙 → 建议挪到的窗口
+    if arrival_minutes < _minutes(MEAL_WINDOWS["breakfast"][0]):
+        return "gap_early", MEAL_WINDOWS["breakfast"]
+    brunch_lo = _minutes(MEAL_WINDOWS["breakfast"][1])
+    lunch_lo = _minutes(MEAL_WINDOWS["lunch"][0])
+    if brunch_lo <= arrival_minutes < lunch_lo:
+        return "gap_brunch", MEAL_WINDOWS["lunch"]
+    lunch_hi = _minutes(MEAL_WINDOWS["lunch"][1])
+    dinner_lo = _minutes(MEAL_WINDOWS["dinner"][0])
+    if lunch_hi <= arrival_minutes < dinner_lo:
+        return "gap_afternoon", MEAL_WINDOWS["dinner"]
+    if arrival_minutes >= _minutes(MEAL_WINDOWS["dinner"][1]):
+        return "gap_late", MEAL_WINDOWS["dinner"]
+    return None
 
 
 def _day_start_clock(day: dict[str, Any]) -> tuple[int, int]:
@@ -367,7 +436,57 @@ def check_plan_time_gate(plan: dict[str, Any], locale: str = "zh-CN") -> dict[st
                         "day_number": day_no,
                     })
 
-            # 游完该站 → 下一站到达时刻（含站内时长；站点间交通不在本规则库） 
+            # 游完该站 → 下一站到达时刻（含站内时长；站点间交通不在本规则库）
+            if duration:
+                cursor += duration
+
+    # ── 餐饮时段锚定（task-meal-walk-anchors-eval）：food 站点到达时刻应落在用餐窗口 ──
+    for day in days:
+        if not isinstance(day, dict):
+            continue
+        stops = [s for s in (day.get("stops") or []) if isinstance(s, dict)]
+        if not stops:
+            continue
+        day_no = day.get("day_number")
+        cursor = _minutes(_day_start_clock(day))
+
+        for stop in stops:
+            stop_type = stop.get("stop_type") or "attraction"
+            duration = _stop_duration(stop, stop_type) or 0
+
+            if stop_type == "food":
+                visit_start = _parse_clock(stop.get("visit_start"))
+                arrival = _minutes(visit_start) if visit_start is not None else cursor
+                name = str(stop.get("name") or t(locale, "timegate.stop.fallback"))
+                # 全天候餐饮类目豁免（夜市/烧烤/咖啡/甜品/快餐/小吃…宽时段营业）
+                if any(kw in name for kw in _ALL_DAY_MEAL_EXEMPT_KEYWORDS):
+                    pass
+                else:
+                    meal = _classify_meal_window(arrival)
+                    if meal is not None:
+                        key, window = meal
+                        lo = _minutes(window[0])
+                        hi = _minutes(window[1])
+                        # 窗口内正常；间隙（gap_*）或早于窗口 → 提醒
+                        if key.startswith("gap_") or arrival < lo or arrival >= hi:
+                            suggest_key = (
+                                _MEAL_GAP_SUGGEST_WINDOW.get(key, key)
+                                if key.startswith("gap_") else key
+                            )
+                            issues.append({
+                                "severity": "warning",
+                                "category": "schedule",
+                                "message": (
+                                    t(locale, "timegate.msg.meal_anchor",
+                                      name=name, arrive=f"{arrival // 60:02d}:{arrival % 60:02d}",
+                                      window=t(locale, f"timegate.meal.{suggest_key}"))
+                                ),
+                                "suggestion": t(locale, "timegate.suggest.meal_anchor",
+                                                 window=t(locale, f"timegate.meal.{suggest_key}")),
+                                "day_number": day_no,
+                            })
+
+            # 游完该站 → 下一站到达时刻
             if duration:
                 cursor += duration
 

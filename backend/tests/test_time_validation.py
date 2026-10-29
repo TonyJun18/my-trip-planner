@@ -24,7 +24,7 @@ def test_passing_plan_no_issues():
                 1,
                 _stop("故宫", visit_start="09:00", estimated_duration_minutes=180),
                 _stop("景山公园", visit_start="12:30", estimated_duration_minutes=90),
-                _stop("南锣鼓巷", stop_type="food", visit_start="14:30", estimated_duration_minutes=60),
+                _stop("南锣鼓巷小吃", stop_type="food", visit_start="14:30", estimated_duration_minutes=60),
             )
         ]
     }
@@ -279,3 +279,128 @@ def test_exclude_keywords_not_high_exertion():
     result = check_plan_time_gate(plan)
     assert all("高强度" not in i["message"] for i in result["issues"])
     assert all("体力负荷" not in i["message"] for i in result["issues"])
+
+
+# ── 餐饮时段锚定（task-meal-walk-anchors-eval）────────────────────
+# 午餐正常窗口：12:00 到达 food 站点 → 无餐饮锚定提示
+def test_meal_in_lunch_window_no_warning():
+    plan = {
+        "days": [
+            _day(
+                1,
+                _stop("外婆家", stop_type="food", visit_start="12:00",
+                      estimated_duration_minutes=60),
+            )
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    assert all("不在" not in i["message"] for i in result["issues"])
+
+
+# 午餐空档：15:00（午晚空档中央）到达 → warning「多数餐厅午市已收」
+def test_meal_afternoon_gap_warns():
+    plan = {
+        "days": [
+            _day(
+                1,
+                _stop("楼外楼", stop_type="food", visit_start="15:00",
+                      estimated_duration_minutes=60),
+            )
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    assert result["passed"] is False
+    meal = [i for i in result["issues"] if "不在" in i["message"]]
+    assert meal, "应产生餐饮时段锚定提示"
+    assert "楼外楼" in meal[0]["message"]
+    assert "15:00" in meal[0]["message"]
+    assert "晚餐时段" in meal[0]["message"]  # gap_afternoon → 建议晚餐
+    assert meal[0]["severity"] == "warning"
+    assert meal[0]["category"] == "schedule"
+    assert meal[0]["day_number"] == 1
+
+
+# 深夜 22:00 普通餐厅 → warning；夜市/烧烤豁免
+def test_meal_late_gap_warns_but_exempt_late_venue():
+    plan = {
+        "days": [
+            _day(
+                1,
+                _stop("普通餐厅", stop_type="food", visit_start="22:00",
+                      estimated_duration_minutes=60),
+                _stop("士林夜市", stop_type="food", visit_start="22:00",
+                      estimated_duration_minutes=60),
+            )
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    meal = [i for i in result["issues"] if "不在" in i["message"]]
+    assert meal, "普通餐厅深夜应提示"
+    assert "普通餐厅" in meal[0]["message"]
+    assert not any("士林夜市" in i["message"] for i in meal)
+
+
+# 全日餐饮豁免：咖啡/甜品/面包 不在窗口也不提示
+def test_all_day_meal_exempt():
+    plan = {
+        "days": [
+            _day(
+                1,
+                _stop("Manner 咖啡", stop_type="food", visit_start="15:30",
+                      estimated_duration_minutes=40),
+                _stop("Lady M 甜品", stop_type="food", visit_start="22:30",
+                      estimated_duration_minutes=40),
+            )
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    assert all("不在" not in i["message"] for i in result["issues"])
+
+
+# 无 visit_start：cursor 推进到 15:00 → 也应命中午晚空档
+def test_meal_gap_via_cursor_propagation():
+    plan = {
+        "days": [
+            _day(
+                1,
+                _stop("故宫", visit_start="09:00", estimated_duration_minutes=240),  # 09:00-13:00
+                _stop("胡同烤鸭", stop_type="food", estimated_duration_minutes=60),  # 推算 13:00（午餐窗口内）
+            )
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    assert all("不在" not in i["message"] for i in result["issues"])
+    # 前站再拉长 → 14:30 到达（午晚空档）→ 命中
+    plan2 = {
+        "days": [
+            _day(
+                1,
+                _stop("故宫", visit_start="09:00", estimated_duration_minutes=330),  # 09:00-14:30
+                _stop("胡同烤鸭", stop_type="food", estimated_duration_minutes=60),
+            )
+        ]
+    }
+    result2 = check_plan_time_gate(plan2)
+    meal2 = [i for i in result2["issues"] if "不在" in i["message"]]
+    assert meal2, "cursor 推进到空档应命中"
+
+# 早餐窗口边界：07:30 到达正常；06:30 过早 → warning
+def test_meal_early_breakfast_boundary():
+    plan = {
+        "days": [
+            _day(1, _stop("酒店早餐", stop_type="food", visit_start="07:30",
+                          estimated_duration_minutes=45)),
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    assert all("不在" not in i["message"] for i in result["issues"])
+
+    plan2 = {
+        "days": [
+            _day(1, _stop("早点铺", stop_type="food", visit_start="06:30",
+                          estimated_duration_minutes=30)),
+        ]
+    }
+    result2 = check_plan_time_gate(plan2)
+    meal2 = [i for i in result2["issues"] if "不在" in i["message"]]
+    assert meal2, "06:30 过早应提示"

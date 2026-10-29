@@ -1,17 +1,14 @@
 {
-  "night": "2026-10-29",
-  "status": "completed_with_issues",
+  "night": "2026-10-30",
+  "status": "in_progress",
   "todo": [
-    "task-price-realism-eval",
-    "task-trip-rating-signal"
+    "task-book-ahead-scan",
+    "task-meal-walk-anchors-eval"
   ],
   "completed": [
-    "task-share-gate-eval",
-    "task-open-hours-real-eval",
-    "task-price-realism-eval",
-    "task-trip-rating-signal"
+    "competitive-analysis"
   ],
-  "current_index": 4,
+  "current_index": 1,
   "issues": [
     "2026-10-29 night-start 重建：checkpoint 原停在 10-28 旧队列（night=2026-10-28 in_progress todo 5 项 index=0），与 main 现状不符（human-escalation 已合并 main 且 todo [x]、booking-closure 已 [x]）。本夜按 todo 文件现存 [ ] 项重建队列：share-gate / price-realism / open-hours-real / trip-rating-signal。",
     "2026-10-29 worker-1：task-share-gate-eval 补登记完成（非重做）——主体已由 10-28 夜完成于分支 nightly/2026-10-28/0-task-share-gate-eval（5584710+126f929）。本 worker 按重试/补登记先例核验：专项 test_share_gate.py 9 例全绿、分支全套 499 passed+1 skipped、评估记录在案。仅 docs 改动，无新代码。",
@@ -24,12 +21,15 @@
     "2026-10-29 worker-3：task-price-realism-eval 补登记完成（非重做）——主体已由 10-28 夜完成于分支 nightly/2026-10-28/1-task-price-realism-eval（commits e3ffc94+b5a5077，高德 POI 真实价格双读增强：extensions=base→all、_parse_amap_cost 人均消费进 estimated_cost（景点/美食）、_parse_amap_rating 评分透传（非法 None/越界裁剪）、顶层优先 + biz_ext 兜底防字段漂移、酒店维持基准价口径、cost 缺失保持 0 不编造；评估记录 docs/nightly/evaluations/task-price-realism-eval-2026-10-28.md——数据源矩阵：高德 POI cost 采用/携程 Booking Amadeus 关单）。本 worker 核验：评估记录在案、专项 tests/test_price_realism.py 11 passed 全绿（worktree /private/tmp/mtp-nightly-wt 分支 HEAD=b5a5077）、e3ffc94 不在 main（main tools.py 无 _parse_amap_rating）且 main todo 漏勾。仅 docs 改动（todo 勾选 + checkpoint 更新），无新代码，纯评估无 pytest/build 需求。遗留：rating 已透传 POI 结构但前端候选卡展示接线视窗口另立（评估记录四节）。",
     "2026-10-29 worker-3 mechanics：与 worker-2 同构——git checkout main 后 docs 两文件被 main 旧版覆盖，已从分支 nightly/2026-10-29/1-task-open-hours-real-eval 恢复 10-29 权威版后补登记；本 worker 分支 nightly/2026-10-29/2-task-price-realism-eval 按 current_index=2 对齐命名。",
     "2026-10-29 worker-4：task-trip-rating-signal 完成（评估通过并实现最小版）——branch nightly/2026-10-29/3-task-trip-rating-signal；TripRating 模型 + alembic c2d4e6f8a0b2 迁移 + rating_service + trips_ratings API（POST/PUT/GET/DELETE /trips/{trip_id}/rating + GET /trips/ratings/summary 批量免登录，/ratings/summary 先于 crud 注册防吞）+ 画廊透出（gallery summary 3 字段 + LandingPage 画廊卡片星级/人数/「N 人去过」）；专项 test_trip_rating.py 8 passed、全套 668 passed、前端 build 3.21s 通过；评估记录 docs/nightly/evaluations/task-trip-rating-signal-2026-10-29.md。遗留：评分交互入口（详情页控件）视窗口另立。本夜 4 项队列全部完成，status=completed。",
-    "2026-10-29 worker-4 mechanics：git checkout main 后 docs 两文件被 main 旧版覆盖（同 worker-2/3），已从分支 nightly/2026-10-29/2-task-price-realism-eval 恢复 10-29 权威版后执行任务；python3 -c 触发安全扫描 pending_approval，改换 search_files/grep 等价写法。"
+    "2026-10-29 worker-4 mechanics：git checkout main 后 docs 两文件被 main 旧版覆盖（同 worker-2/3），已从分支 nightly/2026-10-29/2-task-price-realism-eval 恢复 10-29 权威版后执行任务；python3 -c 触发安全扫描 pending_approval，改换 search_files/grep 等价写法。",
+    "2026-10-30 night-start 重建：checkpoint 停在 10-29（status=completed_with_issues，night=2026-10-29 ≠ 今天 2026-10-30），跨夜按当前日期重建。todo 文件现存唯一 [ ] 项 task-booking-closure-eval（10-27 用户视角追加、排在「其余 4 项之后最后评估」）；注意 10-28 白天三立项已对同 slug 关单（[x]，评估记录 docs/nightly/evaluations/task-booking-closure-eval-2026-10-28.md，经用户批准按方案 A 落地 task-booking-outlink——76 行未勾疑与 91 行 [x] 重复漏勾），后续 worker 应核验补登记而非重做。按手册铁律 2 竞品分析先行，todo[0]=competitive-analysis。历史 issues 保留。",
+    "2026-10-30 worker-3 观察：git 历史显示 10-29 夜存在超出 checkpoint 记录的后续 worker 活动（main 已有 merge nightly/2026-10-29/6-task-trip-detail-3section → 95b5f87；另有无检查点登记的 WIP 分支 nightly/2026-10-29/8-task-floattrip-borrow 遗留『floattrip-borrow WIP 2026-10-29 遗留(含 PlanTaskEventsOut 导出修复) — 待白天核验修复挂起测试』，以及 stash/untracked 痕迹 1326efe/f327267/d8587dc）。10-29 checkpoint 未登记 5+ 号 worker 的任务与分支（可能因 docs 被 main 覆盖丢失）。建议用户 review 时核对 10-29 未合并分支（4+2 支）与 floattrip-borrow WIP 的去留。"
   ],
   "branches": [
     "nightly/2026-10-29/0-task-share-gate-eval",
     "nightly/2026-10-29/1-task-open-hours-real-eval",
     "nightly/2026-10-29/2-task-price-realism-eval",
-    "nightly/2026-10-29/3-task-trip-rating-signal"
+    "nightly/2026-10-29/3-task-trip-rating-signal",
+    "nightly/2026-10-30/0-competitive-analysis"
   ]
 }
