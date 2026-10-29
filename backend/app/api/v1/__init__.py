@@ -26,6 +26,7 @@ from app.api.v1 import (
     trips_gallery,
     trips_journey,
     trips_passport,
+    trips_ratings,
     trips_share,
     trips_story,
     ws,
@@ -43,6 +44,9 @@ api_router.include_router(inspiration.router, prefix="/trips", tags=["trips"])
 # 3) trips_share 后半（/{trip_id}/share/*、/edit/{token}/live）与 crud 互补不冲突
 api_router.include_router(trips_share.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_gallery.router, prefix="/trips", tags=["trips"])
+# ratings：/ratings/summary 是字面量段，必须先于 trips_crud 的 /{trip_id} 注册
+# （否则 "ratings" 会被当作 trip_id 吞掉；/gallery 同因）
+api_router.include_router(trips_ratings.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_favorites.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_escalations.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_crud.router, prefix="/trips", tags=["trips"])

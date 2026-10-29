@@ -15,6 +15,7 @@ from app.models.trip import (
     TripFavorite,
     TripPassport,
     TripPlan,
+    TripRating,
 )
 from app.models.user import User
 
@@ -33,6 +34,7 @@ __all__ = [
     "TripExpense",
     "TripFavorite",
     "TripPlan",
+    "TripRating",
     "User",
     "UserProfile",
 ]

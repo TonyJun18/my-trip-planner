@@ -70,7 +70,34 @@ def _gallery_summary(trip: Trip) -> dict[str, Any]:
         "share_token": trip.share_token,
         "updated_at": trip.updated_at.isoformat() if trip.updated_at else None,
         "source": "user",
+        # 评分热度（task-trip-rating-signal）：默认无评分；由 list_gallery 填充
+        "rating_count": 0,
+        "rating_avg": None,
+        "visited_count": 0,
     }
+
+
+async def _attach_rating_summaries(
+    db: AsyncSession, summaries: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """批量附加评分热度（count / avg / visited_count）；失败不影响列表（尽力而为）。"""
+    if not summaries:
+        return summaries
+    from app.services import rating_service
+
+    try:
+        trip_ids = [s["trip_id"] for s in summaries]
+        agg = await rating_service.rating_summary(db, trip_ids)
+        agg_by_id = {a["trip_id"]: a for a in agg}
+        for s in summaries:
+            a = agg_by_id.get(s["trip_id"])
+            if a:
+                s["rating_count"] = a["count"]
+                s["rating_avg"] = a["avg"]
+                s["visited_count"] = a["visited_count"]
+    except Exception:  # noqa: BLE001 — 聚合失败不阻断画廊读取（诚实降级为无评分）
+        pass
+    return summaries
 
 
 async def list_gallery(db: AsyncSession, *, limit: int = 20, offset: int = 0) -> list[dict[str, Any]]:
@@ -85,7 +112,8 @@ async def list_gallery(db: AsyncSession, *, limit: int = 20, offset: int = 0) ->
         .offset(max(0, int(offset or 0)))
     )
     trips = (await db.execute(stmt)).scalars().all()
-    return [_gallery_summary(t) for t in trips]
+    summaries = [_gallery_summary(t) for t in trips]
+    return await _attach_rating_summaries(db, summaries)
 
 
 async def publish_to_gallery(

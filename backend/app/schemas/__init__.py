@@ -41,6 +41,7 @@ from app.schemas.expense import ExpenseBalanceOut, ExpenseIn, ExpenseOut
 from app.schemas.favorite import FavoriteListOut, FavoriteOut
 from app.schemas.health import HealthOut
 from app.schemas.plan_b import PlanBOut, PlanBVariantOut
+from app.schemas.rating import RatingIn, RatingListOut, RatingOut, RatingSummaryOut
 from app.schemas.share import (
     LiveCheckIn,
     LiveSnapshotOut,
