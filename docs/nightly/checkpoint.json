@@ -1,6 +1,6 @@
 {
   "night": "2026-10-29",
-  "status": "completed",
+  "status": "completed_with_issues",
   "todo": [
     "task-price-realism-eval",
     "task-trip-rating-signal"
