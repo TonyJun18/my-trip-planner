@@ -23,7 +23,7 @@ defineExpose({
 // 工具箱：3 组 CollapsibleSection 编排容器（规划修订 / 旅程执行 / 装备素材）。
 // 阶段一保持结构与 default-open 不变，纯编排；exportAll 由 orchestrator 透传 forceOpen。
 // revise 相关字段 = useRevise 解构原样透传（状态所有权仍在 orchestrator）。
-defineProps({
+const props = defineProps({
   trip: { type: Object, required: true },
   plan: { type: Object, default: null },
   planB: { type: Object, default: null },
@@ -54,9 +54,9 @@ const emit = defineEmits([
   'plan-change', 'revise', 'revise-input', 'changed', 'arranged', 'tool-open',
 ])
 
-const planBDisplay = computed(() => planB.value)
-const timeGateIssues = computed(() => plan.value?.time_gate?.issues || [])
-const quality = computed(() => plan.value?.quality || null)
+const planBDisplay = computed(() => props.planB)
+const timeGateIssues = computed(() => props.plan?.time_gate?.issues || [])
+const quality = computed(() => props.plan?.quality || null)
 </script>
 
 <template>
