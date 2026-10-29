@@ -1123,25 +1123,8 @@ function goDetail() {
 .qa-opts { display: flex; flex-wrap: wrap; gap: 8px; }
 .qa-input { max-width: 480px; }
 
-.btn-primary {
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--brand); color: #fff; border: none; cursor: pointer;
-  font-size: 15px; font-weight: 600; padding: 14px 30px;
-  border-radius: var(--radius-full);
-  box-shadow: 0 4px 14px rgba(255,56,92,0.3);
-  transition: all .2s;
-}
-.btn-primary:hover:not(:disabled) { background: var(--brand-dark); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(255,56,92,0.4); }
-.btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+/* .btn-primary/.btn-ghost 全局唯一来源在 theme.css；此处仅保留 PlanWizard 的大按钮修饰符 */
 .btn-primary.big { width: 100%; margin-top: 6px; font-size: 16px; padding: 15px; letter-spacing: .02em; }
-
-.btn-ghost {
-  background: transparent; border: 1px solid var(--line); cursor: pointer;
-  font-size: 14px; font-weight: 500; color: var(--ink-2);
-  padding: 10px 18px; border-radius: var(--radius-full);
-  transition: all .2s;
-}
-.btn-ghost:hover { border-color: var(--brand); color: var(--brand); }
 
 /* ── 规划中 ── */
 .planning { text-align: center; }

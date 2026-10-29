@@ -136,6 +136,32 @@ body {
 ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 5px; border: 2px solid var(--canvas); }
 ::-webkit-scrollbar-track { background: transparent; }
 
+/* ── 全局按钮体系（唯一来源：App/TripList/Landing/PlanWizard 各自的历史重复定义已收敛于此） ── */
+.btn-primary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: var(--brand); color: #fff; border: none; cursor: pointer;
+  font-size: 14px; font-weight: 500;
+  padding: 11px 20px; border-radius: var(--radius-full);
+  box-shadow: 0 2px 10px rgba(255, 56, 92, 0.28);
+  transition: background .2s, transform .15s, box-shadow .2s;
+}
+.btn-primary:hover { background: var(--brand-dark); box-shadow: 0 4px 16px rgba(255, 56, 92, 0.38); transform: translateY(-1px); }
+.btn-primary:active { transform: translateY(0) scale(0.98); }
+.btn-primary:disabled { opacity: .6; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.btn-ghost {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: transparent; border: 1px solid var(--line); cursor: pointer;
+  font-size: 14px; font-weight: 500; color: var(--ink-2);
+  padding: 11px 20px; border-radius: var(--radius-full);
+  transition: border-color .2s, color .2s, transform .15s;
+}
+.btn-ghost:hover { border-color: var(--brand); color: var(--brand); }
+.btn-ghost:active { transform: scale(0.98); }
+
+/* 键盘可达：全局可见 focus 环（不干扰鼠标操作，仅键盘/辅助技术触发） */
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
 /* 动效：尊重系统减弱动态偏好 */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }

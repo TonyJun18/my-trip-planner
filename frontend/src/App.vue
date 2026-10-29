@@ -223,18 +223,6 @@ function goHome() {
 .nav-link:hover { background: var(--fill); }
 .nav-link.active { background: var(--brand-soft); color: var(--brand); }
 
-.btn-primary {
-  display: inline-flex; align-items: center;
-  background: var(--brand); color: #fff;
-  border: none; cursor: pointer;
-  font-size: 14px; font-weight: 500;
-  padding: 10px 18px;
-  border-radius: var(--radius-full);
-  box-shadow: 0 2px 10px rgba(255, 56, 92, 0.28);
-  transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
-}
-.btn-primary:hover { background: var(--brand-dark); box-shadow: 0 4px 16px rgba(255, 56, 92, 0.38); transform: translateY(-1px); }
-
 .user-chip {
   display: flex; align-items: center; gap: 8px;
   cursor: pointer; padding: 4px 6px 4px 4px;

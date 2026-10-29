@@ -2,6 +2,7 @@
 import { onMounted, onBeforeUnmount, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Upload, ArrowDown } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import * as api from '@/api'
 import { readCachedJson, isOnline } from '@/utils/pwa'
@@ -173,15 +174,20 @@ onBeforeUnmount(() => {
           <template v-else>{{ t('tripList.subEmpty') }}</template>
         </p>
       </div>
-      <button class="btn-primary" @click="router.push('/plan')">
-        <el-icon style="margin-right: 6px"><MagicStick /></el-icon>{{ t('tripList.planNew') }}
-      </button>
-      <button class="btn-ghost" @click="openCreate">
-        <el-icon style="margin-right: 6px"><Plus /></el-icon>{{ t('tripList.manualCreate') }}
-      </button>
-      <button class="btn-ghost" @click="openImport">
-        <el-icon style="margin-right: 6px"><Upload /></el-icon>{{ t('tripList.importContent') }}
-      </button>
+      <div class="page-actions">
+        <button class="btn-primary" @click="router.push('/plan')">
+          <el-icon style="margin-right: 6px"><MagicStick /></el-icon>{{ t('tripList.planNew') }}
+        </button>
+        <el-dropdown trigger="click">
+          <button class="btn-ghost">{{ t('tripList.moreActions') }}<el-icon style="margin-left: 4px"><ArrowDown /></el-icon></button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item :icon="Plus" @click="openCreate">{{ t('tripList.manualCreate') }}</el-dropdown-item>
+              <el-dropdown-item :icon="Upload" @click="openImport">{{ t('tripList.importContent') }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
     </div>
 
     <!-- 离线模式标识（PWA：网络失败时读缓存展示，联网自动恢复） -->
@@ -260,7 +266,6 @@ onBeforeUnmount(() => {
               <span class="budget" v-if="trip.budget != null">¥{{ trip.budget }}</span>
               <span class="budget muted" v-else>{{ t('tripList.budgetUnset') }}</span>
               <div class="card-actions" @click.stop>
-                <el-button link type="primary" @click="router.push(`/trips/${trip.id}`)">{{ t('common.view') }}</el-button>
                 <el-button link type="danger" @click="removeTrip(trip)">{{ t('common.delete') }}</el-button>
               </div>
             </div>
@@ -339,30 +344,12 @@ onBeforeUnmount(() => {
   margin-bottom: 24px; gap: 16px; flex-wrap: wrap;
 }
 /* PWA 离线模式标识（task-pwa-cache-deep） */
+.page-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .offline-banner { margin-bottom: 16px; }
 .page-title {
   margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink);
 }
 .page-sub { margin: 6px 0 0; font-size: 14px; color: var(--muted); }
-
-.btn-primary {
-  display: inline-flex; align-items: center; gap: 4px;
-  background: var(--brand); color: #fff; border: none; cursor: pointer;
-  font-size: 14px; font-weight: 500; padding: 11px 20px;
-  border-radius: var(--radius-full);
-  box-shadow: 0 2px 10px rgba(255,56,92,0.28);
-  transition: background .2s, transform .15s, box-shadow .2s;
-}
-.btn-primary:hover { background: var(--brand-dark); box-shadow: 0 4px 16px rgba(255,56,92,0.38); transform: translateY(-1px); }
-
-.btn-ghost {
-  display: inline-flex; align-items: center; gap: 4px;
-  background: transparent; border: 1px solid var(--line); cursor: pointer;
-  font-size: 14px; font-weight: 500; color: var(--ink-2);
-  padding: 11px 20px; border-radius: var(--radius-full);
-  transition: border-color .2s, color .2s;
-}
-.btn-ghost:hover { border-color: var(--brand); color: var(--brand); }
 
 /* ── 空状态 ── */
 .empty { text-align: center; padding: 80px 0 60px; }

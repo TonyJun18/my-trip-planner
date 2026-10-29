@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -20,6 +20,8 @@ import TripEventFeed from '@/components/TripEventFeed.vue'
 import QualityCard from '@/components/QualityCard.vue'
 import XhsNoteDialog from '@/components/XhsNoteDialog.vue'
 import ImportDialog from '@/components/ImportDialog.vue'
+import CollapsibleSection from '@/components/CollapsibleSection.vue'
+import TripDashboard from '@/components/TripDashboard.vue'
 import { useTripDetailLoad } from '@/composables/useTripDetailLoad'
 import { useRevise } from '@/composables/useRevise'
 import { useEditDialog } from '@/composables/useEditDialog'
@@ -33,10 +35,12 @@ const { t } = useI18n()
 // ── 核心加载域（trip/budget/plan/离线降级/行中/Plan B） ──
 const journeyRef = ref(null)  // JourneyTimeline 组件引用（打卡/跳过/顺延后刷新投影）
 const passportRef = ref(null)  // PassportPanel 组件引用（同样刷新）
+const dashRef = ref(null)  // TripDashboard 侧栏仪表盘（同样刷新）
 
 function refreshJourney() {
   journeyRef.value?.load()
   passportRef.value?.load()
+  dashRef.value?.load()
 }
 
 const core = useTripDetailLoad({ onJourneyChange: refreshJourney })
@@ -96,6 +100,44 @@ const {
 const exportEl = ref(null)
 const exp = useExport({ exportEl, getTrip: () => trip.value })
 const { exporting, doExportImage, doExportPdf, doExportJson, doPrint } = exp
+
+// ── Tab 化旅程工作台（task-trip-detail-tabs：重点前置 + 分区统一） ──
+// 四个分区：overview（概览：地图/状态/预订）/ itinerary（行程：逐日+修订）/
+// ops（追踪：时间轴+徽章+晒图）/ gear（装备：清单+服务+素材+动态）。
+// - URL ?tab= 锚定（深链/分享可定位）；默认 overview
+// - 导出时 exportAll=true：Tab 栏隐藏 + 全部分区展开（截图/PDF 与旧版一致）
+const activeTab = ref(String(route.query.tab || 'overview'))
+const exportAll = ref(false)
+const TAB_KEYS = ['overview', 'itinerary', 'ops', 'gear']
+
+function showZone(key) {
+  return exportAll.value || activeTab.value === key
+}
+
+function setTab(key) {
+  if (!TAB_KEYS.includes(key)) key = 'overview'
+  activeTab.value = key
+  router.replace({ query: { ...route.query, tab: key } })
+}
+
+// 分享/深链 ?tab= 切入时同步
+watch(() => route.query.tab, (v) => {
+  const key = String(v || 'overview')
+  if (TAB_KEYS.includes(key) && key !== activeTab.value) activeTab.value = key
+})
+
+// 导出前强制展开全部分区，导出后恢复当前 Tab
+async function withExportAll(fn) {
+  exportAll.value = true
+  try {
+    await fn()
+  } finally {
+    exportAll.value = false
+  }
+}
+// 底部导出按钮：截图/PDF 需要抓取完整行程（Tab 化后强制 exportAll）
+async function doExportPdfAll() { await withExportAll(doExportPdf) }
+async function doExportImageAll() { await withExportAll(doExportImage) }
 
 // ── 展示派生（模板专用 computed / 状态） ─────────────────
 const markers = computed(() => {
@@ -219,10 +261,10 @@ function onDayCommand(day, cmd) {
   if (cmd === 'delete') removeDay(day)
 }
 
-// ── 导出 split（主按钮 PDF，其余收进下拉） ─────────────────
-async function doExportCommand(cmd) {
+// ── 导出 split（主按钮 PDF，其余收进下拉；Tab 化后均强制展开全部分区） ─
+async function onExportCommand(cmd) {
   switch (cmd) {
-    case 'image': await doExportImage(); break
+    case 'image': await doExportImageAll(); break
     case 'json': await doExportJson(); break
     case 'print': doPrint(); break
     default: break
@@ -432,366 +474,449 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- 地图 + 预算 -->
-        <div class="map-budget-row">
-          <div class="map-card">
-            <div class="card-head">
-              <span class="card-title">{{ $t('common.mapTitle') }}</span>
-              <span class="map-hint">
-                {{ canMapDrag ? $t('tripDetail.mapDragHint') : $t('common.mapHint') }}
-              </span>
+        <!-- Tab 工作台导航（overview 概览 / itinerary 行程 / ops 追踪 / gear 装备） -->
+        <div class="detail-tabs" v-if="!exportAll">
+          <button
+            v-for="tk in TAB_KEYS"
+            :key="tk"
+            class="detail-tab"
+            :class="{ active: activeTab === tk && !exportAll }"
+            type="button"
+            @click="setTab(tk)"
+          >
+            <el-icon v-if="tk === 'overview'"><HomeFilled /></el-icon>
+            <el-icon v-else-if="tk === 'itinerary'"><Calendar /></el-icon>
+            <el-icon v-else-if="tk === 'ops'"><DataLine /></el-icon>
+            <el-icon v-else><Suitcase /></el-icon>
+            {{ $t(`tripDetail.tabs.${tk}`) }}
+          </button>
+          <!-- 导出模式标识：全部展开（截图/PDF 抓取） -->
+          <span v-if="exportAll" class="export-all-note">{{ $t('tripDetail.exportAllNote') }}</span>
+        </div>
+
+        <!-- 双栏布局：主列（地图 + 每日行程）/ 侧栏（仪表盘 + 今日） -->
+        <div class="detail-layout" :class="{ 'single-col': !showZone('overview') }">
+          <div class="main-col">
+            <!-- 概览：地图（概览 Tab：地图是定位锚点，高频） -->
+            <div v-if="showZone('overview')" class="map-card">
+              <div class="card-head">
+                <span class="card-title">{{ $t('common.mapTitle') }}</span>
+                <span class="map-hint">
+                  {{ canMapDrag ? $t('tripDetail.mapDragHint') : $t('common.mapHint') }}
+                </span>
+              </div>
+              <el-alert
+                v-if="mapDragError"
+                class="map-drag-error"
+                type="warning"
+                :closable="false"
+                show-icon
+                :title="mapDragError"
+              />
+              <TripMap
+                :markers="markers"
+                height="420px"
+                :draggable="canMapDrag"
+                :on-move="onMapMove"
+              />
             </div>
-            <el-alert
-              v-if="mapDragError"
-              class="map-drag-error"
-              type="warning"
-              :closable="false"
-              show-icon
-              :title="mapDragError"
-            />
-            <TripMap
-              :markers="markers"
-              height="420px"
-              :draggable="canMapDrag"
-              :on-move="onMapMove"
-            />
-          </div>
-          <div class="budget-card">
-            <div class="card-head"><span class="card-title">{{ $t('common.budgetTitle') }}</span></div>
-            <template v-if="budget">
-              <div class="budget-ring-wrap">
-                <div class="budget-ring" :style="{ '--pct': budgetPercent != null ? budgetPercent : 0 }">
-                  <div class="budget-ring-inner">
-                    <div class="ring-total">¥{{ budget.total_estimated }}</div>
-                    <div class="ring-label">{{ $t('common.estimated') }}</div>
+
+            <!-- 行程：每日行程（行程 Tab：逐日编辑主战场） -->
+            <template v-if="showZone('itinerary')">
+              <div class="day-section" v-for="day in trip.days" :key="day.id">
+                <div class="day-head">
+                  <div class="day-headline">
+                    <span class="day-badge">Day {{ day.day_number }}</span>
+                    <div>
+                      <div class="day-title">{{ day.date || $t('common.dayN', { n: day.day_number }) }}</div>
+                      <div class="day-note">{{ day.note || $t('common.freeExplore') }}</div>
+                    </div>
+                  </div>
+                  <div class="day-actions">
+                    <el-button size="small" type="primary" plain @click="openAddStop(day.id)">+ {{ $t('tripDetail.addStop') }}</el-button>
+                    <el-dropdown trigger="click" @command="(cmd) => onDayCommand(day, cmd)">
+                      <el-button size="small" plain circle aria-label="Day actions">
+                        <el-icon><MoreFilled /></el-icon>
+                      </el-button>
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="delete" :icon="Delete" class="detail-dropdown-danger">{{ $t('tripDetail.removeDay') }}</el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
                   </div>
                 </div>
-                <div class="ring-caption" v-if="budgetPercent != null">
-                  {{ $t('common.percentOfBudget', { pct: budgetPercent }) }}
+
+                <!-- 站点时间轴 -->
+                <div class="stops-list" v-if="day.stops.length">
+                  <div v-for="(stop, idx) in day.stops" :key="stop.id" class="stop-item">
+                    <div class="stop-rail">
+                      <span class="stop-index" :style="{ background: typeColor[stop.stop_type] || 'var(--brand)' }">{{ idx + 1 }}</span>
+                      <span class="rail-line" v-if="idx < day.stops.length - 1" />
+                    </div>
+                    <div class="stop-body">
+                      <div class="stop-head">
+                        <span class="stop-name">{{ stop.name }}</span>
+                        <el-tag size="small" round :style="{ color: typeColor[stop.stop_type] || 'var(--brand)', background: (typeColor[stop.stop_type] || 'var(--brand)') + '1a', border: 'none' }">
+                          {{ typeEmoji[stop.stop_type] }} {{ typeLabel[stop.stop_type] || stop.stop_type }}
+                        </el-tag>
+                      </div>
+                      <div class="stop-meta">
+                        <span v-if="stop.estimated_cost != null"><el-icon><Wallet /></el-icon>¥{{ stop.estimated_cost }}</span>
+                        <span v-if="stop.estimated_duration_minutes"><el-icon><Clock /></el-icon>{{ stop.estimated_duration_minutes }} {{ $t('common.minutes') }}</span>
+                      </div>
+                      <div v-if="stop.description" class="stop-desc">{{ stop.description }}</div>
+                      <div class="stop-actions">
+                        <el-button link type="primary" @click="openEditStop(day, stop)">{{ $t('tripDetail.editStop') }}</el-button>
+                        <el-dropdown trigger="click" @command="(cmd) => onStopCommand(day, stop, idx, cmd)">
+                          <el-button link circle aria-label="Stop actions">
+                            <el-icon><MoreFilled /></el-icon>
+                          </el-button>
+                          <template #dropdown>
+                            <el-dropdown-menu>
+                              <el-dropdown-item command="up" :icon="Top" :disabled="idx === 0">{{ $t('tripDetail.moveUp') }}</el-dropdown-item>
+                              <el-dropdown-item command="down" :icon="Bottom" :disabled="idx === day.stops.length - 1">{{ $t('tripDetail.moveDown') }}</el-dropdown-item>
+                              <el-dropdown-item command="delete" :icon="Delete" divided class="detail-dropdown-danger">{{ $t('tripDetail.deleteStop') }}</el-dropdown-item>
+                            </el-dropdown-menu>
+                          </template>
+                        </el-dropdown>
+                      </div>
+                    </div>
+                  </div>
                 </div>
+                <el-empty v-else :description="$t('common.dayEmpty')" :image-size="60" />
               </div>
-              <div class="budget-lines">
-                <div v-for="(label, k) in { attraction: $t('common.typeAttraction'), food: $t('common.typeFood'), hotel: $t('common.typeHotel'), transport: $t('common.typeTransport') }" :key="k" class="budget-line">
-                  <span class="budget-dot" :style="{ background: typeColor[k] }" />
-                  <span>{{ label }}</span>
-                  <span class="budget-line-val">¥{{ budget.by_type?.[k] || 0 }}</span>
-                </div>
-                <div class="budget-line total">
-                  <span>{{ $t('common.total') }}</span>
-                  <span class="total-val">¥{{ budget.total_estimated }}</span>
-                </div>
-              </div>
-              <div class="budget-daily" v-if="budget.daily_average">
-                <el-icon><TrendCharts /></el-icon> {{ $t('common.dailyAvg', { amount: budget.daily_average }) }}
-              </div>
-              <!-- 人均分摊（task-budget-split：多人出行按 travelers 分摊） -->
-              <div v-if="budget.per_person_total != null && trip.travelers > 1" class="budget-per-person">
-                <el-icon><User /></el-icon>
-                {{ $t('common.perPersonLabel') }} {{ $t('common.perPersonTotal', { amount: budget.per_person_total }) }}
-                <span v-if="budget.per_person_daily != null" class="budget-pp-sub">
-                  · {{ $t('common.perPersonDaily', { amount: budget.per_person_daily }) }}
-                </span>
-              </div>
-              <!-- 预算估算口径（诚实估算：来源 + 基准说明，对齐「预算必须可审计」哲学） -->
-              <div v-if="basisText" class="budget-basis">
-                <el-icon><InfoFilled /></el-icon>
-                <span class="budget-basis-label">{{ $t('share.basisLabel') }}</span>
-                <span class="budget-basis-text">{{ basisText }}</span>
+
+              <!-- 行程：AI 调整行程（规划修订入口，默认展开，行程编辑主操作） -->
+              <div class="aux-area" style="margin-top: 16px">
+                <CollapsibleSection
+                  plain
+                  :default-open="true"
+                  :storage-key="`tripDetail.aux.revise.${trip.id}`"
+                >
+                  <template #title>{{ $t('tripDetail.reviseTitle') }}</template>
+                  <div class="revise-card aux-child">
+                    <div class="revise-head">
+                      <span class="revise-title"><el-icon style="margin-right: 6px"><ChatDotRound /></el-icon>{{ $t('tripDetail.reviseTitle') }}</span>
+                      <span class="revise-hint">{{ $t('tripDetail.reviseHint') }}</span>
+                    </div>
+                    <div class="revise-row">
+                      <el-input
+                        v-model="reviseMsg"
+                        :placeholder="$t('tripDetail.revisePlaceholder')"
+                        size="large"
+                        clearable
+                        :disabled="revising"
+                        @keyup.enter="revise"
+                      />
+                      <el-button type="primary" size="large" :loading="revising" @click="revise">
+                        <el-icon style="margin-right: 4px"><MagicStick /></el-icon>{{ $t('tripDetail.reviseBtn') }}
+                      </el-button>
+                    </div>
+                    <!-- 加载态提示：修订进行中（AI 解析 + 原子应用） -->
+                    <div v-if="revising" class="revise-loading">
+                      <el-icon class="is-loading"><Loading /></el-icon>{{ $t('tripDetail.reviseLoading') }}
+                    </div>
+                    <!-- 错误态：内联横幅，保留用户输入便于修正后重试 -->
+                    <transition name="el-fade-in">
+                      <div v-if="reviseError" class="revise-error" role="alert">
+                        <el-icon style="margin-right: 6px; flex-shrink: 0; margin-top: 2px"><WarningFilled /></el-icon>
+                        <div class="revise-error-body">
+                          <div>{{ reviseError }}</div>
+                          <div class="revise-error-sub">{{ $t('tripDetail.reviseFailRetry') }}</div>
+                        </div>
+                      </div>
+                    </transition>
+                    <transition name="el-fade-in">
+                      <div v-if="lastReviseSummary" class="revise-summary">
+                        <el-icon style="margin-right: 4px; color: var(--success)"><CircleCheck /></el-icon>
+                        {{ lastReviseSummary }}
+                      </div>
+                    </transition>
+                    <!-- 变更动作预览（diff 列表） -->
+                    <transition name="el-fade-in">
+                      <div v-if="reviseDone" class="revise-diff">
+                        <div class="revise-diff-head">
+                          <span class="revise-diff-title"><el-icon style="margin-right: 5px"><List /></el-icon>{{ $t('tripDetail.diffTitle') }}</span>
+                          <span class="revise-diff-count" v-if="lastReviseDiff.length">{{ $t('tripDetail.diffCount', { n: lastReviseDiff.length }) }}</span>
+                        </div>
+                        <template v-if="lastReviseDiff.length">
+                          <div v-for="(a, i) in visibleReviseDiff" :key="i" class="revise-diff-item" :class="'op-' + (a.op || '')">
+                            <el-icon class="revise-diff-icon"><template v-if="a.op === 'add'"><Plus /></template><template v-else-if="a.op === 'remove'"><Minus /></template><template v-else><Edit /></template></el-icon>
+                            <span class="revise-diff-text">{{ diffText(a) }}</span>
+                          </div>
+                          <div v-if="reviseDiffMore" class="revise-diff-more">
+                            {{ $t('tripDetail.reviseDiffMore', { n: reviseDiffMore }) }}
+                          </div>
+                        </template>
+                        <div v-else class="revise-diff-empty">{{ $t('tripDetail.diffEmpty') }}</div>
+                      </div>
+                    </transition>
+                    <!-- 修订质控闭环：修订后的 AI 质检报告（task-revise-qa-loop） -->
+                    <transition name="el-fade-in">
+                      <div v-if="lastReviseQuality" class="revise-quality">
+                        <div class="revise-quality-head">
+                          <el-icon style="margin-right: 5px"><DataAnalysis /></el-icon>
+                          <span class="revise-quality-title">{{ $t('tripDetail.reviseQualityTitle') }}</span>
+                          <span class="revise-quality-score" :class="{ pass: lastReviseQuality.passed, warn: !lastReviseQuality.passed }">
+                            {{ lastReviseQuality.score }}/100
+                          </span>
+                          <span v-if="lastReviseQuality.fix_applied" class="revise-quality-badge">{{ $t('tripDetail.reviseQualityFixApplied') }}</span>
+                          <span v-if="lastReviseQuality.degraded" class="revise-quality-badge degraded">{{ $t('tripDetail.reviseQualityDegraded') }}</span>
+                        </div>
+                        <div v-if="lastReviseQuality.summary" class="revise-quality-summary">{{ lastReviseQuality.summary }}</div>
+                        <ul v-if="lastReviseQuality.issues && lastReviseQuality.issues.length" class="revise-quality-issues">
+                          <li v-for="(issue, i) in lastReviseQuality.issues.slice(0, 3)" :key="i" class="revise-quality-issue">
+                            <span class="revise-quality-sev" :class="issue.severity">{{ issue.severity }}</span>
+                            {{ issue.message }}
+                          </li>
+                        </ul>
+                      </div>
+                    </transition>
+                  </div>
+                </CollapsibleSection>
+
+                <!-- 行程：Plan B 备选 + TimeGate 时间校验 + AI 质检（行程域规划辅助） -->
+                <CollapsibleSection
+                  v-if="planB"
+                  plain
+                  :default-open="false"
+                  :storage-key="`tripDetail.aux.planb.${trip.id}`"
+                >
+                  <template #title>{{ $t('tripDetail.planBTitle') }}</template>
+                  <div class="planb-card aux-child">
+                    <div class="planb-head">
+                      <span class="planb-title"><el-icon style="margin-right: 6px"><Switch /></el-icon>{{ $t('tripDetail.planBTitle') }}</span>
+                      <el-segmented v-model="activePlan" :options="planOptions" size="small" @change="onPlanChange" />
+                    </div>
+                    <div v-if="activePlan === 'plan_b'" class="planb-body">
+                      <div class="planb-meta">
+                        <span class="planb-label">{{ planB.label }}</span>
+                        <span class="planb-desc">{{ planB.description }}</span>
+                      </div>
+                      <div class="planb-deltas">
+                        <div v-for="(d, i) in planB.deltas" :key="i" class="planb-delta">
+                          <el-icon style="margin-right: 6px; color: var(--brand)"><RefreshRight /></el-icon>{{ d }}
+                        </div>
+                      </div>
+                      <div class="planb-budget" v-if="planBBudget">
+                        <el-icon style="margin-right: 6px"><Wallet /></el-icon>
+                        {{ $t('tripDetail.planBBudgetLabel') }} ¥{{ planBTotal }}
+                        <span v-if="planBBudget.by_type?.hotel" class="planb-budget-sub">
+                          {{ $t('common.typeHotel') }} ¥{{ planBBudget.by_type.hotel }}
+                        </span>
+                      </div>
+                      <div class="planb-hint">{{ $t('tripDetail.planBHint') }}</div>
+                    </div>
+                  </div>
+                </CollapsibleSection>
+
+                <CollapsibleSection
+                  v-if="plan?.time_gate?.issues?.length"
+                  plain
+                  :default-open="false"
+                  :storage-key="`tripDetail.aux.timegate.${trip.id}`"
+                >
+                  <template #title>{{ $t('tripDetail.timeGateTitle') }}</template>
+                  <div class="timegate-card aux-child">
+                    <div class="timegate-head">
+                      <span class="timegate-title"><el-icon style="margin-right: 6px"><Clock /></el-icon>{{ $t('tripDetail.timeGateTitle') }}</span>
+                      <span class="timegate-badge">{{ $t('tripDetail.timeGateBasis') }}</span>
+                    </div>
+                    <ul class="timegate-list">
+                      <li v-for="(iss, i) in plan.time_gate.issues.slice(0, 6)" :key="i" class="timegate-item">
+                        <span class="timegate-sev">{{ $t('tripDetail.timeGateWarn') }}</span>
+                        <span v-if="iss.day_number" class="timegate-day">Day {{ iss.day_number }}</span>
+                        <span class="timegate-msg">{{ iss.message }}</span>
+                        <span v-if="iss.suggestion" class="timegate-suggestion">→ {{ iss.suggestion }}</span>
+                      </li>
+                    </ul>
+                  </div>
+                </CollapsibleSection>
+
+                <CollapsibleSection
+                  plain
+                  :default-open="false"
+                  :storage-key="`tripDetail.aux.quality.${trip.id}`"
+                >
+                  <template #title>{{ $t('quality.reportTitle') }}</template>
+                  <div class="aux-child detail-quality">
+                    <QualityCard :quality="plan?.quality" />
+                  </div>
+                </CollapsibleSection>
               </div>
             </template>
-            <el-empty v-else :description="$t('common.noBudget')" :image-size="60" />
-          </div>
-        </div>
 
-        <!-- 备选方案对比（Plan B：主案 / 备选切换） -->
-        <div v-if="planB" class="planb-card">
-          <div class="planb-head">
-            <span class="planb-title"><el-icon style="margin-right: 6px"><Switch /></el-icon>{{ $t('tripDetail.planBTitle') }}</span>
-            <el-segmented v-model="activePlan" :options="planOptions" size="small" @change="onPlanChange" />
+            <!-- 运营：旅程追踪 / 护照 / 故事（运营 Tab：旅程进行中） -->
+            <template v-if="showZone('ops')">
+              <div class="aux-area" style="margin-top: 16px">
+                <!-- 预订（可预订建议 + 凭证回填 + 状态机，执行层高频默认展开） -->
+                <CollapsibleSection
+                  plain
+                  :default-open="true"
+                  :storage-key="`tripDetail.aux.booking.${trip.id}`"
+                >
+                  <template #title>{{ $t('booking.panelTitle') }}</template>
+                  <BookingPanel
+                    :trip-id="trip.id"
+                    @changed="load"
+                  />
+                </CollapsibleSection>
+
+                <CollapsibleSection
+                  plain
+                  :default-open="true"
+                  :storage-key="`tripDetail.aux.journey.${trip.id}`"
+                >
+                  <template #title>{{ $t('journey.panelTitle') }}</template>
+                  <JourneyTimeline
+                    ref="journeyRef"
+                    :trip-id="trip.id"
+                  />
+                </CollapsibleSection>
+
+                <CollapsibleSection
+                  plain
+                  :default-open="false"
+                  :storage-key="`tripDetail.aux.passport.${trip.id}`"
+                >
+                  <template #title>{{ $t('passport.panelTitle') }}</template>
+                  <PassportPanel
+                    ref="passportRef"
+                    :trip-id="trip.id"
+                  />
+                </CollapsibleSection>
+
+                <CollapsibleSection
+                  plain
+                  :default-open="false"
+                  :storage-key="`tripDetail.aux.story.${trip.id}`"
+                >
+                  <template #title>{{ $t('story.panelTitle') }}</template>
+                  <StoryCardGenerator
+                    :trip-id="trip.id"
+                  />
+                </CollapsibleSection>
+              </div>
+            </template>
+
+            <!-- 装备：打包清单 / 服务层 / 住宿 / 动态（装备 Tab：出发前+执行中） -->
+            <template v-if="showZone('gear')">
+              <div class="aux-area" style="margin-top: 16px">
+                <CollapsibleSection
+                  plain
+                  :default-open="false"
+                  :storage-key="`tripDetail.aux.packing.${trip.id}`"
+                >
+                  <template #title>{{ $t('packing.title') }}</template>
+                  <PackingList
+                    :trip-id="trip.id"
+                    :trip-type="trip.trip_type"
+                  />
+                </CollapsibleSection>
+
+                <CollapsibleSection
+                  plain
+                  :default-open="false"
+                  :storage-key="`tripDetail.aux.servicing.${trip.id}`"
+                >
+                  <template #title>{{ $t('servicing.panelTitle') }}</template>
+                  <TripServicing
+                    :transport="servicingProps.transport"
+                    :transit="servicingProps.transit"
+                    :checkin="servicingProps.checkin"
+                    :discount-rules="servicingProps.discountRules"
+                    :discounts="servicingProps.discounts"
+                  />
+                </CollapsibleSection>
+
+                <CollapsibleSection
+                  plain
+                  :default-open="false"
+                  :storage-key="`tripDetail.aux.hotel.${trip.id}`"
+                >
+                  <template #title>{{ $t('hotel.recommendTitle') }}</template>
+                  <HotelRecommend
+                    :hotels="hotelCandidates"
+                    :days="trip.days"
+                    actionable
+                    @arranged="load"
+                  />
+                </CollapsibleSection>
+
+                <CollapsibleSection
+                  plain
+                  :default-open="false"
+                  :storage-key="`tripDetail.aux.events.${trip.id}`"
+                >
+                  <template #title>{{ $t('events.title') }}</template>
+                  <TripEventFeed :trip-id="trip.id" />
+                </CollapsibleSection>
+              </div>
+            </template>
           </div>
-          <div v-if="activePlan === 'plan_b'" class="planb-body">
-            <div class="planb-meta">
-              <span class="planb-label">{{ planB.label }}</span>
-              <span class="planb-desc">{{ planB.description }}</span>
-            </div>
-            <div class="planb-deltas">
-              <div v-for="(d, i) in planB.deltas" :key="i" class="planb-delta">
-                <el-icon style="margin-right: 6px; color: var(--brand)"><RefreshRight /></el-icon>{{ d }}
+
+          <!-- 侧栏：仪表盘 + 行中今日（概览 Tab 常驻；导出时展开） -->
+          <div class="side-col" v-if="showZone('overview')">
+            <!-- 行中「今日视图」（live 期间；打卡/跳过/迟到顺延） -->
+            <div v-if="live && live.phase === 'live'" class="live-card">
+              <div class="live-head">
+                <div>
+                  <div class="live-title">📅 {{ $t('tripDetail.liveTodayTitle') }}</div>
+                  <div class="live-sub">{{ $t('tripDetail.liveTodaySub', { day: live.day_number, date: live.date }) }}</div>
+                </div>
+                <div class="live-progress">
+                  <span class="live-progress-num">{{ live.completed }}/{{ live.total }}</span>
+                  <el-progress :percentage="live.total ? Math.round(live.completed / live.total * 100) : 0"
+                               :stroke-width="6" :show-text="false" style="width: 90px" />
+                </div>
+              </div>
+
+              <div class="live-stops">
+                <div v-for="stop in live.stops" :key="stop.id" class="live-stop"
+                     :class="{ done: stop.checked }">
+                  <el-checkbox :model-value="stop.checked"
+                               :disabled="!!liveOp"
+                               @change="(v) => doCheckStop(stop, v)" />
+                  <div class="live-stop-info">
+                    <div class="live-stop-name" :class="{ muted: stop.checked }">{{ stop.name }}</div>
+                    <div class="live-stop-type">{{ typeEmoji[stop.stop_type] }} {{ typeLabel[stop.stop_type] || stop.stop_type }}</div>
+                  </div>
+                  <div class="live-stop-actions">
+                    <el-button size="small" text type="danger" :disabled="!!liveOp"
+                               @click="doSkipStop(stop)">{{ $t('tripDetail.liveSkip') }}</el-button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="live-footer">
+                <el-button size="small" type="warning" plain :loading="liveOp === 'delay'"
+                           @click="doDelayTrip">{{ $t('tripDetail.liveDelay') }}</el-button>
               </div>
             </div>
-            <div class="planb-budget" v-if="planBBudget">
-              <el-icon style="margin-right: 6px"><Wallet /></el-icon>
-              {{ $t('tripDetail.planBBudgetLabel') }} ¥{{ planBTotal }}
-              <span v-if="planBBudget.by_type?.hotel" class="planb-budget-sub">
-                {{ $t('common.typeHotel') }} ¥{{ planBBudget.by_type.hotel }}
-              </span>
-            </div>
-            <div class="planb-hint">{{ $t('tripDetail.planBHint') }}</div>
-          </div>
-        </div>
 
-        <!-- AI 调整行程（方案 B：对话式修订） -->
-        <div class="revise-card">
-          <div class="revise-head">
-            <span class="revise-title"><el-icon style="margin-right: 6px"><ChatDotRound /></el-icon>{{ $t('tripDetail.reviseTitle') }}</span>
-            <span class="revise-hint">{{ $t('tripDetail.reviseHint') }}</span>
-          </div>
-          <div class="revise-row">
-            <el-input
-              v-model="reviseMsg"
-              :placeholder="$t('tripDetail.revisePlaceholder')"
-              size="large"
-              clearable
-              :disabled="revising"
-              @keyup.enter="revise"
+            <!-- 旅程仪表盘（预算 / 追踪进度 / 预订 / 徽章） -->
+            <TripDashboard
+              ref="dashRef"
+              :trip-id="trip.id"
+              :budget="budget"
+              :budget-percent="budgetPercent"
+              :basis-text="basisText"
+              :trip-budget="trip.budget"
+              :travelers="trip.travelers"
             />
-            <el-button type="primary" size="large" :loading="revising" @click="revise">
-              <el-icon style="margin-right: 4px"><MagicStick /></el-icon>{{ $t('tripDetail.reviseBtn') }}
-            </el-button>
-          </div>
-          <!-- 加载态提示：修订进行中（AI 解析 + 原子应用） -->
-          <div v-if="revising" class="revise-loading">
-            <el-icon class="is-loading"><Loading /></el-icon>{{ $t('tripDetail.reviseLoading') }}
-          </div>
-          <!-- 错误态：内联横幅，保留用户输入便于修正后重试 -->
-          <transition name="el-fade-in">
-            <div v-if="reviseError" class="revise-error" role="alert">
-              <el-icon style="margin-right: 6px; flex-shrink: 0; margin-top: 2px"><WarningFilled /></el-icon>
-              <div class="revise-error-body">
-                <div>{{ reviseError }}</div>
-                <div class="revise-error-sub">{{ $t('tripDetail.reviseFailRetry') }}</div>
-              </div>
-            </div>
-          </transition>
-          <transition name="el-fade-in">
-            <div v-if="lastReviseSummary" class="revise-summary">
-              <el-icon style="margin-right: 4px; color: var(--success)"><CircleCheck /></el-icon>
-              {{ lastReviseSummary }}
-            </div>
-          </transition>
-          <!-- 变更动作预览（diff 列表） -->
-          <transition name="el-fade-in">
-            <div v-if="reviseDone" class="revise-diff">
-              <div class="revise-diff-head">
-                <span class="revise-diff-title"><el-icon style="margin-right: 5px"><List /></el-icon>{{ $t('tripDetail.diffTitle') }}</span>
-                <span class="revise-diff-count" v-if="lastReviseDiff.length">{{ $t('tripDetail.diffCount', { n: lastReviseDiff.length }) }}</span>
-              </div>
-              <template v-if="lastReviseDiff.length">
-                <div v-for="(a, i) in visibleReviseDiff" :key="i" class="revise-diff-item" :class="'op-' + (a.op || '')">
-                  <el-icon class="revise-diff-icon"><template v-if="a.op === 'add'"><Plus /></template><template v-else-if="a.op === 'remove'"><Minus /></template><template v-else><Edit /></template></el-icon>
-                  <span class="revise-diff-text">{{ diffText(a) }}</span>
-                </div>
-                <div v-if="reviseDiffMore" class="revise-diff-more">
-                  {{ $t('tripDetail.reviseDiffMore', { n: reviseDiffMore }) }}
-                </div>
-              </template>
-              <div v-else class="revise-diff-empty">{{ $t('tripDetail.diffEmpty') }}</div>
-            </div>
-          </transition>
-          <!-- 修订质控闭环：修订后的 AI 质检报告（task-revise-qa-loop） -->
-          <transition name="el-fade-in">
-            <div v-if="lastReviseQuality" class="revise-quality">
-              <div class="revise-quality-head">
-                <el-icon style="margin-right: 5px"><DataAnalysis /></el-icon>
-                <span class="revise-quality-title">{{ $t('tripDetail.reviseQualityTitle') }}</span>
-                <span class="revise-quality-score" :class="{ pass: lastReviseQuality.passed, warn: !lastReviseQuality.passed }">
-                  {{ lastReviseQuality.score }}/100
-                </span>
-                <span v-if="lastReviseQuality.fix_applied" class="revise-quality-badge">{{ $t('tripDetail.reviseQualityFixApplied') }}</span>
-                <span v-if="lastReviseQuality.degraded" class="revise-quality-badge degraded">{{ $t('tripDetail.reviseQualityDegraded') }}</span>
-              </div>
-              <div v-if="lastReviseQuality.summary" class="revise-quality-summary">{{ lastReviseQuality.summary }}</div>
-              <ul v-if="lastReviseQuality.issues && lastReviseQuality.issues.length" class="revise-quality-issues">
-                <li v-for="(issue, i) in lastReviseQuality.issues.slice(0, 3)" :key="i" class="revise-quality-issue">
-                  <span class="revise-quality-sev" :class="issue.severity">{{ issue.severity }}</span>
-                  {{ issue.message }}
-                </li>
-              </ul>
-            </div>
-          </transition>
-        </div>
-
-        <!-- 生成时的 AI 质检报告 -->
-        <QualityCard :quality="plan?.quality" class="detail-quality" />
-
-        <!-- 时间校验（TimeGate）：营业时间/游玩时长确定性提示（规则库，仅展示不阻断） -->
-        <div v-if="plan?.time_gate?.issues?.length" class="timegate-card">
-          <div class="timegate-head">
-            <span class="timegate-title"><el-icon style="margin-right: 6px"><Clock /></el-icon>{{ $t('tripDetail.timeGateTitle') }}</span>
-            <span class="timegate-badge">{{ $t('tripDetail.timeGateBasis') }}</span>
-          </div>
-          <ul class="timegate-list">
-            <li v-for="(iss, i) in plan.time_gate.issues.slice(0, 6)" :key="i" class="timegate-item">
-              <span class="timegate-sev">{{ $t('tripDetail.timeGateWarn') }}</span>
-              <span v-if="iss.day_number" class="timegate-day">Day {{ iss.day_number }}</span>
-              <span class="timegate-msg">{{ iss.message }}</span>
-              <span v-if="iss.suggestion" class="timegate-suggestion">→ {{ iss.suggestion }}</span>
-            </li>
-          </ul>
-        </div>
-
-        <!-- 住宿推荐（来自 AI 规划方案的酒店候选） -->
-        <HotelRecommend
-          :hotels="hotelCandidates"
-          :days="trip.days"
-          actionable
-          @arranged="load"
-        />
-
-        <!-- 行程服务层（大交通 / 市内通勤 / 入住办理 / 折扣） -->
-        <TripServicing
-          :transport="servicingProps.transport"
-          :transit="servicingProps.transit"
-          :checkin="servicingProps.checkin"
-          :discount-rules="servicingProps.discountRules"
-          :discounts="servicingProps.discounts"
-        />
-
-        <!-- 预订（可预订建议 + 凭证回填 + 状态机） -->
-        <BookingPanel
-          v-if="trip"
-          :trip-id="trip.id"
-          @changed="load"
-        />
-
-        <!-- 旅程全程追踪（打卡进度 / 按天状态 / 费用 / 预订 / 高光） -->
-        <JourneyTimeline
-          v-if="trip"
-          ref="journeyRef"
-          :trip-id="trip.id"
-        />
-
-        <!-- 旅程护照（徽章墙：完成感 + 分享素材） -->
-        <PassportPanel
-          v-if="trip"
-          ref="passportRef"
-          :trip-id="trip.id"
-        />
-
-        <!-- 旅程故事（晒图高光卡：小红书/朋友圈/长图） -->
-        <StoryCardGenerator
-          v-if="trip"
-          :trip-id="trip.id"
-        />
-
-        <!-- 打包清单（纯前端 localStorage · 零凭证） -->
-        <PackingList
-          v-if="trip"
-          :trip-id="trip.id"
-          :trip-type="trip.trip_type"
-        />
-
-        <!-- 行程动态（事件流：修订/打卡/跳过/顺延/评论/投票 · 未读红点 + PWA 通知） -->
-        <TripEventFeed v-if="trip" :trip-id="trip.id" />
-
-        <!-- 行中「今日视图」（live 期间置顶；打卡/跳过/迟到顺延） -->
-        <div v-if="live && live.phase === 'live'" class="live-card">
-          <div class="live-head">
-            <div>
-              <div class="live-title">📅 {{ $t('tripDetail.liveTodayTitle') }}</div>
-              <div class="live-sub">{{ $t('tripDetail.liveTodaySub', { day: live.day_number, date: live.date }) }}</div>
-            </div>
-            <div class="live-progress">
-              <span class="live-progress-num">{{ live.completed }}/{{ live.total }}</span>
-              <el-progress :percentage="live.total ? Math.round(live.completed / live.total * 100) : 0"
-                           :stroke-width="6" :show-text="false" style="width: 90px" />
-            </div>
-          </div>
-
-          <div class="live-stops">
-            <div v-for="stop in live.stops" :key="stop.id" class="live-stop"
-                 :class="{ done: stop.checked }">
-              <el-checkbox :model-value="stop.checked"
-                           :disabled="!!liveOp"
-                           @change="(v) => doCheckStop(stop, v)" />
-              <div class="live-stop-info">
-                <div class="live-stop-name" :class="{ muted: stop.checked }">{{ stop.name }}</div>
-                <div class="live-stop-type">{{ typeEmoji[stop.stop_type] }} {{ typeLabel[stop.stop_type] || stop.stop_type }}</div>
-              </div>
-              <div class="live-stop-actions">
-                <el-button size="small" text type="danger" :disabled="!!liveOp"
-                           @click="doSkipStop(stop)">{{ $t('tripDetail.liveSkip') }}</el-button>
-              </div>
-            </div>
-          </div>
-
-          <div class="live-footer">
-            <el-button size="small" type="warning" plain :loading="liveOp === 'delay'"
-                       @click="doDelayTrip">{{ $t('tripDetail.liveDelay') }}</el-button>
           </div>
         </div>
 
-        <!-- 每日行程 -->
-        <div class="day-section" v-for="day in trip.days" :key="day.id">
-          <div class="day-head">
-            <div class="day-headline">
-              <span class="day-badge">Day {{ day.day_number }}</span>
-              <div>
-                <div class="day-title">{{ day.date || $t('common.dayN', { n: day.day_number }) }}</div>
-                <div class="day-note">{{ day.note || $t('common.freeExplore') }}</div>
-              </div>
-            </div>
-            <div class="day-actions">
-              <el-button size="small" type="primary" plain @click="openAddStop(day.id)">+ {{ $t('tripDetail.addStop') }}</el-button>
-              <el-dropdown trigger="click" @command="(cmd) => onDayCommand(day, cmd)">
-                <el-button size="small" plain circle aria-label="Day actions">
-                  <el-icon><MoreFilled /></el-icon>
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="delete" :icon="Delete" class="detail-dropdown-danger">{{ $t('tripDetail.removeDay') }}</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </div>
-          </div>
-
-          <!-- 站点时间轴 -->
-          <div class="stops-list" v-if="day.stops.length">
-            <div v-for="(stop, idx) in day.stops" :key="stop.id" class="stop-item">
-              <div class="stop-rail">
-                <span class="stop-index" :style="{ background: typeColor[stop.stop_type] || 'var(--brand)' }">{{ idx + 1 }}</span>
-                <span class="rail-line" v-if="idx < day.stops.length - 1" />
-              </div>
-              <div class="stop-body">
-                <div class="stop-head">
-                  <span class="stop-name">{{ stop.name }}</span>
-                  <el-tag size="small" round :style="{ color: typeColor[stop.stop_type] || 'var(--brand)', background: (typeColor[stop.stop_type] || 'var(--brand)') + '1a', border: 'none' }">
-                    {{ typeEmoji[stop.stop_type] }} {{ typeLabel[stop.stop_type] || stop.stop_type }}
-                  </el-tag>
-                </div>
-                <div class="stop-meta">
-                  <span v-if="stop.estimated_cost != null"><el-icon><Wallet /></el-icon>¥{{ stop.estimated_cost }}</span>
-                  <span v-if="stop.estimated_duration_minutes"><el-icon><Clock /></el-icon>{{ stop.estimated_duration_minutes }} {{ $t('common.minutes') }}</span>
-                </div>
-                <div v-if="stop.description" class="stop-desc">{{ stop.description }}</div>
-                <div class="stop-actions">
-                  <el-button link type="primary" @click="openEditStop(day, stop)">{{ $t('tripDetail.editStop') }}</el-button>
-                  <el-dropdown trigger="click" @command="(cmd) => onStopCommand(day, stop, idx, cmd)">
-                    <el-button link circle aria-label="Stop actions">
-                      <el-icon><MoreFilled /></el-icon>
-                    </el-button>
-                    <template #dropdown>
-                      <el-dropdown-menu>
-                        <el-dropdown-item command="up" :icon="Top" :disabled="idx === 0">{{ $t('tripDetail.moveUp') }}</el-dropdown-item>
-                        <el-dropdown-item command="down" :icon="Bottom" :disabled="idx === day.stops.length - 1">{{ $t('tripDetail.moveDown') }}</el-dropdown-item>
-                        <el-dropdown-item command="delete" :icon="Delete" divided class="detail-dropdown-danger">{{ $t('tripDetail.deleteStop') }}</el-dropdown-item>
-                      </el-dropdown-menu>
-                    </template>
-                  </el-dropdown>
-                </div>
-              </div>
-            </div>
-          </div>
-          <el-empty v-else :description="$t('common.dayEmpty')" :image-size="60" />
-        </div>
+        <!-- 概览辅助（预订已移至追踪 Tab · AI 调整已移至行程 Tab） -->
+        <!-- 概览只保留高频决策信息：地图 + 侧栏仪表盘 -->
       </div>
 
       <!-- 底部操作 -->
       <div class="bottom-bar">
         <el-button @click="openAddDay"><el-icon style="margin-right: 4px"><Plus /></el-icon>{{ $t('tripDetail.addDay') }}</el-button>
         <el-button @click="genDaysVisible = true"><el-icon style="margin-right: 4px"><Calendar /></el-icon>{{ $t('tripDetail.genDays') }}</el-button>
-        <el-dropdown split-button type="primary" :loading="exporting" @click="doExportPdf" @command="doExportCommand">
+        <el-dropdown split-button type="primary" :loading="exporting" @click="doExportPdfAll" @command="onExportCommand">
           <el-icon style="margin-right: 4px"><Document /></el-icon>{{ $t('tripDetail.exportPdf') }}
           <template #dropdown>
             <el-dropdown-menu>
@@ -1042,24 +1167,101 @@ onBeforeUnmount(() => {
 .budget-basis-label { font-weight: 600; white-space: nowrap; color: var(--muted); }
 .budget-basis-text { word-break: break-all; }
 
+/* ── Tab 化旅程工作台导航（task-trip-detail-tabs） ── */
+.detail-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 4px;
+  background: var(--fill);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+}
+.detail-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.detail-tab:hover { background: var(--card); color: var(--ink); }
+.detail-tab.active {
+  background: var(--card);
+  color: var(--brand);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+.detail-tab .el-icon { font-size: 15px; }
+.export-all-note {
+  margin-left: auto;
+  align-self: center;
+  font-size: 12px;
+  color: var(--muted);
+  padding-right: 8px;
+}
+
+/* Tab 化单列模式：非 Overview Tab 时侧栏隐藏，主列占满 */
+.detail-layout.single-col {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* ── 双栏布局：主列（地图 + 每日行程）/ 侧栏（仪表盘 + 今日） ── */
+.detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 20px;
+}
+.main-col { min-width: 0; }
+.side-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: sticky;
+  top: 76px; /* 顶部导航高度留白 */
+}
+.aux-area {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.aux-child { margin-bottom: 0; }
+
+/* 窄屏：双栏降级单列，侧栏顺序调整（仪表盘在每日行程后自然跟随） */
+@media (max-width: 960px) {
+  .detail-layout { grid-template-columns: 1fr; }
+  .side-col { position: static; }
+}
+
 /* ── 时间校验卡片（TimeGate：营业时间/游玩时长提示） ── */
 .timegate-card {
-  margin-top: 4px; border: 1px solid #fde68a; background: #fffbeb;
+  margin-top: 4px; border: 1px solid var(--el-color-warning-light-7);
+  background: var(--el-color-warning-light-9);
   border-radius: var(--radius-lg); padding: 12px 14px;
 }
 .timegate-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.timegate-title { font-size: 14px; font-weight: 600; color: #92400e; display: inline-flex; align-items: center; }
-.timegate-badge { font-size: 11px; color: #92400e; background: #fef3c7; border-radius: 999px; padding: 1px 8px; }
+.timegate-title { font-size: 14px; font-weight: 600; color: var(--warning); display: inline-flex; align-items: center; }
+.timegate-badge { font-size: 11px; color: var(--warning); background: var(--el-color-warning-light-7); border-radius: 999px; padding: 1px 8px; }
 .timegate-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
-.timegate-item { display: flex; align-items: baseline; gap: 6px; font-size: 13px; color: #78350f; }
-.timegate-sev { flex-shrink: 0; font-size: 11px; color: #92400e; background: #fef3c7; border-radius: 4px; padding: 0 6px; }
+.timegate-item { display: flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.timegate-sev { flex-shrink: 0; font-size: 11px; color: var(--warning); background: var(--el-color-warning-light-8); border-radius: 4px; padding: 0 6px; }
 .timegate-day { flex-shrink: 0; font-weight: 600; }
 .timegate-msg { flex: 1; min-width: 0; }
-.timegate-suggestion { color: #a16207; font-size: 12px; }
+.timegate-suggestion { color: var(--warning); font-size: 12px; }
 
 /* ── AI 调整行程（方案 B） ── */
 .revise-card {
-  background: linear-gradient(135deg, var(--brand-soft), #fff 60%);
+  background: linear-gradient(135deg, var(--brand-soft), var(--card) 60%);
   border: 1px solid var(--line);
   border-radius: var(--radius-xl);
   padding: 16px 20px;
@@ -1077,18 +1279,18 @@ onBeforeUnmount(() => {
   display: inline-flex; align-items: center; gap: 6px;
 }
 .revise-error {
-  margin-top: 10px; font-size: 13px; color: #b45309;
-  background: rgba(245,158,11,.10); border: 1px solid rgba(245,158,11,.35);
+  margin-top: 10px; font-size: 13px; color: var(--warning);
+  background: var(--el-color-warning-light-9); border: 1px solid var(--el-color-warning-light-7);
   border-radius: var(--radius-sm); padding: 8px 10px;
   display: flex; align-items: flex-start;
 }
-.revise-error .el-icon { flex-shrink: 0; color: #d97706; margin-top: 2px; }
+.revise-error .el-icon { flex-shrink: 0; color: var(--warning); margin-top: 2px; }
 .revise-error-body { display: flex; flex-direction: column; gap: 2px; }
 .revise-error-sub { font-size: 12px; color: var(--muted); }
 .revise-summary {
   margin-top: 10px; font-size: 13px; color: var(--success);
-  background: rgba(16,185,129,.08); padding: 8px 12px;
-  border: 1px solid rgba(16,185,129,.30);
+  background: var(--el-color-success-light-9); padding: 8px 12px;
+  border: 1px solid var(--el-color-success-light-7);
   border-radius: var(--radius-sm);
   display: inline-flex; align-items: center;
 }
@@ -1110,11 +1312,11 @@ onBeforeUnmount(() => {
 .revise-diff-item + .revise-diff-item { margin-top: 2px; }
 .revise-diff-item.op-add { background: rgba(16,185,129,.07); }
 .revise-diff-item.op-remove { background: rgba(239,68,68,.07); }
-.revise-diff-item.op-replace { background: rgba(250,204,21,.10); }
+.revise-diff-item.op-replace { background: rgba(217,119,6,.08); }
 .revise-diff-icon { font-size: 14px; flex-shrink: 0; }
 .revise-diff-item.op-add .revise-diff-icon { color: var(--success); }
-.revise-diff-item.op-remove .revise-diff-icon { color: #ef4444; }
-.revise-diff-item.op-replace .revise-diff-icon { color: #d97706; }
+.revise-diff-item.op-remove .revise-diff-icon { color: var(--danger); }
+.revise-diff-item.op-replace .revise-diff-icon { color: var(--warning); }
 .revise-diff-text { line-height: 1.45; }
 .revise-diff-empty {
   font-size: 12.5px; color: var(--faint);
@@ -1210,8 +1412,8 @@ onBeforeUnmount(() => {
 
 /* ── 备选方案对比（Plan B） ── */
 .planb-card {
-  background: linear-gradient(135deg, #eef4ff, #fff 60%);
-  border: 1px solid #d6e4ff;
+  background: linear-gradient(135deg, var(--brand-soft), var(--card) 60%);
+  border: 1px solid var(--line);
   border-radius: var(--radius-xl);
   padding: 14px 20px;
   margin-bottom: 20px;
@@ -1228,7 +1430,7 @@ onBeforeUnmount(() => {
 .planb-meta { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .planb-label {
   font-size: 13px; font-weight: 700; color: var(--brand);
-  background: rgba(64,110,255,.10); padding: 3px 10px; border-radius: var(--radius-full);
+  background: var(--brand-soft); padding: 3px 10px; border-radius: var(--radius-full);
 }
 .planb-desc { font-size: 13px; color: var(--ink-2); }
 .planb-deltas {
@@ -1272,7 +1474,6 @@ onBeforeUnmount(() => {
 
 /* 响应式 */
 @media (max-width: 860px) {
-  .map-budget-row { grid-template-columns: 1fr; }
   .hero-cover { height: 160px; }
   .hero-overlay { padding: 24px; }
   .hero-title { font-size: 24px; }
