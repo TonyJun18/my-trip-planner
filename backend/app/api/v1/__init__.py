@@ -5,6 +5,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     auth,
+    analytics,
     chat,
     email_import,
     expenses,
@@ -69,6 +70,7 @@ api_router.include_router(plan_b.router, tags=["trips"])
 api_router.include_router(planner.router, prefix="/planner", tags=["planner"])
 api_router.include_router(ws.router, tags=["ws"])  # WebSocket 端点（prefix 在 ws.py 内）
 api_router.include_router(profile.router, prefix="/profile", tags=["profile"])
+api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 # 对话式行程助手（B 期）：会话/消息 REST + WS 流式
 # chat.router 内部已带 prefix="/chat"（含 WS 端点 /ws/chat/...），这里不再重复前缀
 api_router.include_router(chat.router, tags=["chat"])

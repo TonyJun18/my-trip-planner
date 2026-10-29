@@ -16,6 +16,7 @@ export * from './modules/planner'
 export * from './modules/favorites'
 export * from './modules/discovery'
 export * from './modules/events'
+export * from './modules/analytics'
 export * from './modules/chat'
 export * from './modules/ws'
 
