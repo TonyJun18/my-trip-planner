@@ -29,6 +29,7 @@
     "nightly/2026-10-29/0-task-share-gate-eval",
     "nightly/2026-10-29/1-task-open-hours-real-eval",
     "nightly/2026-10-29/2-task-price-realism-eval",
-    "nightly/2026-10-29/3-task-trip-rating-signal"
+    "nightly/2026-10-29/3-task-trip-rating-signal",
+    "nightly/2026-10-30/0-competitive-analysis"
   ]
 }
