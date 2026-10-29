@@ -67,6 +67,11 @@
                     </div>
                     <div v-if="m.content" class="md-body" v-html="renderMarkdown(m.content)"></div>
                     <span v-else-if="isPending && i === messages.length - 1" class="pending-text">{{ $t('chat.thinking') }}</span>
+                    <div v-if="m.content" class="msg-actions">
+                      <el-button link size="small" type="primary" @click="copyMessage(m)">
+                        <el-icon style="margin-right: 4px"><DocumentCopy /></el-icon>{{ $t('chat.copy') }}
+                      </el-button>
+                    </div>
                   </div>
                 </div>
               </template>
@@ -157,7 +162,7 @@ import { onBeforeUnmount, onMounted, reactive, ref, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDownBold, CaretBottom, ChatDotRound, Delete, Plus, Tools } from '@element-plus/icons-vue'
+import { ArrowDownBold, CaretBottom, ChatDotRound, Delete, DocumentCopy, Plus, Tools } from '@element-plus/icons-vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
@@ -260,6 +265,18 @@ async function removeSession(id) {
     }
   } catch {
     /* 拦截器已提示 */
+  }
+}
+
+// 复制 AI 回答到剪贴板（高频操作；失败时降级 toast）
+async function copyMessage(m) {
+  const text = (m?.content || '').trim()
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success(t('chat.copied'))
+  } catch {
+    ElMessage.warning(t('chat.copyFail'))
   }
 }
 
@@ -535,6 +552,19 @@ function formatTime(iso) {
   min-width: 0;
   white-space: normal;
   word-break: break-word;
+}
+/* AI 回答操作区（复制等） */
+.msg-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.bubble.assistant:hover .msg-actions { opacity: 1; }
+.msg-actions .el-button { font-size: 12px; }
+@media (hover: none) {
+  .msg-actions { opacity: 1; }
 }
 .pending-text {
   font-style: italic;

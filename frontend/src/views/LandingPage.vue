@@ -321,25 +321,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .landing { max-width: 1120px; margin: 0 auto; }
 
-/* ── 通用按钮（Landing 此前缺失 .btn-primary/.btn-ghost 定义，补全保持全站一致） ── */
-.btn-primary {
-  display: inline-flex; align-items: center;
-  background: var(--brand); color: #fff;
-  border: none; cursor: pointer;
-  font-size: 14px; font-weight: 500;
-  padding: 11px 20px; border-radius: var(--radius-full);
-  box-shadow: 0 2px 10px rgba(255, 56, 92, 0.28);
-  transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
-}
-.btn-primary:hover { background: var(--brand-dark); box-shadow: 0 4px 16px rgba(255, 56, 92, 0.38); transform: translateY(-1px); }
-.btn-ghost {
-  display: inline-flex; align-items: center;
-  background: transparent; border: 1px solid var(--line); cursor: pointer;
-  font-size: 14px; font-weight: 500; color: var(--ink-2);
-  padding: 11px 20px; border-radius: var(--radius-full);
-  transition: border-color 0.2s, color 0.2s;
-}
-.btn-ghost:hover { border-color: var(--brand); color: var(--brand); }
+/* ── 通用按钮（全局唯一来源在 theme.css；此处仅保留 Landing 尺寸修饰符） ── */
 a.btn-ghost { text-decoration: none; }
 .btn-lg { padding: 14px 26px; font-size: 15px; }
 

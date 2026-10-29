@@ -47,12 +47,14 @@ export default {
     percentOfBudget: '占设定预算 {pct}%',
     total: '合计',
     dailyAvg: '日均约 ¥{amount}',
+    dailyAvgShort: '日均',
     noBudget: '暂无预算数据',
     dayEmpty: '这一天还没有站点',
     // ── 预算人均分摊（task-budget-split） ──
     perPersonTotal: '人均约 ¥{amount}',
     perPersonDaily: '人均日均约 ¥{amount}',
     perPersonLabel: '人均',
+    perPersonShort: '人均',
     // ── PWA 更新提示（task-pwa-cache-deep） ──
     updatePromptTitle: '发现新版本',
     updatePromptDesc: '新版本已准备好，刷新后即可使用',
@@ -160,6 +162,7 @@ export default {
     subHas: '每一段旅程，都值得被记住。继续探索或开启新计划 ↓',
     subEmpty: '还没有行程，让 AI 为你开启第一段旅程',
     planNew: 'AI 规划新行程',
+    moreActions: '更多',
     manualCreate: '手动创建',
     importContent: '导入内容',
     emptyTitle: '准备出发？',
@@ -352,6 +355,14 @@ export default {
   },
   tripDetail: {
     backToTrips: '我的行程',
+    // ── Tab 化旅程工作台（task-trip-detail-tabs） ──
+    tabs: {
+      overview: '概览',
+      itinerary: '行程',
+      ops: '追踪',
+      gear: '装备',
+    },
+    exportAllNote: '导出模式：全部展开',
     shareTrip: '分享行程',
     importContent: '导入内容',
     openEdit: '开放受邀编辑',
@@ -549,6 +560,7 @@ export default {
     installed: '已安装',
   },
   servicing: {
+    panelTitle: '行程服务',
     transportTitle: '大交通方案',
     transitTitle: '市内通勤',
     checkinTitle: '酒店入住办理',
@@ -783,6 +795,9 @@ export default {
     startHint: '和 AI 聊聊你想去哪里、吃什么、怎么玩。AI 会联网查真实景点/餐厅/天气后回答你。',
     inputPlaceholder: '例如：杭州 3 天怎么安排？西湖附近有什么好吃的？',
     send: '发送',
+    copy: '复制',
+    copied: '已复制到剪贴板',
+    copyFail: '复制失败，请手动选择文本复制',
     thinking: '正在思考…',
     thinkingTitle: '思考过程',
     toolCalled: '正在查询',

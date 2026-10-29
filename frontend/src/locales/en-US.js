@@ -47,12 +47,14 @@ export default {
     percentOfBudget: '{pct}% of your budget',
     total: 'Total',
     dailyAvg: 'Daily average ¥{amount}',
+    dailyAvgShort: 'Daily',
     noBudget: 'No budget data',
     dayEmpty: 'No stops on this day yet',
     // ── Per-person budget split (task-budget-split) ──
     perPersonTotal: '~¥{amount} per person',
     perPersonDaily: '~¥{amount} per person per day',
     perPersonLabel: 'Per person',
+    perPersonShort: 'Per person',
     // ── PWA update prompt (task-pwa-cache-deep) ──
     updatePromptTitle: 'New version available',
     updatePromptDesc: 'A new version is ready. Refresh to use it.',
@@ -160,6 +162,7 @@ export default {
     subHas: 'Every journey deserves to be remembered. Keep exploring or start a new plan ↓',
     subEmpty: 'No trips yet. Let AI start your first journey',
     planNew: 'Plan a New Trip',
+    moreActions: 'More',
     manualCreate: 'Create Manually',
     importContent: 'Import content',
     emptyTitle: 'Ready to go?',
@@ -352,6 +355,14 @@ export default {
   },
   tripDetail: {
     backToTrips: 'My Trips',
+    // ── Tabbed trip workspace (task-trip-detail-tabs) ──
+    tabs: {
+      overview: 'Overview',
+      itinerary: 'Itinerary',
+      ops: 'Tracking',
+      gear: 'Gear',
+    },
+    exportAllNote: 'Export mode: all expanded',
     shareTrip: 'Share Trip',
     importContent: 'Import content',
     openEdit: 'Open Invited Editing',
@@ -549,6 +560,7 @@ export default {
     installed: 'Installed',
   },
   servicing: {
+    panelTitle: 'Trip Services',
     transportTitle: 'Transport Options',
     transitTitle: 'Getting Around',
     checkinTitle: 'Hotel Check-in',
@@ -783,6 +795,9 @@ export default {
     startHint: 'Ask the AI about destinations, food, hotels or weather. It searches real data before answering.',
     inputPlaceholder: 'e.g. How to spend 3 days in Hangzhou? Any good food near West Lake?',
     send: 'Send',
+    copy: 'Copy',
+    copied: 'Copied to clipboard',
+    copyFail: 'Copy failed, please select and copy manually',
     thinking: 'Thinking…',
     thinkingTitle: 'Thinking',
     toolCalled: 'Querying',
