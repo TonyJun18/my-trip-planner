@@ -47,35 +47,56 @@ def publish_collab(trip_id: str, event: dict[str, Any]) -> None:
 
 
 # ── 分享令牌基础：所有协作接口都要求持有效令牌（与只读分享同信任级别） ──
-async def _get_trip_by_token(db: AsyncSession, token: str) -> Trip:
+async def _get_trip_by_token(
+    db: AsyncSession,
+    token: str,
+    *,
+    password: str | None = None,
+    gate_token: str | None = None,
+) -> Trip:
     stmt = select(Trip).where(Trip.share_token == token)
     trip = (await db.execute(stmt)).scalar_one_or_none()
     if trip is None:
         raise NotFoundError("分享链接无效或已失效", code="share_token_invalid")
-    await _check_token_lifecycle(db, trip, kind="share")
+    await _check_token_lifecycle(db, trip, kind="share", password=password, gate_token=gate_token)
     return trip
 
 
-async def _get_trip_by_edit_token(db: AsyncSession, token: str) -> Trip:
+async def _get_trip_by_edit_token(
+    db: AsyncSession,
+    token: str,
+    *,
+    password: str | None = None,
+    gate_token: str | None = None,
+) -> Trip:
     """按受邀编辑令牌读取行程（403 → 404：令牌等同于授权，不存在即视为无效）。"""
     stmt = select(Trip).where(Trip.edit_token == token)
     trip = (await db.execute(stmt)).scalar_one_or_none()
     if trip is None:
         raise NotFoundError("协作编辑链接无效或已失效", code="edit_token_invalid")
-    await _check_token_lifecycle(db, trip, kind="edit")
+    await _check_token_lifecycle(db, trip, kind="edit", password=password, gate_token=gate_token)
     return trip
 
 
-async def _check_token_lifecycle(db: AsyncSession, trip: Trip, *, kind: str) -> None:
-    """生命周期门禁：share/edit 令牌过期或吊销后，评论/投票/受邀编辑一并失效。
+async def _check_token_lifecycle(
+    db: AsyncSession,
+    trip: Trip,
+    *,
+    kind: str,
+    password: str | None = None,
+    gate_token: str | None = None,
+) -> None:
+    """生命周期门禁 + 访问密码门禁：share/edit 令牌失效后，评论/投票/受邀编辑一并失效。
 
     与 trip_service 读取端点共用 share_lifecycle 的判定（410 过期 / 403 吊销），
     旧令牌（无记录）按永久兼容。审计 last_used 也在此统一更新。
+    访问密码门禁（task-share-gate-eval）：有密码 → 校验 X-Share-Password / X-Share-Gate。
     """
     from app.services import share_lifecycle
 
     rec = await share_lifecycle.ensure_share_token_record(db, trip, kind=kind)
     share_lifecycle.raise_if_token_inactive(rec)
+    share_lifecycle.verify_token_access(rec, password=password, gate_token=gate_token)
     await share_lifecycle.touch_token_usage(db, rec)
 
 
@@ -93,9 +114,15 @@ async def _belongs_to_trip(db: AsyncSession, stop_id: str, trip_id: str) -> Stop
 
 
 # ── 评论 ──────────────────────────────────────────────────────
-async def list_comments(db: AsyncSession, token: str) -> list[TripComment]:
+async def list_comments(
+    db: AsyncSession,
+    token: str,
+    *,
+    password: str | None = None,
+    gate_token: str | None = None,
+) -> list[TripComment]:
     """行程评论（按时间正序）。"""
-    trip = await _get_trip_by_token(db, token)
+    trip = await _get_trip_by_token(db, token, password=password, gate_token=gate_token)
     stmt = (
         select(TripComment)
         .where(TripComment.trip_id == trip.id)
@@ -104,8 +131,15 @@ async def list_comments(db: AsyncSession, token: str) -> list[TripComment]:
     return list((await db.execute(stmt)).scalars().all())
 
 
-async def create_comment(db: AsyncSession, token: str, data: CommentIn) -> TripComment:
-    trip = await _get_trip_by_token(db, token)
+async def create_comment(
+    db: AsyncSession,
+    token: str,
+    data: CommentIn,
+    *,
+    password: str | None = None,
+    gate_token: str | None = None,
+) -> TripComment:
+    trip = await _get_trip_by_token(db, token, password=password, gate_token=gate_token)
     comment = TripComment(
         trip_id=trip.id,
         author_name=(data.author_name or "").strip() or None,
@@ -180,9 +214,16 @@ async def _trip_group_size(db: AsyncSession, trip: Trip) -> int:
     return max(trip.travelers or 1, distinct or 0)
 
 
-async def list_stop_votes(db: AsyncSession, token: str, *, voter_key: str | None = None) -> dict[str, Any]:
+async def list_stop_votes(
+    db: AsyncSession,
+    token: str,
+    *,
+    voter_key: str | None = None,
+    password: str | None = None,
+    gate_token: str | None = None,
+) -> dict[str, Any]:
     """行程内全部站点的投票汇总；给定 voter_key 时附带我的选择。"""
-    trip = await _get_trip_by_token(db, token)
+    trip = await _get_trip_by_token(db, token, password=password, gate_token=gate_token)
     stmt = (
         select(StopVote.stop_id, StopVote.value, func.count())
         .select_from(StopVote)
@@ -232,9 +273,11 @@ async def cast_vote(
     *,
     client_ip: str | None = None,
     user_agent: str | None = None,
+    password: str | None = None,
+    gate_token: str | None = None,
 ) -> dict[str, Any]:
     """投票（幂等 + 可翻转）：同 visitor 同站点不存在则新建 / 反向则更新 / 同向则不变。"""
-    trip = await _get_trip_by_token(db, token)
+    trip = await _get_trip_by_token(db, token, password=password, gate_token=gate_token)
     await _belongs_to_trip(db, stop_id, trip.id)
     key = _voter_key(token, client_ip, user_agent)
 
@@ -277,10 +320,16 @@ async def cast_vote(
 
 # ── 受邀编辑（凭 edit_token，受限字段直写，不经 AI 修订） ─────────────
 async def update_invited_stop(
-    db: AsyncSession, token: str, stop_id: str, data: InvitedStopUpdate
+    db: AsyncSession,
+    token: str,
+    stop_id: str,
+    data: InvitedStopUpdate,
+    *,
+    password: str | None = None,
+    gate_token: str | None = None,
 ) -> Stop:
     """受邀者更新站点受限字段：name / description / checked（exclude_unset，其余不动）。"""
-    trip = await _get_trip_by_edit_token(db, token)
+    trip = await _get_trip_by_edit_token(db, token, password=password, gate_token=gate_token)
     stop = await _belongs_to_trip(db, stop_id, trip.id)
     for field, value in data.model_dump(exclude_unset=True).items():
         if value is not None:
@@ -295,9 +344,17 @@ async def update_invited_stop(
     return stop
 
 
-async def reorder_invited_stops(db: AsyncSession, token: str, day_id: str, order: list[str]) -> list[Stop]:
+async def reorder_invited_stops(
+    db: AsyncSession,
+    token: str,
+    day_id: str,
+    order: list[str],
+    *,
+    password: str | None = None,
+    gate_token: str | None = None,
+) -> list[Stop]:
     """受邀者重排某日全部站点顺序（受限编辑，不经 AI 修订）。"""
-    trip = await _get_trip_by_edit_token(db, token)
+    trip = await _get_trip_by_edit_token(db, token, password=password, gate_token=gate_token)
     day = await db.get(TripDay, day_id)
     if day is None or day.trip_id != trip.id:
         from app.core.exceptions import NotFoundError

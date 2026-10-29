@@ -23,6 +23,7 @@ class ShareTokenLifecycleOut(BaseModel):
 
     expires_at 为 null 表示永久；revoked_at 非空表示已吊销。
     legacy=True 表示令牌仍在 trips 旧列、本表无记录（按永久兼容）。
+    has_password=True 表示该令牌设有访问密码（task-share-gate-eval）。
     """
 
     trip_id: str
@@ -34,6 +35,7 @@ class ShareTokenLifecycleOut(BaseModel):
     created_at: datetime | None = None
     last_used_at: datetime | None = None
     legacy: bool = False
+    has_password: bool = False
 
 
 class ShareRevokeIn(BaseModel):
@@ -50,6 +52,43 @@ class ShareTtlIn(BaseModel):
 
     kind: Literal["share", "edit"] = "share"
     days: Literal[0, 1, 7, 30] = Field(description="有效期天数：0=永久，1/7/30 天")
+
+
+# ── 分享链接访问密码（task-share-gate-eval：可选密码锁） ────────
+class SharePasswordIn(BaseModel):
+    """设置/清除分享令牌访问密码。
+
+    - kind: share / edit（与 ShareTtlIn 同语义）
+    - password: 非空 = 设置新密码（长度 4-64）；空串 = 清除密码（取消保护）
+    """
+
+    kind: Literal["share", "edit"] = "share"
+    password: str = Field(default="", max_length=64, description="访问密码（4-64 字符）；空串表示清除密码")
+
+
+class SharePasswordOut(BaseModel):
+    """设置结果（绝不回传密码本身）。"""
+
+    trip_id: str
+    kind: str
+    has_password: bool
+
+
+class ShareVerifyIn(BaseModel):
+    """访客验证分享令牌密码。"""
+
+    password: str = Field(..., max_length=64, description="访问密码")
+
+
+class ShareVerifyOut(BaseModel):
+    """验证结果 + 短期免验凭证（X-Share-Gate: <token>，默认 12h）。
+
+    ok=True 且返回 gate_token：后续请求带 X-Share-Gate 即免重复输密码。
+    """
+
+    ok: bool
+    gate_token: str | None = None
+    expires_in_seconds: int | None = None
 
 
 # ── 行中「今日视图」（task-live-today-view：MonkeyTravel live trip 差异化） ──

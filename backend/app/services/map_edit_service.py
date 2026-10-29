@@ -59,6 +59,8 @@ async def map_edit_trip_by_token(
     lat: float,
     lng: float,
     day_number: int | None = None,
+    password: str | None = None,
+    gate_token: str | None = None,
 ) -> dict[str, Any]:
     """受邀编辑版：凭 edit_token 定位行程（免登录）后执行拖拽修订。
 
@@ -67,7 +69,7 @@ async def map_edit_trip_by_token(
     """
     from app.services.trip_service import get_trip_by_edit_token
 
-    trip = await get_trip_by_edit_token(db, token)
+    trip = await get_trip_by_edit_token(db, token, password=password, gate_token=gate_token)
     return await _map_edit_trip_core(db, trip, name=name, lat=lat, lng=lng, day_number=day_number)
 
 

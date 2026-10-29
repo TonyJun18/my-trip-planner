@@ -121,6 +121,9 @@ async def ws_trip_collab(websocket: WebSocket, trip_id: str, db: AsyncSession = 
     """
     token = websocket.query_params.get("token") or ""
     edit = websocket.query_params.get("edit") == "1"
+    # 访问密码门禁（task-share-gate-eval）：WS 无法带自定义 header，
+    # 访客先调 verify 拿 gate_token，连接时以 ?gate= 透传免验凭证
+    gate = websocket.query_params.get("gate") or ""
 
     # 路径 1：先尝试 JWT（owner 登录态）
     try:
@@ -138,8 +141,8 @@ async def ws_trip_collab(websocket: WebSocket, trip_id: str, db: AsyncSession = 
         # 路径 2：分享/编辑令牌（现有语义）
         try:
             trip = (
-                await collab_service._get_trip_by_edit_token(db, token)
-                if edit else await collab_service._get_trip_by_token(db, token)
+                await collab_service._get_trip_by_edit_token(db, token, gate_token=gate)
+                if edit else await collab_service._get_trip_by_token(db, token, gate_token=gate)
             )
         except Exception:  # noqa: BLE001 — 令牌无效
             await websocket.close(code=4404)

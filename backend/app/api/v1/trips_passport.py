@@ -9,7 +9,7 @@
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 
 from app.core.auth import get_current_user
 from app.core.database import get_session
@@ -44,9 +44,11 @@ async def get_trip_passport(
 )
 async def get_shared_passport(
     token: str,
+    x_share_password: str | None = Header(None, alias="X-Share-Password"),
+    x_share_gate: str | None = Header(None, alias="X-Share-Gate"),
     db: AsyncSession = Depends(get_session),
 ) -> PassportOut:
     """凭 share_token 免登录查看护照徽章墙（分享页素材）。"""
-    trip = await trip_service.get_trip_by_share_token(db, token)
+    trip = await trip_service.get_trip_by_share_token(db, token, password=x_share_password, gate_token=x_share_gate)
     passport = await passport_service.get_passport(db, trip)
     return PassportOut(**passport_service.passport_out(passport))

@@ -125,7 +125,14 @@ async def _get_live_day(db: AsyncSession, trip_id: str, *, owner: str | None, to
     return trip, day
 
 
-async def _get_live_day_by_token(db: AsyncSession, token: str, *, today: date | None = None) -> tuple[Trip, TripDay]:
+async def _get_live_day_by_token(
+    db: AsyncSession,
+    token: str,
+    *,
+    today: date | None = None,
+    password: str | None = None,
+    gate_token: str | None = None,
+) -> tuple[Trip, TripDay]:
     """受邀编辑版：凭 edit_token 免登录定位行程 + 校验 live 状态。
 
     与 map_edit_service.map_edit_trip_by_token / collab_service 同信任语义：
@@ -134,7 +141,7 @@ async def _get_live_day_by_token(db: AsyncSession, token: str, *, today: date | 
     """
     from app.services.trip_service import get_trip_by_edit_token
 
-    trip = await get_trip_by_edit_token(db, token)
+    trip = await get_trip_by_edit_token(db, token, password=password, gate_token=gate_token)
     phase = trip_phase(trip, today=today)
     if phase != "live":
         raise TripNotLiveError(
@@ -171,9 +178,11 @@ async def check_stop_by_token(
     *,
     checked: bool,
     today: date | None = None,
+    password: str | None = None,
+    gate_token: str | None = None,
 ) -> dict[str, Any]:
     """受邀编辑版打卡（免登录，凭 edit_token）。"""
-    trip, day = await _get_live_day_by_token(db, token, today=today)
+    trip, day = await _get_live_day_by_token(db, token, today=today, password=password, gate_token=gate_token)
     return await _check_stop_core(db, trip, day, stop_id, checked=checked, today=today)
 
 
@@ -226,9 +235,11 @@ async def skip_stop_by_token(
     stop_id: str,
     *,
     today: date | None = None,
+    password: str | None = None,
+    gate_token: str | None = None,
 ) -> dict[str, Any]:
     """受邀编辑版跳过（免登录，凭 edit_token）。"""
-    trip, day = await _get_live_day_by_token(db, token, today=today)
+    trip, day = await _get_live_day_by_token(db, token, today=today, password=password, gate_token=gate_token)
     return await _skip_stop_core(db, trip, day, stop_id, today=today)
 
 
@@ -288,11 +299,13 @@ async def delay_today_by_token(
     token: str,
     *,
     today: date | None = None,
+    password: str | None = None,
+    gate_token: str | None = None,
 ) -> dict[str, Any]:
     """受邀编辑版迟到顺延（免登录，凭 edit_token）。"""
     from app.services.trip_service import get_trip_by_edit_token
 
-    trip = await get_trip_by_edit_token(db, token)
+    trip = await get_trip_by_edit_token(db, token, password=password, gate_token=gate_token)
     return await _delay_today_core(db, trip, today=today)
 
 
