@@ -17,6 +17,9 @@ const props = defineProps({
   // 拖拽结束回调：onMove({ name, lat, lng, day_number, stop_id })。
   // 父组件负责调用 /map-edit API 并刷新 markers；本组件只发出事件。
   onMove: { type: Function, default: null },
+  // 联动高亮（task-trip-detail-triptych）：activeDay 指定日子的 marker 高亮
+  // （放大 + 高亮色），其余日子降透明度；null 表示不高亮。
+  activeDay: { type: [Number, null], default: null },
 })
 
 const mapEl = ref(null)
@@ -37,13 +40,15 @@ function isMobileViewport() {
 }
 
 // 自定义 divIcon（避免 Leaflet 默认 marker 图片加载失败）
-function makeIcon(stopType, order) {
+// isDimmed=true 时（activeDay 联动的非当日 marker）降低饱和度/透明度
+function makeIcon(stopType, order, isDimmed = false) {
   const color = typeColors[stopType] || '#ff385c'
+  const bg = isDimmed ? `${color}99` : color
   return L.divIcon({
     className: 'trip-marker',
     html: `<div style="
       width: 30px; height: 30px; border-radius: 50%;
-      background: ${color}; color: #fff; font-size: 13px; font-weight: 600;
+      background: ${bg}; color: #fff; font-size: 13px; font-weight: 600;
       display: flex; align-items: center; justify-content: center;
       border: 2.5px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     ">${order}</div>`,
@@ -152,11 +157,15 @@ function renderMarkers(markers) {
   // 拖拽只在桌面端启用（移动端自动隐藏，满足验收「移动端隐藏拖拽」）
   const canDrag = props.draggable && !isMobileViewport()
 
+  // activeDay 联动（task-trip-detail-triptych）：非空时该日 marker 正常色，其余降透明
+  const activeDay = props.activeDay
+
   valid.forEach((m, i) => {
     const stopType = m.stop_type || m.type || 'attraction'
-    const icon = makeIcon(stopType, i + 1)
+    const isDimmed = activeDay != null && (m.day_number ?? null) !== activeDay
+    const icon = makeIcon(stopType, i + 1, isDimmed)
 
-    const marker = L.marker([m.lat, m.lng], { icon, draggable: canDrag }).addTo(markerLayer)
+    const marker = L.marker([m.lat, m.lng], { icon, draggable: canDrag, opacity: isDimmed ? 0.35 : 1 }).addTo(markerLayer)
     marker.bindPopup(buildPopupContent(m, i), { maxWidth: 260, minWidth: 200 })
 
     if (canDrag) {
@@ -191,14 +200,21 @@ function renderMarkers(markers) {
   for (const [key, items] of groups) {
     const pts = items.map(({ m }) => [m.lat, m.lng])
     if (pts.length < 2) continue
+    const dimmed = activeDay != null && key !== activeDay
     polylines.push(
-      L.polyline(pts, { color: colorFor(key), weight: 3, opacity: 0.55, dashArray: '6,8' }).addTo(map),
+      L.polyline(pts, {
+        color: colorFor(key),
+        weight: dimmed ? 2 : 3,
+        opacity: dimmed ? 0.18 : 0.55,
+        dashArray: '6,8',
+      }).addTo(map),
     )
   }
 
-  // 自适应视野
-  const bounds = L.latLngBounds(valid.map((m) => [m.lat, m.lng]))
-  map.fitBounds(bounds.pad(0.2), { maxZoom: 15 })
+  // 自适应视野：activeDay 时聚焦该日站点，否则全览
+  const focusPoints = activeDay != null ? valid.filter((m) => (m.day_number ?? null) === activeDay) : valid
+  const bounds = L.latLngBounds(focusPoints.length ? focusPoints.map((m) => [m.lat, m.lng]) : valid.map((m) => [m.lat, m.lng]))
+  map.fitBounds(bounds.pad(0.25), { maxZoom: 15 })
 }
 
 onMounted(() => {
@@ -215,6 +231,12 @@ watch(
   () => props.markers,
   (m) => renderMarkers(m),
   { deep: true },
+)
+
+// activeDay 联动：切换高亮日 → 重渲染 marker + 聚焦视野（task-trip-detail-triptych）
+watch(
+  () => props.activeDay,
+  () => renderMarkers(props.markers),
 )
 
 onBeforeUnmount(() => {

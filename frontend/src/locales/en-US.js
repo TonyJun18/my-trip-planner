@@ -363,6 +363,13 @@ export default {
       gear: 'Gear',
     },
     exportAllNote: 'Export mode: all expanded',
+    // ── Three-section trip workspace (task-trip-detail-triptych) ──
+    toolboxPlan: 'Plan & Revise',
+    toolboxOps: 'Trip Execution',
+    toolboxGear: 'Gear & Assets',
+    mapFocusDay: 'Focusing Day {day}',
+    mapClearFocus: 'Clear focus',
+    mapFocusHint: 'Focus this day on the map',
     shareTrip: 'Share Trip',
     importContent: 'Import content',
     openEdit: 'Open Invited Editing',

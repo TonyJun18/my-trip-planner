@@ -363,6 +363,13 @@ export default {
       gear: '装备',
     },
     exportAllNote: '导出模式：全部展开',
+    // ── 三段式旅程工作台（task-trip-detail-triptych） ──
+    toolboxPlan: '规划与修订',
+    toolboxOps: '旅程执行',
+    toolboxGear: '装备与素材',
+    mapFocusDay: '聚焦 Day {day}',
+    mapClearFocus: '清除聚焦',
+    mapFocusHint: '在地图中聚焦这一天',
     shareTrip: '分享行程',
     importContent: '导入内容',
     openEdit: '开放受邀编辑',
