@@ -398,9 +398,11 @@ async function genDays() {
 const windowOrigin = window.location.origin
 
 // 对话框透传属性（TripDetailDialogs v-bind）
+// 注意：computed 返回对象内的 ref 不会自动解包（自动解包只作用于模板直接访问的顶层 ref），
+// 必须 .value 取实际布尔值——否则 v-bind 展开后 RefImpl 对象恒为 truthy → 弹窗自动弹出且关不掉
 const dialogsProps = computed(() => ({
-  xhsNoteVisible,
-  importVisible,
+  xhsNoteVisible: xhsNoteVisible.value,
+  importVisible: importVisible.value,
 }))
 
 // ── 埋点：行程阶段（planning / live / finished） ──
