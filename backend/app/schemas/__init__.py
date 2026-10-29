@@ -47,9 +47,13 @@ from app.schemas.share import (
     LiveSnapshotOut,
     LiveStopOut,
     ShareOut,
+    SharePasswordIn,
+    SharePasswordOut,
     ShareRevokeIn,
     ShareTokenLifecycleOut,
     ShareTtlIn,
+    ShareVerifyIn,
+    ShareVerifyOut,
     SharedTripOut,
     TripBudgetOut,
 )

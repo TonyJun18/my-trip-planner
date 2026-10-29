@@ -13,6 +13,8 @@
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -20,8 +22,96 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import GoneError, NotFoundError, PermissionDeniedError
+from app.core.security import _jwt_secret, hash_password, verify_password
 from app.models import ShareToken, Trip, TripFavorite, User
 from app.services import trip_service
+
+
+# ── 访问密码（task-share-gate-eval）─────────────────────────────
+# 门禁读取侧通过 X-Share-Password header 提供；验证通过后可用
+# X-Share-Gate 短期免验凭证（默认 12h）避免重复输密码。
+GATE_TTL_SECONDS = 12 * 3600
+
+
+def _sign_gate(token: str, kind: str, exp: int) -> str:
+    """HMAC 签名免验凭证：exp.sig.token.kind（sig=HMAC-SHA256(secret, token|kind|exp)）。"""
+    secret = str(_jwt_secret()).encode("utf-8")
+    payload = f"{token}|{kind}|{exp}".encode("utf-8")
+    sig = hmac.new(secret, payload, hashlib.sha256).hexdigest()
+    return f"{exp}.{sig}.{token}.{kind}"
+
+
+def issue_gate_token(token: str, kind: str) -> str:
+    """签发短期免验凭证（过期时间戳 + HMAC 签名）。"""
+    exp = int(datetime.now(UTC).timestamp()) + GATE_TTL_SECONDS
+    return _sign_gate(token, kind, exp)
+
+
+def _verify_gate_token(gate_token: str | None, token: str, kind: str) -> bool:
+    """校验免验凭证：签名一致 + 未过期 + token/kind 匹配。"""
+    if not gate_token:
+        return False
+    try:
+        exp_s, sig, tok, k = gate_token.split(".", 3)
+        if tok != token or k != kind:
+            return False
+        exp = int(exp_s)
+        if exp < int(datetime.now(UTC).timestamp()):
+            return False
+        return hmac.compare_digest(_sign_gate(tok, k, exp), gate_token)
+    except (ValueError, TypeError):
+        return False
+
+
+def verify_token_access(
+    rec: ShareToken | None,
+    *,
+    password: str | None = None,
+    gate_token: str | None = None,
+) -> None:
+    """访问密码门禁：有密码且未验明 → 403 share_password_required。
+
+    - rec 为 None（无生命周期记录）→ 兼容放行
+    - 无密码（password_hash 空）→ 放行（旧数据与未设密码链接完全兼容）
+    - 提供正确 X-Share-Password 或有效 X-Share-Gate 免验凭证 → 放行
+    - 其余 → 403（前端据此弹密码框）
+    """
+    if rec is None or not rec.password_hash:
+        return
+    if gate_token and _verify_gate_token(gate_token, rec.token, rec.kind):
+        return
+    if password and verify_password(password, rec.password_hash):
+        return
+    raise PermissionDeniedError("该分享链接受密码保护，请提供访问密码", code="share_password_required")
+
+
+async def set_token_password(
+    db: AsyncSession,
+    trip: Trip,
+    *,
+    kind: str,
+    password: str,
+    owner: str | None = None,
+) -> dict[str, Any]:
+    """设置 / 清除分享令牌访问密码（owner 专属）。
+
+    - password 非空 → 覆盖设置新密码（PBKDF2 哈希，与登录密码同格式）
+    - password 空串 → 清除密码（取消保护，幂等）
+    - 与 TTL/吊销正交：密码保护、过期、吊销三套门禁独立叠加
+    """
+    await trip_service._load_trip(db, trip.id, owner=owner)
+    token = trip.share_token if kind == "share" else trip.edit_token
+    if not token:
+        raise NotFoundError(
+            "该行程还没有开放分享" if kind == "share" else "该行程还没有开放受邀编辑",
+            code="share_token_not_found" if kind == "share" else "edit_token_not_found",
+        )
+    rec = await _upsert_share_token(db, trip_id=trip.id, token=token, kind=kind)
+    if rec is None:  # 理论不可达
+        raise NotFoundError("分享链接无效", code="share_token_not_found")
+    rec.password_hash = hash_password(password) if password else None
+    await db.flush()
+    return {"trip_id": trip.id, "kind": kind, "has_password": bool(rec.password_hash)}
 
 
 # ── 生命周期辅助 ─────────────────────────────────────────────
@@ -137,6 +227,7 @@ async def _lifecycle_for_token(
         "revoked_at": rec.revoked_at,
         "created_at": rec.created_at,
         "last_used_at": rec.last_used_at,
+        "has_password": bool(rec.password_hash),
         "legacy": False,
     }
 

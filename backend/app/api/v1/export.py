@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -33,10 +33,12 @@ async def export_trip(
 @router.get("/share/{token}/export", summary="导出行程 JSON（免登录，凭 share_token 只读）")
 async def export_shared_trip(
     token: str,
+    x_share_password: str | None = Header(None, alias="X-Share-Password"),
+    x_share_gate: str | None = Header(None, alias="X-Share-Gate"),
     db: AsyncSession = Depends(get_session),
 ) -> dict:
-    """持分享令牌免登录导出（与 GET /share/{token} 同信任语义，只读快照）。"""
-    trip = await trip_service.get_trip_by_share_token(db, token)
+    """凭 share_token 免登录导出（只读数据快照；与分享读取同信任语义）。"""
+    trip = await trip_service.get_trip_by_share_token(db, token, password=x_share_password, gate_token=x_share_gate)
     plan = await trip_service.get_plan_by_trip_id(db, trip.id)
     plan_data = await trip_service.ensure_plan_transport(db, trip, plan) or {}
     return export_service.build_trip_export(trip, plan_data=plan_data)

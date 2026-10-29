@@ -217,6 +217,8 @@ class ShareToken(Base):
     - expires_at: null=永久有效；非 null 且已过期 → 读取侧按失效处理
     - revoked_at: owner 吊销时间；非 null → 立即失效（幂等）
     - last_used_at: 最近一次成功访问（审计），由读取端点更新
+    - password_hash: 访问密码哈希（PBKDF2，task-share-gate-eval）；非空表示
+      该令牌受密码保护；NULL=无锁旧数据兼容
     - 旧数据（trips 列已有 token 但本表无记录）→ 按永久、未吊销、免审计兼容
     """
 
@@ -229,6 +231,7 @@ class ShareToken(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

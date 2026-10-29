@@ -163,12 +163,20 @@ async def create_share_token(db: AsyncSession, trip_id: str, *, owner: str | Non
     return trip.share_token
 
 
-async def get_trip_by_share_token(db: AsyncSession, token: str) -> Trip:
+async def get_trip_by_share_token(
+    db: AsyncSession,
+    token: str,
+    *,
+    password: str | None = None,
+    gate_token: str | None = None,
+) -> Trip:
     """按分享令牌读取行程（免登录只读，持令牌即视为授权——与 git secret link 同语义）。
 
     - 不存在的令牌 → 404（避免泄露行程是否存在）
     - 生命周期门禁：share_tokens 表有记录且已过期/吊销 → 410/403
       （旧令牌无记录 → 永久兼容，不受影响）
+    - 访问密码门禁（task-share-gate-eval）：令牌设了密码 → 必须提供正确
+      X-Share-Password 或有效 X-Share-Gate 免验凭证，否则 403 share_password_required
     - 任何人都可查询，不做 owner 校验（分享的语义就是跨用户只读）
     """
     stmt = select(Trip).options(*_TRIP_LOADS).where(Trip.share_token == token)
@@ -179,6 +187,7 @@ async def get_trip_by_share_token(db: AsyncSession, token: str) -> Trip:
 
     rec = await share_lifecycle.ensure_share_token_record(db, trip, kind="share")
     share_lifecycle.raise_if_token_inactive(rec)
+    share_lifecycle.verify_token_access(rec, password=password, gate_token=gate_token)
     await share_lifecycle.touch_token_usage(db, rec)
     return trip
 
@@ -205,11 +214,19 @@ async def revoke_edit_token(db: AsyncSession, trip_id: str, *, owner: str | None
         await db.flush()
 
 
-async def get_trip_by_edit_token(db: AsyncSession, token: str) -> Trip:
+async def get_trip_by_edit_token(
+    db: AsyncSession,
+    token: str,
+    *,
+    password: str | None = None,
+    gate_token: str | None = None,
+) -> Trip:
     """按受邀编辑令牌读取行程（编辑权包含只读，受邀者可查看完整行程）。
 
     与只读 share_token 的信任语义一致：持令牌即视为授权，令牌不存在 → 404。
     同样受生命周期门禁（share_tokens.kind='edit' 过期/吊销 → 410/403）。
+    同样受访问密码门禁（task-share-gate-eval）：设了密码 → 需 X-Share-Password
+    或 X-Share-Gate 免验凭证，否则 403 share_password_required。
     """
     stmt = select(Trip).options(*_TRIP_LOADS).where(Trip.edit_token == token)
     trip = (await db.execute(stmt)).scalar_one_or_none()
@@ -219,6 +236,7 @@ async def get_trip_by_edit_token(db: AsyncSession, token: str) -> Trip:
 
     rec = await share_lifecycle.ensure_share_token_record(db, trip, kind="edit")
     share_lifecycle.raise_if_token_inactive(rec)
+    share_lifecycle.verify_token_access(rec, password=password, gate_token=gate_token)
     await share_lifecycle.touch_token_usage(db, rec)
     return trip
 

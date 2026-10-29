@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -59,6 +59,8 @@ async def map_edit(
 async def map_edit_by_token(
     token: str,
     data: MapEditRequest,
+    x_share_password: str | None = Header(None, alias="X-Share-Password"),
+    x_share_gate: str | None = Header(None, alias="X-Share-Gate"),
     db: AsyncSession = Depends(get_session),
 ) -> MapEditOut:
     """受邀编辑者（持 edit_token）拖拽 marker 改坐标，走同一条 diff 内核。
@@ -73,5 +75,7 @@ async def map_edit_by_token(
         lat=data.lat,
         lng=data.lng,
         day_number=data.day_number,
+        password=x_share_password,
+        gate_token=x_share_gate,
     )
     return MapEditOut(**result)
