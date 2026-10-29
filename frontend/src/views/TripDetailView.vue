@@ -101,32 +101,20 @@ const exportEl = ref(null)
 const exp = useExport({ exportEl, getTrip: () => trip.value })
 const { exporting, doExportImage, doExportPdf, doExportJson, doPrint } = exp
 
-// ── Tab 化旅程工作台（task-trip-detail-tabs：重点前置 + 分区统一） ──
-// 四个分区：overview（概览：地图/状态/预订）/ itinerary（行程：逐日+修订）/
-// ops（追踪：时间轴+徽章+晒图）/ gear（装备：清单+服务+素材+动态）。
-// - URL ?tab= 锚定（深链/分享可定位）；默认 overview
-// - 导出时 exportAll=true：Tab 栏隐藏 + 全部分区展开（截图/PDF 与旧版一致）
-const activeTab = ref(String(route.query.tab || 'overview'))
+// ── 三段式旅程工作台（task-trip-detail-triptych：主路径 + 工具分离） ──
+// 段1 头部：紧凑摘要条（hero-bar）
+// 段2 主内容：地图（activeDay 联动高亮）+ 逐日卡大纲 + 右侧 sticky 仪表盘
+// 段3 工具箱：次级功能统一容器收纳（规划修订 / 旅程执行 / 装备素材）
+// - activeDay：聚焦某日 → 地图高亮该日 marker + 视野聚焦；null = 全部
+// - 导出时 exportAll=true：全部分区展开（截图/PDF 与旧版一致）
+const activeDay = ref(null)
 const exportAll = ref(false)
-const TAB_KEYS = ['overview', 'itinerary', 'ops', 'gear']
 
-function showZone(key) {
-  return exportAll.value || activeTab.value === key
+function focusDay(dayNumber) {
+  activeDay.value = activeDay.value === dayNumber ? null : dayNumber
 }
 
-function setTab(key) {
-  if (!TAB_KEYS.includes(key)) key = 'overview'
-  activeTab.value = key
-  router.replace({ query: { ...route.query, tab: key } })
-}
-
-// 分享/深链 ?tab= 切入时同步
-watch(() => route.query.tab, (v) => {
-  const key = String(v || 'overview')
-  if (TAB_KEYS.includes(key) && key !== activeTab.value) activeTab.value = key
-})
-
-// 导出前强制展开全部分区，导出后恢复当前 Tab
+// 导出前强制展开全部分区，导出后恢复
 async function withExportAll(fn) {
   exportAll.value = true
   try {
@@ -135,7 +123,7 @@ async function withExportAll(fn) {
     exportAll.value = false
   }
 }
-// 底部导出按钮：截图/PDF 需要抓取完整行程（Tab 化后强制 exportAll）
+// 底部导出按钮：截图/PDF 需要抓取完整行程（强制 exportAll）
 async function doExportPdfAll() { await withExportAll(doExportPdf) }
 async function doExportImageAll() { await withExportAll(doExportImage) }
 
@@ -442,67 +430,51 @@ onBeforeUnmount(() => {
 
       <!-- 导出区（截图/PDF 抓取范围） -->
       <div ref="exportEl" class="export-area">
-        <!-- 头图 + 概览 -->
-        <div class="hero-card">
-          <div class="hero-cover">
-            <div class="hero-city">{{ (trip.destination || '?')[0] }}</div>
-            <div class="hero-overlay">
-              <h1 class="hero-title">{{ trip.title }}</h1>
+        <!-- ═══ 段1 · 头部：紧凑摘要条 ═══ -->
+        <div class="hero-bar">
+          <div class="hero-main">
+            <div class="hero-cover-mini">{{ (trip.destination || '?')[0] }}</div>
+            <div class="hero-info">
+              <div class="hero-row1">
+                <h1 class="hero-title">{{ trip.title }}</h1>
+                <span class="status-badge" :class="(statusMap[trip.status] || statusMap.draft).type">
+                  {{ (statusMap[trip.status] || statusMap.draft).label }}
+                </span>
+                <el-select
+                  v-model="trip.status"
+                  class="status-switch"
+                  size="small"
+                  :loading="statusUpdating"
+                  @change="changeStatus"
+                >
+                  <el-option v-for="opt in statusOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
+                </el-select>
+              </div>
               <div class="hero-meta">
                 <span class="hero-pill"><el-icon><Location /></el-icon>{{ trip.destination }}</span>
                 <span class="hero-pill" v-if="trip.departure"><el-icon><Promotion /></el-icon>{{ $t('tripDetail.fromDeparture', { dep: trip.departure }) }}</span>
-                <span class="hero-pill" v-if="trip.trip_type"><el-icon><Briefcase /></el-icon>{{ $t('tripDetail.tripTypeLabel') }}：{{ tripTypeDisplay(trip.trip_type) }}</span>
                 <span class="hero-pill"><el-icon><Calendar /></el-icon>{{ trip.start_date }} ~ {{ trip.end_date }}</span>
                 <span class="hero-pill"><el-icon><User /></el-icon>{{ trip.travelers }} {{ $t('common.peopleUnit') }}</span>
-                <span class="hero-pill" v-if="trip.budget != null"><el-icon><Wallet /></el-icon>{{ $t('common.budget') }} ¥{{ trip.budget }}</span>
+                <span class="hero-pill" v-if="trip.budget != null"><el-icon><Wallet /></el-icon>¥{{ trip.budget }}</span>
+                <span class="hero-pill" v-if="trip.trip_type"><el-icon><Briefcase /></el-icon>{{ tripTypeDisplay(trip.trip_type) }}</span>
               </div>
             </div>
-            <span class="status-group">
-              <span class="status-badge" :class="(statusMap[trip.status] || statusMap.draft).type">
-                {{ (statusMap[trip.status] || statusMap.draft).label }}
-              </span>
-              <el-select
-                v-model="trip.status"
-                class="status-switch"
-                size="small"
-                :loading="statusUpdating"
-                @change="changeStatus"
-              >
-                <el-option v-for="opt in statusOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
-              </el-select>
-            </span>
           </div>
         </div>
 
-        <!-- Tab 工作台导航（overview 概览 / itinerary 行程 / ops 追踪 / gear 装备） -->
-        <div class="detail-tabs" v-if="!exportAll">
-          <button
-            v-for="tk in TAB_KEYS"
-            :key="tk"
-            class="detail-tab"
-            :class="{ active: activeTab === tk && !exportAll }"
-            type="button"
-            @click="setTab(tk)"
-          >
-            <el-icon v-if="tk === 'overview'"><HomeFilled /></el-icon>
-            <el-icon v-else-if="tk === 'itinerary'"><Calendar /></el-icon>
-            <el-icon v-else-if="tk === 'ops'"><DataLine /></el-icon>
-            <el-icon v-else><Suitcase /></el-icon>
-            {{ $t(`tripDetail.tabs.${tk}`) }}
-          </button>
-          <!-- 导出模式标识：全部展开（截图/PDF 抓取） -->
-          <span v-if="exportAll" class="export-all-note">{{ $t('tripDetail.exportAllNote') }}</span>
-        </div>
-
-        <!-- 双栏布局：主列（地图 + 每日行程）/ 侧栏（仪表盘 + 今日） -->
-        <div class="detail-layout" :class="{ 'single-col': !showZone('overview') }">
+        <!-- ═══ 段2 · 主内容：地图 + 逐日大纲 + 侧栏仪表盘 ═══ -->
+        <div class="detail-layout">
           <div class="main-col">
-            <!-- 概览：地图（概览 Tab：地图是定位锚点，高频） -->
-            <div v-if="showZone('overview')" class="map-card">
+            <!-- 地图（activeDay 联动：点击某日高亮该日站点与路线） -->
+            <div class="map-card" :class="{ 'day-focused': activeDay != null }">
               <div class="card-head">
-                <span class="card-title">{{ $t('common.mapTitle') }}</span>
+                <span class="card-title"><el-icon style="margin-right: 6px"><MapLocation /></el-icon>{{ $t('common.mapTitle') }}</span>
                 <span class="map-hint">
+                  <template v-if="activeDay != null">{{ $t('tripDetail.mapFocusDay', { day: activeDay }) }} · </template>
                   {{ canMapDrag ? $t('tripDetail.mapDragHint') : $t('common.mapHint') }}
+                  <el-button v-if="activeDay != null" link type="primary" size="small" @click="activeDay = null" style="margin-left: 6px">
+                    {{ $t('tripDetail.mapClearFocus') }}
+                  </el-button>
                 </span>
               </div>
               <el-alert
@@ -515,37 +487,40 @@ onBeforeUnmount(() => {
               />
               <TripMap
                 :markers="markers"
-                height="420px"
+                :active-day="activeDay"
+                height="360px"
                 :draggable="canMapDrag"
                 :on-move="onMapMove"
               />
             </div>
 
-            <!-- 行程：每日行程（行程 Tab：逐日编辑主战场） -->
-            <template v-if="showZone('itinerary')">
-              <div class="day-section" v-for="day in trip.days" :key="day.id">
-                <div class="day-head">
-                  <div class="day-headline">
-                    <span class="day-badge">Day {{ day.day_number }}</span>
-                    <div>
-                      <div class="day-title">{{ day.date || $t('common.dayN', { n: day.day_number }) }}</div>
-                      <div class="day-note">{{ day.note || $t('common.freeExplore') }}</div>
+            <!-- 逐日行程大纲（每 Day 可展开；头部点击聚焦地图） -->
+            <div class="day-section day-card" v-for="day in trip.days" :key="day.id" :class="{ 'day-active': activeDay === day.day_number }">
+              <div class="day-head">
+                <div class="day-headline" :class="{ clickable: day.stops.length }" @click="day.stops.length && focusDay(day.day_number)">
+                  <span class="day-badge" :class="{ 'day-badge-active': activeDay === day.day_number }">Day {{ day.day_number }}</span>
+                  <div>
+                    <div class="day-title">
+                      {{ day.date || $t('common.dayN', { n: day.day_number }) }}
+                      <el-icon v-if="day.stops.length" class="day-focus-icon" :size="13" :title="$t('tripDetail.mapFocusHint')"><MapLocation /></el-icon>
                     </div>
-                  </div>
-                  <div class="day-actions">
-                    <el-button size="small" type="primary" plain @click="openAddStop(day.id)">+ {{ $t('tripDetail.addStop') }}</el-button>
-                    <el-dropdown trigger="click" @command="(cmd) => onDayCommand(day, cmd)">
-                      <el-button size="small" plain circle aria-label="Day actions">
-                        <el-icon><MoreFilled /></el-icon>
-                      </el-button>
-                      <template #dropdown>
-                        <el-dropdown-menu>
-                          <el-dropdown-item command="delete" :icon="Delete" class="detail-dropdown-danger">{{ $t('tripDetail.removeDay') }}</el-dropdown-item>
-                        </el-dropdown-menu>
-                      </template>
-                    </el-dropdown>
+                    <div class="day-note">{{ day.note || $t('common.freeExplore') }}</div>
                   </div>
                 </div>
+                <div class="day-actions">
+                  <el-button size="small" type="primary" plain @click="openAddStop(day.id)">+ {{ $t('tripDetail.addStop') }}</el-button>
+                  <el-dropdown trigger="click" @command="(cmd) => onDayCommand(day, cmd)">
+                    <el-button size="small" plain circle aria-label="Day actions">
+                      <el-icon><MoreFilled /></el-icon>
+                    </el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item command="delete" :icon="Delete" class="detail-dropdown-danger">{{ $t('tripDetail.removeDay') }}</el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </div>
+              </div>
 
                 <!-- 站点时间轴 -->
                 <div class="stops-list" v-if="day.stops.length">
@@ -587,8 +562,11 @@ onBeforeUnmount(() => {
                 <el-empty v-else :description="$t('common.dayEmpty')" :image-size="60" />
               </div>
 
-              <!-- 行程：AI 调整行程（规划修订入口，默认展开，行程编辑主操作） -->
-              <div class="aux-area" style="margin-top: 16px">
+              <!-- ═══ 段3 · 工具箱：规划修订 ═══ -->
+            <div class="toolbox-group">
+              <div class="toolbox-label"><el-icon style="margin-right: 5px"><MagicStick /></el-icon>{{ $t('tripDetail.toolboxPlan') }}</div>
+              <div class="aux-area">
+                <!-- AI 调整行程（规划修订入口，默认展开） -->
                 <CollapsibleSection
                   plain
                   :default-open="true"
@@ -745,11 +723,12 @@ onBeforeUnmount(() => {
                   </div>
                 </CollapsibleSection>
               </div>
-            </template>
+            </div>
 
-            <!-- 运营：旅程追踪 / 护照 / 故事（运营 Tab：旅程进行中） -->
-            <template v-if="showZone('ops')">
-              <div class="aux-area" style="margin-top: 16px">
+            <!-- ═══ 段3 · 工具箱：旅程执行 ═══ -->
+            <div class="toolbox-group">
+              <div class="toolbox-label"><el-icon style="margin-right: 5px"><DataLine /></el-icon>{{ $t('tripDetail.toolboxOps') }}</div>
+              <div class="aux-area">
                 <!-- 预订（可预订建议 + 凭证回填 + 状态机，执行层高频默认展开） -->
                 <CollapsibleSection
                   plain
@@ -798,11 +777,12 @@ onBeforeUnmount(() => {
                   />
                 </CollapsibleSection>
               </div>
-            </template>
+            </div>
 
-            <!-- 装备：打包清单 / 服务层 / 住宿 / 动态（装备 Tab：出发前+执行中） -->
-            <template v-if="showZone('gear')">
-              <div class="aux-area" style="margin-top: 16px">
+            <!-- ═══ 段3 · 工具箱：装备素材 ═══ -->
+            <div class="toolbox-group">
+              <div class="toolbox-label"><el-icon style="margin-right: 5px"><Suitcase /></el-icon>{{ $t('tripDetail.toolboxGear') }}</div>
+              <div class="aux-area">
                 <CollapsibleSection
                   plain
                   :default-open="false"
@@ -852,11 +832,11 @@ onBeforeUnmount(() => {
                   <TripEventFeed :trip-id="trip.id" />
                 </CollapsibleSection>
               </div>
-            </template>
+            </div>
           </div>
 
-          <!-- 侧栏：仪表盘 + 行中今日（概览 Tab 常驻；导出时展开） -->
-          <div class="side-col" v-if="showZone('overview')">
+          <!-- 侧栏：仪表盘 + 行中今日（sticky 常驻） -->
+          <div class="side-col">
             <!-- 行中「今日视图」（live 期间；打卡/跳过/迟到顺延） -->
             <div v-if="live && live.phase === 'live'" class="live-card">
               <div class="live-head">
@@ -1082,47 +1062,48 @@ onBeforeUnmount(() => {
 }
 .back-btn:hover { background: var(--fill); color: var(--ink); }
 
-/* ── 头图 ── */
-.hero-card { margin-bottom: 20px; }
-.hero-cover {
-  position: relative;
-  height: 200px;
+/* ── 段1 头部：紧凑摘要条（task-trip-detail-triptych） ── */
+.hero-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, var(--brand-soft), var(--card) 55%);
+  border: 1px solid var(--line);
   border-radius: var(--radius-xl);
-  background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 55%, #a1c4fd 100%);
-  overflow: hidden;
-  display: flex; align-items: center;
   box-shadow: var(--shadow-card);
 }
-.hero-city {
-  position: absolute; right: 6%; bottom: 28px;
-  /* 中文字形渲染高度 ≈ font-size × 1.4（ascender/descender 溢出 line box）。
-     容器 200px：140px 字形即 196px，bottom 正值把字形完整收进容器、贴底摆放，
-     避免被 overflow:hidden 裁切导致字形残缺 */
-  font-size: 140px; font-weight: 800; color: rgba(255,255,255,0.35);
-  line-height: 1; user-select: none;
+.hero-main { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
+.hero-cover-mini {
+  width: 48px; height: 48px; border-radius: var(--radius-lg); flex-shrink: 0;
+  background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 55%, #a1c4fd 100%);
+  color: #fff; font-size: 22px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-sm);
 }
-.hero-overlay { position: relative; z-index: 1; padding: 32px 36px; }
-.hero-title { margin: 0 0 14px; font-size: 30px; font-weight: 700; color: #fff; text-shadow: 0 2px 14px rgba(0,0,0,0.18); letter-spacing: -0.02em; }
-.hero-meta { display: flex; flex-wrap: wrap; gap: 8px; }
-.hero-pill {
-  display: inline-flex; align-items: center; gap: 5px;
-  background: rgba(255,255,255,0.88); color: var(--ink-2);
-  font-size: 12.5px; font-weight: 500;
-  padding: 6px 12px; border-radius: var(--radius-full);
-  backdrop-filter: blur(4px);
+.hero-info { flex: 1; min-width: 0; }
+.hero-row1 {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px;
 }
-.status-group {
-  position: absolute; top: 16px; right: 16px; z-index: 2;
-  display: flex; align-items: center; gap: 8px;
-}
+.hero-title { margin: 0; font-size: 20px; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; }
 .status-badge {
-  font-size: 12px; font-weight: 600; padding: 5px 12px;
+  font-size: 11.5px; font-weight: 600; padding: 4px 10px;
   border-radius: var(--radius-full); background: rgba(255,255,255,0.9);
+  border: 1px solid var(--line);
 }
 .status-badge.success { color: var(--success); }
 .status-badge.warning { color: var(--warning); }
 .status-badge.info { color: var(--muted); }
 .status-switch { width: 108px; }
+.hero-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.hero-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--card); color: var(--ink-2);
+  font-size: 12px; font-weight: 500;
+  padding: 4px 10px; border-radius: var(--radius-full);
+  border: 1px solid var(--line);
+}
 
 /* ── 地图 + 预算 ── */
 .map-budget-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; margin-bottom: 28px; }
@@ -1134,6 +1115,11 @@ onBeforeUnmount(() => {
 .card-title { font-size: 15px; font-weight: 600; color: var(--ink); }
 .map-hint { font-size: 12px; color: var(--faint); }
 .map-drag-error { margin-bottom: 10px; }
+/* 地图聚焦态：activeDay 联动时品牌色描边提示 */
+.map-card.day-focused {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft), var(--shadow-card);
+}
 
 .budget-ring-wrap { text-align: center; padding: 8px 0 4px; }
 .budget-ring {
@@ -1166,53 +1152,6 @@ onBeforeUnmount(() => {
 .budget-basis-label { font-weight: 600; white-space: nowrap; color: var(--muted); }
 .budget-basis-text { word-break: break-all; }
 
-/* ── Tab 化旅程工作台导航（task-trip-detail-tabs） ── */
-.detail-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 16px;
-  padding: 4px;
-  background: var(--fill);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  overflow-x: auto;
-}
-.detail-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--muted);
-  font-size: 13.5px;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s, color 0.15s;
-}
-.detail-tab:hover { background: var(--card); color: var(--ink); }
-.detail-tab.active {
-  background: var(--card);
-  color: var(--brand);
-  font-weight: 600;
-  box-shadow: var(--shadow-sm);
-}
-.detail-tab .el-icon { font-size: 15px; }
-.export-all-note {
-  margin-left: auto;
-  align-self: center;
-  font-size: 12px;
-  color: var(--muted);
-  padding-right: 8px;
-}
-
-/* Tab 化单列模式：非 Overview Tab 时侧栏隐藏，主列占满 */
-.detail-layout.single-col {
-  grid-template-columns: minmax(0, 1fr);
-}
-
 /* ── 双栏布局：主列（地图 + 每日行程）/ 侧栏（仪表盘 + 今日） ── */
 .detail-layout {
   display: grid;
@@ -1235,6 +1174,53 @@ onBeforeUnmount(() => {
   gap: 2px;
 }
 .aux-child { margin-bottom: 0; }
+
+/* ── 段2 逐日行程卡（task-trip-detail-triptych）── */
+.day-section.day-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.day-card.day-active {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft), var(--shadow-card);
+}
+.day-headline.clickable { cursor: pointer; border-radius: var(--radius-md); }
+.day-headline.clickable:hover { background: var(--fill); }
+.day-badge {
+  width: 48px; height: 48px; border-radius: var(--radius-md); flex-shrink: 0;
+  background: var(--ink); color: #fff; font-weight: 700; font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+  letter-spacing: 0.02em;
+  transition: background 0.2s;
+}
+.day-badge.day-badge-active {
+  background: var(--brand);
+}
+.day-focus-icon { color: var(--faint); margin-left: 6px; vertical-align: -2px; }
+.day-card.day-active .day-focus-icon { color: var(--brand); }
+
+/* ── 段3 工具箱分组（task-trip-detail-triptych）── */
+.toolbox-group {
+  margin-top: 22px;
+  border-top: 1px dashed var(--line);
+  padding-top: 14px;
+}
+.toolbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 
 /* 窄屏：双栏降级单列，侧栏顺序调整（仪表盘在每日行程后自然跟随） */
 @media (max-width: 960px) {
