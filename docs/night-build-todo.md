@@ -99,3 +99,15 @@
 ## 2026-10-29 白天收编（用户续做 task-trip-detail-refactor 阶段一）——TripDetailView 拆分 + 基线埋点
 
 - [x] task-trip-detail-refactor: TripDetailView 重构阶段一纯拆分 + 基线埋点（frontend+backend，设计 docs/plans/2026-10-29-trip-detail-refactor-solution.md §1/§4）。9 组件 + orchestrator 收敛（TripDetailView 1637 行 → 713 行，状态所有权留 orchestrator 不变）+ useTripTypes composable；埋点四事件（planning_tool_open / top_action_click / itinerary_first_view / itinerary_scroll_depth）+ POST /api/v1/analytics/events（schema 白名单校验 204 不落库、guest 也放行）+ exportAll→CollapsibleSection forceOpen 接线（修复 solution §0 指出的导出未展开折叠区问题）。验收：后端全套 693 测试通过（含 test_analytics.py 7 例）、前端 build 4.36s 通过、i18n 146 键 zh/en 双侧齐、四事件挂载点全接线（click 即发/首屏 IntersectionObserver/滚动深度一次性+节流）。分支 nightly/2026-10-29/7-task-trip-detail-refactor，3 commits（0522e83 组件拆分 / 02b216f 埋点+forceOpen / 5efafb9 worklog）。WIP 收编（被掐断 worker 遗留，核验通过提交登记，非重写）；阶段二（信息架构/Tab/Feature Flag）未做，待用户 review 阶段一后另立。
+
+## 2026-10-30 白天收编（用户续做 task-floattrip-borrow）——对标 FloatTrip 迭代：取回悬空 WIP + 接线
+
+- [x] task-floattrip-borrow: 对标 FloatTrip 差异化迭代（PRD docs/prd/2026-10-29-floattrip-borrow-iteration-spec.md，Draft）。取回 10-29 夜悬空提交 f327267 的 WIP（15 文件 2210 行：solver/reorder/preference 服务 + schemas + 测试 + PreferencesView/useDragEdit/profile.js + spec），核验后补全接线：
+  - **Story 1 拖拽重排**：reorder_service（原子落库 + DrivingGate 前置 + 预算重算 + 版本保留）+ POST /trips/{id}/reorder-commit（新增 reorder_commit.py 并注册路由）+ 前端 reorderCommit API + useDragEdit composable（草稿式 undo/redo/批量保存，**UI 切换待排期**——现详情页仍为单点即时落库的上移/下移）
+  - **Story 2 旅行记忆**：preference_item_service（偏好条目 CRUD + items_to_text 注入「本次明确需求优先于历史画像」）+ GET/POST/PUT/DELETE /profile/preferences（新端点）+ profile_service.profile_for_request 注入条目（删除后不再注入）+ 前端 PreferencesView + /preferences 路由 + 用户菜单「旅行偏好」入口 + i18n profile.* zh/en
+  - **Story 3 版本保留**（@ 引用修订的版本基石）：_recompute_budget 更新前复制 archived 快照、原行升级为新版本（get_plan/分享按 created_at 倒序自然读新版本）
+  - **Story 4 确定性求解**：solver_service（rank_candidates 规则排序 + check_hard_constraints 时间/距离硬约束 + repair_violations 有限修复）+ SolverGate 接入 FinalizePlanStep（plan.solver_meta + warnings「确定性校验未通过」+ trace + artifact）+ i18n solver.* zh/en
+  - **修复 trace 透传 bug**：run_finalize_stage 的 `trace or []` 丢弃调用方 list → 改 `trace if trace is not None else []`；FinalizePlanStep 内 `or ctx.trace` 同样问题
+  - 验收：专项 36 例全绿（原 27 过 9 红全转绿）、全套 729 passed、前端 build 通过、i18n solver/profile/App 键 zh/en 双侧齐
+  - 提交：分支 nightly/2026-10-29/8-task-floattrip-borrow，2 commits（de3b301 主接线 / fb2fbb7 导航入口）
+  - **遗留（诚实标注）**：①useDragEdit 未接入详情页 UI（Story 1 交互切换待排期，后端契约/API/composable 已就位）；②Story 3 @ 选择器前端未实现（本次只做了版本保留后端基石）；③Story 5 任务运行时 / 移动端 / 补充卡片为 P2 未做；④stash@{0} 另有一批 floattrip WIP（含 PlanTaskEventsOut 导出修复）按 stash 标注留给白天核验
