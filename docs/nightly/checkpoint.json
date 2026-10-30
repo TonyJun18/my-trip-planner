@@ -1,20 +1,15 @@
 {
-  "night": "2026-10-29",
+  "night": "2026-10-30",
   "status": "completed_with_issues",
   "todo": [
-    "task-price-realism-eval",
-    "task-trip-rating-signal"
+    "task-book-ahead-scan",
+    "task-meal-walk-anchors-eval"
   ],
   "completed": [
-    "task-share-gate-eval",
-    "task-open-hours-real-eval",
-    "task-price-realism-eval",
-    "task-trip-rating-signal",
-    "task-trip-detail-refactor",
     "competitive-analysis",
     "task-meal-walk-anchors-eval"
   ],
-  "current_index": 4,
+  "current_index": 2,
   "issues": [
     "2026-10-29 night-start 重建：checkpoint 原停在 10-28 旧队列（night=2026-10-28 in_progress todo 5 项 index=0），与 main 现状不符（human-escalation 已合并 main 且 todo [x]、booking-closure 已 [x]）。本夜按 todo 文件现存 [ ] 项重建队列：share-gate / price-realism / open-hours-real / trip-rating-signal。",
     "2026-10-29 worker-1：task-share-gate-eval 补登记完成（非重做）——主体已由 10-28 夜完成于分支 nightly/2026-10-28/0-task-share-gate-eval（5584710+126f929）。本 worker 按重试/补登记先例核验：专项 test_share_gate.py 9 例全绿、分支全套 499 passed+1 skipped、评估记录在案。仅 docs 改动，无新代码。",
@@ -28,11 +23,12 @@
     "2026-10-29 worker-3 mechanics：与 worker-2 同构——git checkout main 后 docs 两文件被 main 旧版覆盖，已从分支 nightly/2026-10-29/1-task-open-hours-real-eval 恢复 10-29 权威版后补登记；本 worker 分支 nightly/2026-10-29/2-task-price-realism-eval 按 current_index=2 对齐命名。",
     "2026-10-29 worker-4：task-trip-rating-signal 完成（评估通过并实现最小版）——branch nightly/2026-10-29/3-task-trip-rating-signal；TripRating 模型 + alembic c2d4e6f8a0b2 迁移 + rating_service + trips_ratings API（POST/PUT/GET/DELETE /trips/{trip_id}/rating + GET /trips/ratings/summary 批量免登录，/ratings/summary 先于 crud 注册防吞）+ 画廊透出（gallery summary 3 字段 + LandingPage 画廊卡片星级/人数/「N 人去过」）；专项 test_trip_rating.py 8 passed、全套 668 passed、前端 build 3.21s 通过；评估记录 docs/nightly/evaluations/task-trip-rating-signal-2026-10-29.md。遗留：评分交互入口（详情页控件）视窗口另立。本夜 4 项队列全部完成，status=completed。",
     "2026-10-29 worker-4 mechanics：git checkout main 后 docs 两文件被 main 旧版覆盖（同 worker-2/3），已从分支 nightly/2026-10-29/2-task-price-realism-eval 恢复 10-29 权威版后执行任务；python3 -c 触发安全扫描 pending_approval，改换 search_files/grep 等价写法。",
-    "2026-10-29 白天收编（非夜间队列任务）：task-trip-detail-refactor 阶段一（TripDetailView 拆分 9 组件 + 埋点四事件 + export forceOpen 接线）——被掐断 worker 遗留 WIP，本 worker 核验通过提交登记：后端全套 693 测试通过（含 test_analytics.py 7 例）、前端 build 4.36s 通过、i18n 146 键 zh/en 双侧齐；分支 nightly/2026-10-29/7-task-trip-detail-refactor（3 commits 0522e83/02b216f/5efafb9）；todo 已追加 [x]。阶段二（信息架构/Tab/flag）未做，待用户 review 阶段一后另立；夜班如有 task-trip-detail-refactor 条目勿重做。",
     "2026-10-30 night-start 重建：checkpoint 停在 10-29（status=completed_with_issues，night=2026-10-29 ≠ 今天 2026-10-30），跨夜按当前日期重建。todo 文件现存唯一 [ ] 项 task-booking-closure-eval（10-27 用户视角追加、排在「其余 4 项之后最后评估」）；注意 10-28 白天三立项已对同 slug 关单（[x]，评估记录 docs/nightly/evaluations/task-booking-closure-eval-2026-10-28.md，经用户批准按方案 A 落地 task-booking-outlink——76 行未勾疑与 91 行 [x] 重复漏勾），后续 worker 应核验补登记而非重做。按手册铁律 2 竞品分析先行，todo[0]=competitive-analysis。历史 issues 保留。",
     "2026-10-30 worker-3 观察：git 历史显示 10-29 夜存在超出 checkpoint 记录的后续 worker 活动（main 已有 merge nightly/2026-10-29/6-task-trip-detail-3section → 95b5f87；另有无检查点登记的 WIP 分支 nightly/2026-10-29/8-task-floattrip-borrow 遗留『floattrip-borrow WIP 2026-10-29 遗留(含 PlanTaskEventsOut 导出修复) — 待白天核验修复挂起测试』，以及 stash/untracked 痕迹 1326efe/f327267/d8587dc）。10-29 checkpoint 未登记 5+ 号 worker 的任务与分支（可能因 docs 被 main 覆盖丢失）。建议用户 review 时核对 10-29 未合并分支（4+2 支）与 floattrip-borrow WIP 的去留。",
     "2026-10-30 worker-4：task-meal-walk-anchors-eval 完成（评估通过并实现最小版）——branch nightly/2026-10-30/1-task-meal-walk-anchors-eval；餐饮时段锚定：time_validation.py MEAL_WINDOWS + _classify_meal_window + 独立锚定循环（gap_early/gap_brunch/gap_afternoon/gap_late 四类间隙 warning + 建议窗口，全天候类目豁免列表防误伤）+ i18n zh/en 5 键；站间步行估算降级关单（数据源矩阵：高德步行/Google Directions 需凭证、规则估算跨城臆断且与 DrivingGate 语义重叠、OSRM 自托管成本，与 open-hours-real 同构）；专项 test_time_validation.py 23 例全绿（+6 组）、全套 692 passed；评估记录 docs/nightly/evaluations/task-meal-walk-anchors-eval-2026-10-30.md。遗留：无（timegate-card 前端透出通道已复用，零前端改动）。",
-    "2026-10-30 worker-4 mechanics：git checkout main 后 docs 两文件被 main 旧版覆盖（同 worker-2/3/4 先例），已先从 nightly/2026-10-30/0-competitive-analysis 分支恢复权威版再建本分支执行任务；python3 -c 触发安全扫描 pending_approval，改换 read_file/grep 等价写法。"
+    "2026-10-30 worker-4 mechanics：git checkout main 后 docs 两文件被 main 旧版覆盖（同 worker-2/3/4 先例），已先从 nightly/2026-10-30/0-competitive-analysis 分支恢复权威版再建本分支执行任务；python3 -c 触发安全扫描 pending_approval，改换 read_file/grep 等价写法。",
+    "2026-10-30 worker-5：本夜队列判定已尽（night=2026-10-30 一致，current_index=2 ≥ len(todo)=2，status=in_progress）——worker-4 完成 task-meal-walk-anchors-eval 后指针越界，本 worker 按铁律 10 不擅自重排队列，仅记录。遗留：todo 文件现存唯一 [ ] 项 task-book-ahead-scan（2026-10-30 竞品分析追加、排在 meal-walk 之后）因指针越过而**未执行**；checkpoint todo 列表残留与 completed 重叠项（task-meal-walk-anchors-eval 仍在 todo）。建议下次 night-start 重建队列时从 todo 文件 [ ] 项纳入 task-book-ahead-scan，或用户 review 时决定去留。",
+    "2026-10-29 白天收编（非夜间队列任务）：task-trip-detail-refactor 阶段一（TripDetailView 拆分 9 组件 + 埋点四事件 + export forceOpen 接线）——被掐断 worker 遗留 WIP，本 worker 核验通过提交登记：后端全套 693 测试通过（含 test_analytics.py 7 例）、前端 build 4.36s 通过、i18n 146 键 zh/en 双侧齐；分支 nightly/2026-10-29/7-task-trip-detail-refactor（3 commits 0522e83/02b216f/5efafb9）；todo 已追加 [x]。阶段二（信息架构/Tab/flag）未做，待用户 review 阶段一后另立；夜班如有 task-trip-detail-refactor 条目勿重做。"
   ],
   "branches": [
     "nightly/2026-10-29/0-task-share-gate-eval",
@@ -40,6 +36,7 @@
     "nightly/2026-10-29/2-task-price-realism-eval",
     "nightly/2026-10-29/3-task-trip-rating-signal",
     "nightly/2026-10-30/0-competitive-analysis",
-    "nightly/2026-10-30/1-task-meal-walk-anchors-eval"
+    "nightly/2026-10-30/1-task-meal-walk-anchors-eval",
+    "nightly/2026-10-30/2-checkpoint-issue"
   ]
 }
