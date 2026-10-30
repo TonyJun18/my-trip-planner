@@ -18,6 +18,7 @@ from app.api.v1 import (
     plan_b,
     planner,
     profile,
+    reorder_commit,
     screenshot_import,
     social_import,
     trips_bookings,
@@ -51,6 +52,9 @@ api_router.include_router(trips_ratings.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_favorites.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_escalations.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_crud.router, prefix="/trips", tags=["trips"])
+# reorder-commit：三段字面量路径（/trips/{trip_id}/reorder-commit），与 crud 的
+# 二段 /{trip_id} 不冲突；自带 /trips 前缀，注册时不加 prefix。
+api_router.include_router(reorder_commit.router, tags=["trips"])
 # export 路由（/trips/{trip_id}/export 与 /trips/share/{token}/export）：
 # 声明在 trips 之后即可，段数不同不冲突；字面量 /share/ 由 trips_share 先注册，
 # /share/{token}/export 多一段，Starlette 按精确段匹配互不吞并。

@@ -19,6 +19,7 @@ export * from './modules/events'
 export * from './modules/analytics'
 export * from './modules/chat'
 export * from './modules/ws'
+export * from './modules/profile'
 
 // 兼容旧调用方直接引用默认导出（极少）
 export { default as http } from './http'

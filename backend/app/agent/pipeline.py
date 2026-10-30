@@ -461,7 +461,10 @@ class FinalizePlanStep(PipelineStep):
         t_res = kwargs.get("t_res") or {}
         d_res = kwargs.get("d_res") or {}
         driving_reports = kwargs.get("driving_reports") or []
-        trace = kwargs.get("trace") or ctx.trace
+        # trace: 显式传入（可能为空 list）优先；仅当 None 时用 ctx.trace。
+        # 不能写 `or ctx.trace`——空 list 是 falsy 会被替换，导致 append 丢失。
+        trace_arg = kwargs.get("trace")
+        trace: list = trace_arg if trace_arg is not None else ctx.trace
 
         def _append_trace(entry: dict[str, Any]) -> None:
             trace.append(entry)
@@ -578,6 +581,36 @@ class FinalizePlanStep(PipelineStep):
             "issues": dyn_facts.get("issues") or [],
         })
 
+        # ── SolverGate：确定性求解（任务floattrip-borrow Story 4）──
+        # LLM 候选 → 规则排序 + 时间/距离硬约束校验 + 有限修复。
+        # 产出 plan.solver_meta（排序依据/校验结果/修复记录）；不通过 → warnings
+        # 注入「确定性校验未通过」，绝不静默当成功（诚实口径，与 TimeGate 同源）。
+        from app.services.solver_service import solve
+
+        solver_meta = solve(plan, locale=locale)
+        plan["solver_meta"] = solver_meta
+        hc = solver_meta.get("hard_constraints") or {}
+        if hc.get("passed") is not True:
+            n_unresolved = len(hc.get("unresolved") or [])
+            plan.setdefault("warnings", []).append(
+                t(locale, "plan.warning.solver", n=n_unresolved)
+            )
+        _append_trace({
+            "agent": "SolverGate",
+            "action": "solve",
+            "observation": (
+                t(locale, "plan.trace.solver.pass")
+                if hc.get("passed") is True
+                else t(locale, "plan.trace.solver.warn", n=len(hc.get("unresolved") or []))
+            ),
+            "status": "completed" if hc.get("passed") is True else "warning",
+        })
+        A._fire_artifact("solver", {
+            "basis": solver_meta.get("basis"),
+            "passed": hc.get("passed"),
+            "unresolved_count": len(hc.get("unresolved") or []),
+        })
+
         return plan
 
 
@@ -595,7 +628,10 @@ async def run_finalize_stage(
     pipe.add(FinalizePlanStep())
     await pipe.run(
         request,
-        plan=plan, trace=trace or [],
+        plan=plan,
+        # 显式传入的 trace（可为空 list）必须原样透传，不能 `or []`
+        # 否则 append 到新列表，调用方拿不到 step 内追加的 trace。
+        trace=trace if trace is not None else [],
         t_res=t_res or {}, d_res=d_res or {},
         driving_reports=driving_reports or [],
     )

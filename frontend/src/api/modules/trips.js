@@ -20,3 +20,7 @@ export const deleteStop = (dayId, stopId) => http.delete(`/trips/days/${dayId}/s
 // ── budget / plan ─────────────────────────────────────────
 export const getBudget = (tripId) => http.get(`/trips/${tripId}/budget`).then((r) => r.data)
 export const getTripPlan = (tripId) => http.get(`/trips/${tripId}/plan`).then((r) => r.data)
+
+// 拖拽重排提交（task-floattrip-borrow Story 1）：多日批量原子落库 + DrivingGate 前置 + 预算重算
+export const reorderCommit = (tripId, days) =>
+  http.post(`/trips/${tripId}/reorder-commit`, { days }).then((r) => r.data)
