@@ -93,6 +93,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "timegate.msg.exertion_spot": "Day {day} 含高强度站点「{names}」（体力系数 {coef}），实际耗时可能显著上浮",
         "timegate.suggest.exertion_spot": "为「{names}」预留缓冲时间，或拆到另一天减少赶场",
         "timegate.exertion.basis": "（体力系数为类目基准估算，因人而异）",
+        "timegate.meal.breakfast": "早餐时段（07:00-10:00）",
+        "timegate.meal.lunch": "午餐时段（11:30-14:00）",
+        "timegate.meal.dinner": "晚餐时段（17:00-21:00）",
+        "timegate.msg.meal_anchor": "「{name}」到达约 {arrive}，不在{window}，多数餐厅此时不开门或已收市",
+        "timegate.suggest.meal_anchor": "把餐饮站点调整到{window}，或换成对应时段营业的餐厅",
         # ── dynfacts 动态事实校验（task-dynamic-facts-eval）────
         "dynfacts.summary.pass": "动态事实校验通过（日期/开放特例）",
         "dynfacts.summary.warn": "动态事实校验发现 {n} 个提示（日期/开放特例）",
@@ -338,6 +343,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "timegate.msg.exertion_spot": "Day {day} includes high-intensity stop(s) \"{names}\" (exertion factor {coef}) — actual time may run noticeably longer",
         "timegate.suggest.exertion_spot": "Leave buffer time for \"{names}\", or split it across days to avoid rushing",
         "timegate.exertion.basis": " (exertion factors are category-based estimates; actual effort varies)",
+        "timegate.meal.breakfast": "breakfast window (07:00-10:00)",
+        "timegate.meal.lunch": "lunch window (11:30-14:00)",
+        "timegate.meal.dinner": "dinner window (17:00-21:00)",
+        "timegate.msg.meal_anchor": "\"{name}\" arrives about {arrive}, outside the {window} — most restaurants are closed or closing then",
+        "timegate.suggest.meal_anchor": "Move the meal stop into the {window}, or pick a restaurant open at that time",
         # ── dynfacts ────────────────────────────────────
         "dynfacts.summary.pass": "Dynamic facts check passed (dates/hours exceptions)",
         "dynfacts.summary.warn": "Dynamic facts check found {n} notes (dates/hours exceptions)",
