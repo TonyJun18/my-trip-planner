@@ -3,38 +3,39 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import {
-  MoreFilled, Upload, Star, StarFilled, Promotion, Setting, EditPen, Lock, Delete,
-  Picture, Document, Download, Printer, Top, Bottom, ChatDotRound,
-} from '@element-plus/icons-vue'
+import { Calendar } from '@element-plus/icons-vue'
 import * as api from '@/api'
-import TripMap from '@/components/TripMap.vue'
-import HotelRecommend from '@/components/HotelRecommend.vue'
-import TripServicing from '@/components/TripServicing.vue'
-import BookingPanel from '@/components/BookingPanel.vue'
-import JourneyTimeline from '@/components/JourneyTimeline.vue'
-import PassportPanel from '@/components/PassportPanel.vue'
-import StoryCardGenerator from '@/components/StoryCardGenerator.vue'
-import PackingList from '@/components/PackingList.vue'
-import TripEventFeed from '@/components/TripEventFeed.vue'
-import QualityCard from '@/components/QualityCard.vue'
-import XhsNoteDialog from '@/components/XhsNoteDialog.vue'
-import ImportDialog from '@/components/ImportDialog.vue'
-import CollapsibleSection from '@/components/CollapsibleSection.vue'
-import TripDashboard from '@/components/TripDashboard.vue'
+// 阶段一拆分：TripDetailView 收敛为 orchestrator（装配 + 共享状态 + 对话框）
+// 阶段二信息架构：头部合并（Header）+ 次级工具按时机收纳（Workspace）
+// 组件树见 docs/plans/2026-10-29-trip-detail-refactor-solution.md §1.1 / §2.1
+import TripDetailHeader from '@/components/trip-detail/TripDetailHeader.vue'
+import TripDetailLiveToday from '@/components/trip-detail/TripDetailLiveToday.vue'
+import TripDetailMapCard from '@/components/trip-detail/TripDetailMapCard.vue'
+import TripDetailPlanTools from '@/components/trip-detail/TripDetailPlanTools.vue'
+import TripDetailDayCard from '@/components/trip-detail/TripDetailDayCard.vue'
+import TripDetailToolbox from '@/components/trip-detail/TripDetailToolbox.vue'
+import TripDetailWorkspace from '@/components/trip-detail/TripDetailWorkspace.vue'
+import TripDetailSidebar from '@/components/trip-detail/TripDetailSidebar.vue'
+import TripDetailBottomBar from '@/components/trip-detail/TripDetailBottomBar.vue'
+import TripDetailDialogs from '@/components/trip-detail/TripDetailDialogs.vue'
 import { useTripDetailLoad } from '@/composables/useTripDetailLoad'
 import { useRevise } from '@/composables/useRevise'
 import { useEditDialog } from '@/composables/useEditDialog'
 import { useTripShareActions } from '@/composables/useTripShareActions'
 import { useExport } from '@/composables/useExport'
+import { useTripTypes } from '@/composables/useTripTypes'
+import { isFlagOn } from '@/utils/flags'
+import { detailPhase, currentDayNumber } from '@/utils/tripPhase'
+import { trackEvent, ANALYTICS_EVENTS, tripPhase } from '@/api/modules/analytics'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 
 // ── 核心加载域（trip/budget/plan/离线降级/行中/Plan B） ──
-const journeyRef = ref(null)  // JourneyTimeline 组件引用（打卡/跳过/顺延后刷新投影）
-const passportRef = ref(null)  // PassportPanel 组件引用（同样刷新）
+// 子组件 ref（Toolbox 内部 JourneyTimeline / PassportPanel / Sidebar 仪表盘刷新）
+const toolboxRef = ref(null)  // TripDetailToolbox（暴露 loadJourney / loadPassport）
+const sidebarRef = ref(null)  // TripDetailSidebar（暴露 load）
 // 折叠头信息徽标（预订数 / 追踪进度 / 护照徽章）——轻量并行拉取，失败静默
 const tripSummaries = ref({ journey: null, passport: null })
 async function loadSummaries() {
@@ -79,19 +80,18 @@ const passportBadge = computed(() => {
   return `${p.badge_count}`
 })
 
-const dashRef = ref(null)  // TripDashboard 侧栏仪表盘（同样刷新）
-
 function refreshJourney() {
-  journeyRef.value?.load()
-  passportRef.value?.load()
-  dashRef.value?.load()
+  // 子组件内部面板刷新（Toolbox 内 JourneyTimeline/PassportPanel + Sidebar 内 TripDashboard）
+  toolboxRef.value?.loadJourney()
+  toolboxRef.value?.loadPassport()
+  sidebarRef.value?.load()
   loadSummaries()
 }
 
 const core = useTripDetailLoad({ onJourneyChange: refreshJourney })
 const {
   trip, loading, budget, plan, offlineFallback,
-  live, liveLoading, liveOp,
+  live, liveOp,
   planB, activePlan, planOptions, onPlanChange,
   doCheckStop, doSkipStop, doDelayTrip, loadLive, load,
 } = core
@@ -151,15 +151,248 @@ const { exporting, doExportImage, doExportPdf, doExportJson, doPrint } = exp
 // 段2 主内容：地图（activeDay 联动高亮）+ 逐日卡大纲 + 右侧 sticky 仪表盘
 // 段3 工具箱：次级功能统一容器收纳（规划修订 / 旅程执行 / 装备素材）
 // - activeDay：聚焦某日 → 地图高亮该日 marker + 视野聚焦；null = 全部
-// - 导出时 exportAll=true：全部分区展开（截图/PDF 与旧版一致）
+// - 导出时 exportAll=true → 透传 CollapsibleSection.forceOpen（修复 §0 forceOpen 未接线问题）
 const activeDay = ref(null)
 const exportAll = ref(false)
 
 function focusDay(dayNumber) {
-  activeDay.value = activeDay.value === dayNumber ? null : dayNumber
+  const on = activeDay.value === dayNumber ? null : dayNumber
+  activeDay.value = on
+  // 聚焦某日 → 顺带展开该日，避免「地图高亮但下方看不到站点」
+  if (on != null && iaV2.value) openDayByNumber(on)
 }
 
-// 导出前强制展开全部分区，导出后恢复
+// ── 时机（planning / prep / live / finished）────────────────
+// 四态只服务版面与操作换血；埋点仍用三态 tripPhase（基线口径不能漂移）
+const phase = computed(() => (trip.value ? detailPhase(trip.value) : 'planning'))
+
+// ── 信息架构 v2（feature flag 可回滚）────────────────────
+// flag off = 恢复「三段式工具箱全部平铺」，用于 G1 工具流失对照组
+const iaV2 = ref(isFlagOn('tripDetail.ia.v2'))
+
+// ── 次级工作台：按时机收纳面板（tab + 全部工具开关）──────────
+const WS_PLAN_KEYS = ['revise', 'planb', 'timegate', 'quality', 'hotel']
+const WS_PREP_KEYS = ['booking', 'hotel', 'servicing', 'packing', 'events']
+const WS_LIVE_KEYS = ['journey', 'passport', 'story']
+
+const wsTab = ref('')
+const wsShowAll = ref(false)
+// 非规划时机：规划面板默认隐藏，由「更多 → 调整行程」或 tab 显式打开
+const wsPlanExtra = ref(false)
+
+const planIssues = computed(() => {
+  const q = plan.value?.quality?.issues?.length || 0
+  const g = plan.value?.time_gate?.issues?.length || 0
+  return q + g
+})
+
+const journeyProgress = computed(() => {
+  const j = tripSummaries.value?.journey
+  if (!j?.total_stops) return ''
+  return `${j.completed_stops || 0}/${j.total_stops}`
+})
+
+const phaseTabs = computed(() => {
+  const p = phase.value
+  if (p === 'prep') {
+    return [{ key: 'prep', label: t('tripDetail.tabs.prep'), keys: WS_PREP_KEYS, badge: bookingBadge.value }]
+  }
+  if (p === 'live' || p === 'finished') {
+    return [{ key: 'live', label: t('tripDetail.tabs.live'), keys: WS_LIVE_KEYS, badge: journeyProgress.value }]
+  }
+  return [planTab.value]
+})
+
+const planTab = computed(() => ({
+  key: 'plan',
+  label: t('tripDetail.tabs.plan'),
+  keys: WS_PLAN_KEYS,
+  badge: planIssues.value ? String(planIssues.value) : '',
+}))
+
+const wsTabs = computed(() => {
+  const tabs = phaseTabs.value
+  if (wsPlanExtra.value && !tabs.some((x) => x.key === 'plan')) return [...tabs, planTab.value]
+  return tabs
+})
+
+const activeTab = computed(() => wsTabs.value.find((x) => x.key === wsTab.value) || wsTabs.value[0] || null)
+
+// 传给工具箱的面板白名单：null = 全部（全部工具 / 导出模式）
+const wsKeys = computed(() => {
+  if (!iaV2.value || wsShowAll.value || exportAll.value) return null
+  return activeTab.value?.keys || null
+})
+
+// ── 规划修订 + 行程备选：提到主路径（地图与行程大纲之间）──────
+// 这两个是规划阶段的高频主操作，收在工作台底部需要先滚完整段大纲才够得着。
+// 时机规则与工作台一致：规划期常驻；非规划期由「更多 → 调整行程」显式展开。
+// 导出时隐藏（导出物是给同行人看的行程，不该出现输入框）。
+const planToolsVisible = computed(
+  () => iaV2.value && !exportAll.value && (phase.value === 'planning' || wsPlanExtra.value),
+)
+// 交给工具箱的「已提升」名单：IA v2 下这两个面板永远不在工具箱里渲染，避免同屏两份
+const hoistedPlanKeys = computed(() => (iaV2.value ? ['revise', 'planb'] : []))
+
+// 时机切换后重定位到该时机的主 tab（并收起「额外打开的规划」）
+watch(phase, () => {
+  wsPlanExtra.value = false
+  wsShowAll.value = false
+  wsTab.value = phaseTabs.value[0]?.key || ''
+}, { immediate: true })
+
+// 用户手动切 tab 时退出「全部工具」态
+function onWsTabChange(key) {
+  wsShowAll.value = false
+  wsTab.value = key
+}
+
+function toggleWsAll() {
+  wsShowAll.value = !wsShowAll.value
+}
+
+// ── 逐日折叠：默认只展开当天（行中）/ 第一天，导出全开 ────────
+const openDayIds = ref(new Set())
+
+function initOpenDays() {
+  const days = trip.value?.days || []
+  if (!days.length) {
+    openDayIds.value = new Set()
+    return
+  }
+  const cur = phase.value === 'live' ? currentDayNumber(trip.value) : null
+  const target = days.find((d) => d.day_number === cur) || days[0]
+  openDayIds.value = new Set(target ? [target.id] : [])
+}
+
+function isDayOpen(day) {
+  if (exportAll.value) return true
+  return openDayIds.value.has(day.id)
+}
+
+function toggleDayOpen(day) {
+  const next = new Set(openDayIds.value)
+  if (next.has(day.id)) next.delete(day.id)
+  else next.add(day.id)
+  openDayIds.value = next
+}
+
+function openDayByNumber(dayNumber) {
+  const day = (trip.value?.days || []).find((d) => d.day_number === dayNumber)
+  if (!day) return
+  const next = new Set(openDayIds.value)
+  next.add(day.id)
+  openDayIds.value = next
+}
+
+const allDaysOpen = computed(() => {
+  const days = trip.value?.days || []
+  return days.length > 0 && days.every((d) => openDayIds.value.has(d.id))
+})
+
+function toggleAllDays() {
+  const days = trip.value?.days || []
+  if (allDaysOpen.value) {
+    // 全收 → 保留当天/第一天，避免页面彻底空白
+    initOpenDays()
+    return
+  }
+  openDayIds.value = new Set(days.map((d) => d.id))
+}
+
+// 行程大纲概览（天/站/预估花费）——首屏给一行可判断的量级
+const itinerarySummary = computed(() => {
+  const days = trip.value?.days || []
+  let stops = 0
+  let cost = 0
+  for (const d of days) {
+    for (const s of d.stops || []) {
+      stops += 1
+      cost += Number(s.estimated_cost) || 0
+    }
+  }
+  return { days: days.length, stops, cost }
+})
+
+const itineraryMeta = computed(() =>
+  // 只给「天 / 站」两个量级；花费一律交给侧栏预算明细（那里口径含往返交通，
+  // 站点合计与它会差出一个交通费，同屏两个 ¥ 数字是纯噪音）
+  t('tripDetail.itineraryMeta', {
+    days: itinerarySummary.value.days,
+    stops: itinerarySummary.value.stops,
+  }),
+)
+
+// 带偏移的滚动：顶部导航是 sticky（桌面 64px / 移动 56px），
+// scrollIntoView({block:'start'}) 会把目标顶到视口 0 点、被导航遮住 → 统一手算偏移
+function scrollToEl(el) {
+  if (!el) return false
+  const navH = document.querySelector('.app-header')?.getBoundingClientRect().height || 0
+  const top = el.getBoundingClientRect().top + window.scrollY - navH - 12
+  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+  return true
+}
+// 目标元素可能是条件渲染的（如工作台/规划工具点击后才挂载）→ 轮询等待再滚，
+// 固定 setTimeout 在慢设备上会滚到空气，是「点了没反应」的常见来源
+function scrollToSelector(sel, tries = 0) {
+  if (scrollToEl(document.querySelector(sel))) return
+  if (tries >= 20) return
+  setTimeout(() => scrollToSelector(sel, tries + 1), 50)
+}
+
+// 行中「打卡」：滚到今日视图；无今日视图则滚到当天日程并高亮
+function scrollToToday() {
+  if (scrollToEl(document.querySelector('.live-card'))) return
+  const cur = currentDayNumber(trip.value)
+  if (cur) openDayByNumber(cur)
+  // 当天卡片的展开是异步渲染的 → 轮询到出现再滚
+  let tries = 0
+  const go = () => {
+    const el = document.querySelectorAll('.day-card')[Math.max(0, (cur || 1) - 1)]
+    if (el && scrollToEl(el)) return
+    if (tries++ >= 20) return
+    setTimeout(go, 50)
+  }
+  setTimeout(go, 50)
+}
+
+// 行中「追踪」：切到行中面板并滚到工作台
+function openTrackTab() {
+  wsPlanExtra.value = false
+  wsShowAll.value = false
+  wsTab.value = 'live'
+  scrollToSelector('.workspace')
+}
+
+function scrollToWorkspace() {
+  scrollToSelector('.workspace')
+}
+
+// 「更多 → 调整行程」：非规划时机打开规划工具（AI 修订的唯一入口）。
+// 规划工具已提到主路径（地图与大纲之间），滚动目标随之改为那里。
+function openPlanTool() {
+  wsPlanExtra.value = true
+  wsShowAll.value = false
+  wsTab.value = 'plan'
+  onToolOpen('ai_revise')
+  if (planToolsVisible.value) scrollToSelector('.plan-tools')
+  else scrollToWorkspace()
+}
+
+// 头部主操作（按时机换血，事件名保持与埋点一致）
+function onHeaderAction(key) {
+  switch (key) {
+    case 'edit': onEditTrip(); break
+    case 'askAi': askAI(); break
+    case 'share': onShare(); break
+    case 'checkin': scrollToToday(); break
+    case 'track': openTrackTab(); break
+    case 'export': doExportPdfAll(); break
+    default: break
+  }
+}
+
+// 导出前强制展开全部分区（forceOpen 接线），导出后恢复
 async function withExportAll(fn) {
   exportAll.value = true
   try {
@@ -241,9 +474,13 @@ async function changeStatus() {
 
 // ── 更多操作（低频/管理/危险动作收纳，避免顶栏按钮堆积） ──────
 async function onMoreCommand(cmd) {
+  if (cmd === 'favorite') {
+    await toggleFavorite()
+    return
+  }
   switch (cmd) {
-    case 'favorite':
-      await toggleFavorite()
+    case 'adjust':
+      openPlanTool()
       break
     case 'import':
       importVisible.value = true
@@ -271,9 +508,23 @@ async function onMoreCommand(cmd) {
   }
 }
 
-// ── 问 AI：携带本行程上下文创建绑定会话（方案 1：行程感知对话） ──
+// ── 顶栏：编辑（G5 埋点） ──
+function onEditTrip() {
+  trackEvent(ANALYTICS_EVENTS.topActionClick, { trip_id: trip.value?.id, trip_phase: phaseName.value, action: 'edit' })
+  openEditTrip()
+}
+
+// ── 顶栏：分享（G5 埋点） ──
+function onShare() {
+  if (!trip.value?.id) return
+  trackEvent(ANALYTICS_EVENTS.topActionClick, { trip_id: trip.value.id, trip_phase: phaseName.value, action: 'share' })
+  doShare()
+}
+
+// ── 顶栏：问 AI（G5 埋点） ──
 async function askAI() {
   if (!trip.value?.id) return
+  trackEvent(ANALYTICS_EVENTS.topActionClick, { trip_id: trip.value.id, trip_phase: phaseName.value, action: 'ask_ai' })
   try {
     const s = await api.createChatSession({ context: { trip_id: trip.value.id } })
     ElMessage.success(t('tripDetail.askAiOpened'))
@@ -282,6 +533,12 @@ async function askAI() {
   } catch {
     /* 拦截器已提示 */
   }
+}
+
+// ── 规划工具打开（G1 埋点：AI修订/PlanB/质检/批量生成） ──
+function onToolOpen(tool) {
+  if (!trip.value?.id) return
+  trackEvent(ANALYTICS_EVENTS.planningToolOpen, { trip_id: trip.value.id, trip_phase: phaseName.value, tool })
 }
 
 // ── 每日站点操作（上移/下移/删除收进更多，仅编辑常驻） ──────
@@ -307,14 +564,8 @@ async function onExportCommand(cmd) {
   }
 }
 
-const typeLabel = computed(() => ({
-  attraction: t('common.typeAttraction'),
-  food: t('common.typeFood'),
-  hotel: t('common.typeHotel'),
-  transport: t('common.typeTransport'),
-}))
-const typeColor = { attraction: 'var(--brand)', food: '#c2410c', hotel: '#0d8a5f', transport: '#5b6ee1' }
-const typeEmoji = { attraction: '🏞️', food: '🍜', hotel: '🏨', transport: '🚄' }
+// ── 站点类型展示（共享 useTripTypes composable，供 LiveToday 使用） ──
+const { typeLabel, typeEmoji } = useTripTypes()
 
 // 预算环形
 const budgetPercent = computed(() => {
@@ -387,6 +638,58 @@ async function genDays() {
 // 分享设置弹窗展示完整链接用
 const windowOrigin = window.location.origin
 
+// 对话框透传属性（TripDetailDialogs v-bind）
+// 注意：computed 返回对象内的 ref 不会自动解包（自动解包只作用于模板直接访问的顶层 ref），
+// 必须 .value 取实际布尔值——否则 v-bind 展开后 RefImpl 对象恒为 truthy → 弹窗自动弹出且关不掉
+const dialogsProps = computed(() => ({
+  xhsNoteVisible: xhsNoteVisible.value,
+  importVisible: importVisible.value,
+}))
+
+// ── 埋点：行程阶段（planning / live / finished） ──
+const phaseName = computed(() => (trip.value ? tripPhase({ start_date: trip.value.start_date, end_date: trip.value.end_date }) : 'planning'))
+
+// 埋点：滚动深度（25/50/75% 一次性 + 节流）
+let scrollDepthFired = new Set()
+let scrollTimer = null
+function onScrollDepth() {
+  if (!trip.value?.id) return
+  if (scrollTimer) return
+  scrollTimer = setTimeout(() => {
+    scrollTimer = null
+    const doc = document.documentElement
+    const max = doc.scrollHeight - doc.clientHeight
+    if (max <= 0) return
+    const ratio = doc.scrollTop / max
+    for (const depth of [25, 50, 75]) {
+      if (ratio * 100 >= depth && !scrollDepthFired.has(depth)) {
+        scrollDepthFired.add(depth)
+        trackEvent(ANALYTICS_EVENTS.itineraryScrollDepth, { trip_id: trip.value.id, trip_phase: phaseName.value, depth })
+      }
+    }
+  }, 300)
+}
+
+// 埋点：逐日行程首屏可见（load 完成后 IntersectionObserver）
+let firstViewObs = null
+let firstViewFired = false
+function observeItineraryFirstView() {
+  if (firstViewObs) { firstViewObs.disconnect(); firstViewObs = null }
+  firstViewFired = false
+  const el = document.querySelector('.day-section.day-card')
+  if (!el || !trip.value?.id) return
+  firstViewObs = new IntersectionObserver((entries) => {
+    for (const ent of entries) {
+      if (ent.isIntersecting && !firstViewFired) {
+        firstViewFired = true
+        trackEvent(ANALYTICS_EVENTS.itineraryFirstView, { trip_id: trip.value.id, trip_phase: phaseName.value, visible: true })
+        firstViewObs?.disconnect()
+      }
+    }
+  }, { threshold: 0.1 })
+  firstViewObs.observe(el)
+}
+
 // ── 行中实时 feed：订阅行程协作频道，同伴操作时今日卡片自动刷新 ──
 let collabClose = null
 function watchCollabFeed() {
@@ -403,6 +706,7 @@ function watchCollabFeed() {
 onMounted(() => {
   load()
   watchCollabFeed()
+  window.addEventListener('scroll', onScrollDepth, { passive: true })
 })
 // 首屏/切换行程后加载折叠头徽标数据（journey + passport 摘要）
 watch(
@@ -412,56 +716,59 @@ watch(
   },
   { immediate: true },
 )
+// 逐日折叠默认态：行程/天数变化后重置（默认只展开当天或第一天）
+watch(
+  () => [trip.value?.id, trip.value?.days?.length || 0, phase.value],
+  (id) => {
+    if (id?.[0]) initOpenDays()
+  },
+  { immediate: true },
+)
+// 行程加载完成后观测逐日首屏（等 DOM 渲染，nextTick 后）
+watch(
+  () => trip.value?.id,
+  () => {
+    if (trip.value?.id) {
+      setTimeout(observeItineraryFirstView, 500)
+      scrollDepthFired = new Set()
+    }
+  },
+  { immediate: true },
+)
 onBeforeUnmount(() => {
   if (collabClose) {
     collabClose()
     collabClose = null
   }
+  if (firstViewObs) { firstViewObs.disconnect(); firstViewObs = null }
+  window.removeEventListener('scroll', onScrollDepth)
 })
 </script>
+
 <template>
   <div v-loading="loading" class="detail-page">
-    <!-- 返回 -->
-    <div class="topbar">
-      <button class="back-btn" @click="router.push('/trips')">
-        <el-icon><ArrowLeft /></el-icon> {{ $t('tripDetail.backToTrips') }}
-      </button>
-      <div class="topbar-actions">
-        <el-button @click="openEditTrip">{{ $t('tripDetail.editBasic') }}</el-button>
-        <el-button type="primary" plain :loading="sharing" @click="askAI">
-          <el-icon style="margin-right: 4px"><ChatDotRound /></el-icon>{{ $t('tripDetail.askAi') }}
-        </el-button>
-        <el-button type="primary" :loading="sharing" @click="doShare">
-          <el-icon style="margin-right: 4px"><Share /></el-icon>{{ $t('tripDetail.shareTrip') }}
-        </el-button>
-        <el-dropdown trigger="click" @command="onMoreCommand">
-          <el-button plain>
-            <el-icon style="margin-right: 4px"><MoreFilled /></el-icon>{{ $t('tripDetail.more') }}
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item v-if="hasSharedToken" command="favorite" :icon="isFavorite ? StarFilled : Star">
-                {{ isFavorite ? $t('tripDetail.favorited') : $t('tripDetail.favorite') }}
-              </el-dropdown-item>
-              <el-dropdown-item command="import" :icon="Upload">{{ $t('tripDetail.importContent') }}</el-dropdown-item>
-              <el-dropdown-item command="gallery" :icon="Star">{{ $t('tripDetail.galleryPublish') }}</el-dropdown-item>
-              <el-dropdown-item command="xhs" :icon="Promotion">{{ $t('tripDetail.shareToXhs') }}</el-dropdown-item>
-              <el-dropdown-item command="share-settings" :icon="Setting" divided>{{ $t('tripDetail.shareSettings') }}</el-dropdown-item>
-              <el-dropdown-item
-                v-if="!trip?.edit_token"
-                command="share-edit"
-                :icon="EditPen"
-              >{{ $t('tripDetail.openEdit') }}</el-dropdown-item>
-              <el-dropdown-item
-                v-else
-                command="revoke-edit"
-                :icon="Lock"
-              >{{ $t('tripDetail.revokeEdit') }}</el-dropdown-item>
-              <el-dropdown-item command="delete" :icon="Delete" divided class="detail-dropdown-danger">{{ $t('tripDetail.deleteTrip') }}</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-      </div>
+    <!-- 合并头部（返回 / 封面 / 标题+状态 chip / 主操作≤3 / 更多） -->
+    <TripDetailHeader
+      v-if="trip"
+      :trip="trip"
+      :phase="phase"
+      :status-map="statusMap"
+      :status-options="statusOptions"
+      :status-updating="statusUpdating"
+      :trip-type-display="tripTypeDisplay"
+      :sharing="sharing"
+      :exporting="exporting"
+      :is-favorite="isFavorite"
+      :favoriting="favoriting"
+      :has-shared-token="hasSharedToken"
+      :edit-token="trip.edit_token || ''"
+      @back="router.push('/trips')"
+      @action="onHeaderAction"
+      @more="onMoreCommand"
+      @status-change="changeStatus"
+    />
+    <div v-else class="detail-back-fallback">
+      <el-button link @click="router.push('/trips')">← {{ $t('tripDetail.backToTrips') }}</el-button>
     </div>
 
     <template v-if="trip">
@@ -480,762 +787,205 @@ onBeforeUnmount(() => {
 
       <!-- 导出区（截图/PDF 抓取范围） -->
       <div ref="exportEl" class="export-area">
-        <!-- ═══ 段1 · 头部：紧凑摘要条 ═══ -->
-        <div class="hero-bar">
-          <div class="hero-main">
-            <div class="hero-cover-mini">{{ (trip.destination || '?')[0] }}</div>
-            <div class="hero-info">
-              <div class="hero-row1">
-                <h1 class="hero-title">{{ trip.title }}</h1>
-                <span class="status-badge" :class="(statusMap[trip.status] || statusMap.draft).type">
-                  {{ (statusMap[trip.status] || statusMap.draft).label }}
-                </span>
-                <el-select
-                  v-model="trip.status"
-                  class="status-switch"
-                  size="small"
-                  :loading="statusUpdating"
-                  @change="changeStatus"
-                >
-                  <el-option v-for="opt in statusOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
-                </el-select>
-              </div>
-              <div class="hero-meta">
-                <span class="hero-pill"><el-icon><Location /></el-icon>{{ trip.destination }}</span>
-                <span class="hero-pill" v-if="trip.departure"><el-icon><Promotion /></el-icon>{{ $t('tripDetail.fromDeparture', { dep: trip.departure }) }}</span>
-                <span class="hero-pill"><el-icon><Calendar /></el-icon>{{ trip.start_date }} ~ {{ trip.end_date }}</span>
-                <span class="hero-pill"><el-icon><User /></el-icon>{{ trip.travelers }} {{ $t('common.peopleUnit') }}</span>
-                <span class="hero-pill" v-if="trip.budget != null"><el-icon><Wallet /></el-icon>¥{{ trip.budget }}</span>
-                <span class="hero-pill" v-if="trip.trip_type"><el-icon><Briefcase /></el-icon>{{ tripTypeDisplay(trip.trip_type) }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- 行中「今日视图」（live 期间全宽置顶） -->
+        <TripDetailLiveToday
+          :live="live"
+          :live-op="liveOp"
+          :type-emoji="typeEmoji"
+          :type-label="typeLabel"
+          @check="doCheckStop"
+          @skip="doSkipStop"
+          @delay="doDelayTrip"
+        />
 
-        <!-- 行中「今日视图」（live 期间；打卡/跳过/迟到顺延）—— 全宽置顶，随时可操作 -->
-        <div v-if="live && live.phase === 'live'" class="live-card">
-          <div class="live-head">
-            <div>
-              <div class="live-title">📅 {{ $t('tripDetail.liveTodayTitle') }}</div>
-              <div class="live-sub">{{ $t('tripDetail.liveTodaySub', { day: live.day_number, date: live.date }) }}</div>
-            </div>
-            <div class="live-progress">
-              <span class="live-progress-num">{{ live.completed }}/{{ live.total }}</span>
-              <el-progress :percentage="live.total ? Math.round(live.completed / live.total * 100) : 0"
-                           :stroke-width="6" :show-text="false" style="width: 90px" />
-            </div>
-          </div>
-
-          <div class="live-stops">
-            <div v-for="stop in live.stops" :key="stop.id" class="live-stop"
-                 :class="{ done: stop.checked }">
-              <el-checkbox :model-value="stop.checked"
-                           :disabled="!!liveOp"
-                           @change="(v) => doCheckStop(stop, v)" />
-              <div class="live-stop-info">
-                <div class="live-stop-name" :class="{ muted: stop.checked }">{{ stop.name }}</div>
-                <div class="live-stop-type">{{ typeEmoji[stop.stop_type] }} {{ typeLabel[stop.stop_type] || stop.stop_type }}</div>
-              </div>
-              <div class="live-stop-actions">
-                <el-button size="small" text type="danger" :disabled="!!liveOp"
-                           @click="doSkipStop(stop)">{{ $t('tripDetail.liveSkip') }}</el-button>
-              </div>
-            </div>
-          </div>
-
-          <div class="live-footer">
-            <el-button size="small" type="warning" plain :loading="liveOp === 'delay'"
-                       @click="doDelayTrip">{{ $t('tripDetail.liveDelay') }}</el-button>
-          </div>
-        </div>
-
-        <!-- ═══ 段2 · 主内容：地图 + 逐日大纲 + 侧栏仪表盘 ═══ -->
+        <!-- 主路径：地图 + 逐日大纲（永不进 tab）+ 侧栏仪表盘 -->
         <div class="detail-layout">
           <div class="main-col">
-            <!-- 地图（activeDay 联动：点击某日高亮该日站点与路线） -->
-            <div class="map-card" :class="{ 'day-focused': activeDay != null }">
-              <div class="card-head">
-                <span class="card-title"><el-icon style="margin-right: 6px"><MapLocation /></el-icon>{{ $t('common.mapTitle') }}</span>
-                <span class="map-hint">
-                  <template v-if="activeDay != null">{{ $t('tripDetail.mapFocusDay', { day: activeDay }) }} · </template>
-                  {{ canMapDrag ? $t('tripDetail.mapDragHint') : $t('common.mapHint') }}
-                  <el-button v-if="activeDay != null" link type="primary" size="small" @click="activeDay = null" style="margin-left: 6px">
-                    {{ $t('tripDetail.mapClearFocus') }}
-                  </el-button>
-                </span>
-              </div>
-              <el-alert
-                v-if="mapDragError"
-                class="map-drag-error"
-                type="warning"
-                :closable="false"
-                show-icon
-                :title="mapDragError"
-              />
-              <TripMap
-                :markers="markers"
-                :active-day="activeDay"
-                height="360px"
-                :draggable="canMapDrag"
-                :on-move="onMapMove"
-              />
-            </div>
-
-            <!-- 逐日行程大纲（每 Day 可展开；头部点击聚焦地图） -->
-            <div class="day-section day-card" v-for="day in trip.days" :key="day.id" :class="{ 'day-active': activeDay === day.day_number }">
-              <div class="day-head">
-                <div class="day-headline" :class="{ clickable: day.stops.length }" @click="day.stops.length && focusDay(day.day_number)">
-                  <span class="day-badge" :class="{ 'day-badge-active': activeDay === day.day_number }">Day {{ day.day_number }}</span>
-                  <div>
-                    <div class="day-title">
-                      {{ day.date || $t('common.dayN', { n: day.day_number }) }}
-                      <el-icon v-if="day.stops.length" class="day-focus-icon" :size="13" :title="$t('tripDetail.mapFocusHint')"><MapLocation /></el-icon>
-                    </div>
-                    <div class="day-note">{{ day.note || $t('common.freeExplore') }}</div>
-                  </div>
-                </div>
-                <div class="day-actions">
-                  <el-button size="small" type="primary" plain @click="openAddStop(day.id)">+ {{ $t('tripDetail.addStop') }}</el-button>
-                  <el-dropdown trigger="click" @command="(cmd) => onDayCommand(day, cmd)">
-                    <el-button size="small" plain circle aria-label="Day actions">
-                      <el-icon><MoreFilled /></el-icon>
-                    </el-button>
-                    <template #dropdown>
-                      <el-dropdown-menu>
-                        <el-dropdown-item command="delete" :icon="Delete" class="detail-dropdown-danger">{{ $t('tripDetail.removeDay') }}</el-dropdown-item>
-                      </el-dropdown-menu>
-                    </template>
-                  </el-dropdown>
-                </div>
-              </div>
-
-                <!-- 站点时间轴 -->
-                <div class="stops-list" v-if="day.stops.length">
-                  <div v-for="(stop, idx) in day.stops" :key="stop.id" class="stop-item">
-                    <div class="stop-rail">
-                      <span class="stop-index" :style="{ background: typeColor[stop.stop_type] || 'var(--brand)' }">{{ idx + 1 }}</span>
-                      <span class="rail-line" v-if="idx < day.stops.length - 1" />
-                    </div>
-                    <div class="stop-body" @click.self="openEditStop(day, stop)">
-                      <div class="stop-head">
-                        <span class="stop-name" @click.stop="openEditStop(day, stop)">{{ stop.name }}</span>
-                        <div class="stop-head-right">
-                          <div class="stop-quick">
-                            <el-button
-                              v-if="idx > 0"
-                              link
-                              circle
-                              size="small"
-                              :title="$t('tripDetail.moveUp')"
-                              aria-label="Move stop up"
-                              @click.stop="moveStop(day, stop, -1)"
-                            ><el-icon><Top /></el-icon></el-button>
-                            <el-button
-                              v-if="idx < day.stops.length - 1"
-                              link
-                              circle
-                              size="small"
-                              :title="$t('tripDetail.moveDown')"
-                              aria-label="Move stop down"
-                              @click.stop="moveStop(day, stop, 1)"
-                            ><el-icon><Bottom /></el-icon></el-button>
-                            <el-button
-                              link
-                              circle
-                              size="small"
-                              :title="$t('tripDetail.editStop')"
-                              aria-label="Edit stop"
-                              @click.stop="openEditStop(day, stop)"
-                            ><el-icon><EditPen /></el-icon></el-button>
-                            <el-dropdown trigger="click" @click.stop @command="(cmd) => onStopCommand(day, stop, idx, cmd)">
-                              <el-button link circle size="small" aria-label="Stop actions">
-                                <el-icon><MoreFilled /></el-icon>
-                              </el-button>
-                              <template #dropdown>
-                                <el-dropdown-menu>
-                                  <el-dropdown-item command="up" :icon="Top" :disabled="idx === 0">{{ $t('tripDetail.moveUp') }}</el-dropdown-item>
-                                  <el-dropdown-item command="down" :icon="Bottom" :disabled="idx === day.stops.length - 1">{{ $t('tripDetail.moveDown') }}</el-dropdown-item>
-                                  <el-dropdown-item command="delete" :icon="Delete" divided class="detail-dropdown-danger">{{ $t('tripDetail.deleteStop') }}</el-dropdown-item>
-                                </el-dropdown-menu>
-                              </template>
-                            </el-dropdown>
-                          </div>
-                          <el-tag size="small" round :style="{ color: typeColor[stop.stop_type] || 'var(--brand)', background: (typeColor[stop.stop_type] || 'var(--brand)') + '1a', border: 'none' }">
-                            {{ typeEmoji[stop.stop_type] }} {{ typeLabel[stop.stop_type] || stop.stop_type }}
-                          </el-tag>
-                        </div>
-                      </div>
-                      <div class="stop-meta">
-                        <span v-if="stop.estimated_cost != null"><el-icon><Wallet /></el-icon>¥{{ stop.estimated_cost }}</span>
-                        <span v-if="stop.estimated_duration_minutes"><el-icon><Clock /></el-icon>{{ stop.estimated_duration_minutes }} {{ $t('common.minutes') }}</span>
-                      </div>
-                      <div v-if="stop.description" class="stop-desc">{{ stop.description }}</div>
-                    </div>
-                  </div>
-                </div>
-                <el-empty v-else :description="$t('common.dayEmpty')" :image-size="60" />
-              </div>
-
-              <!-- ═══ 段3 · 工具箱：规划修订 ═══ -->
-            <div class="toolbox-group">
-              <div class="toolbox-label"><el-icon style="margin-right: 5px"><MagicStick /></el-icon>{{ $t('tripDetail.toolboxPlan') }}</div>
-              <div class="aux-area">
-                <!-- AI 调整行程（规划修订入口，默认收起——首屏先给行程本身） -->
-                <CollapsibleSection
-                  plain
-                  :default-open="false"
-                  :storage-key="`tripDetail.aux.revise.${trip.id}`"
-                >
-                  <template #title>{{ $t('tripDetail.reviseTitle') }}</template>
-                  <div class="revise-card aux-child">
-                    <div class="revise-head">
-                      <span class="revise-hint">{{ $t('tripDetail.reviseHint') }}</span>
-                    </div>
-                    <div class="revise-row">
-                      <el-input
-                        v-model="reviseMsg"
-                        :placeholder="$t('tripDetail.revisePlaceholder')"
-                        size="large"
-                        clearable
-                        :disabled="revising"
-                        @keyup.enter="revise"
-                      />
-                      <el-button type="primary" size="large" :loading="revising" @click="revise">
-                        <el-icon style="margin-right: 4px"><MagicStick /></el-icon>{{ $t('tripDetail.reviseBtn') }}
-                      </el-button>
-                    </div>
-                    <!-- 加载态提示：修订进行中（AI 解析 + 原子应用） -->
-                    <div v-if="revising" class="revise-loading">
-                      <el-icon class="is-loading"><Loading /></el-icon>{{ $t('tripDetail.reviseLoading') }}
-                    </div>
-                    <!-- 错误态：内联横幅，保留用户输入便于修正后重试 -->
-                    <transition name="el-fade-in">
-                      <div v-if="reviseError" class="revise-error" role="alert">
-                        <el-icon style="margin-right: 6px; flex-shrink: 0; margin-top: 2px"><WarningFilled /></el-icon>
-                        <div class="revise-error-body">
-                          <div>{{ reviseError }}</div>
-                          <div class="revise-error-sub">{{ $t('tripDetail.reviseFailRetry') }}</div>
-                        </div>
-                      </div>
-                    </transition>
-                    <transition name="el-fade-in">
-                      <div v-if="lastReviseSummary" class="revise-summary">
-                        <el-icon style="margin-right: 4px; color: var(--success)"><CircleCheck /></el-icon>
-                        {{ lastReviseSummary }}
-                      </div>
-                    </transition>
-                    <!-- 变更动作预览（diff 列表） -->
-                    <transition name="el-fade-in">
-                      <div v-if="reviseDone" class="revise-diff">
-                        <div class="revise-diff-head">
-                          <span class="revise-diff-title"><el-icon style="margin-right: 5px"><List /></el-icon>{{ $t('tripDetail.diffTitle') }}</span>
-                          <span class="revise-diff-count" v-if="lastReviseDiff.length">{{ $t('tripDetail.diffCount', { n: lastReviseDiff.length }) }}</span>
-                        </div>
-                        <template v-if="lastReviseDiff.length">
-                          <div v-for="(a, i) in visibleReviseDiff" :key="i" class="revise-diff-item" :class="'op-' + (a.op || '')">
-                            <el-icon class="revise-diff-icon"><template v-if="a.op === 'add'"><Plus /></template><template v-else-if="a.op === 'remove'"><Minus /></template><template v-else><Edit /></template></el-icon>
-                            <span class="revise-diff-text">{{ diffText(a) }}</span>
-                          </div>
-                          <div v-if="reviseDiffMore" class="revise-diff-more">
-                            {{ $t('tripDetail.reviseDiffMore', { n: reviseDiffMore }) }}
-                          </div>
-                        </template>
-                        <div v-else class="revise-diff-empty">{{ $t('tripDetail.diffEmpty') }}</div>
-                      </div>
-                    </transition>
-                    <!-- 修订质控闭环：修订后的 AI 质检报告（task-revise-qa-loop） -->
-                    <transition name="el-fade-in">
-                      <div v-if="lastReviseQuality" class="revise-quality">
-                        <div class="revise-quality-head">
-                          <el-icon style="margin-right: 5px"><DataAnalysis /></el-icon>
-                          <span class="revise-quality-title">{{ $t('tripDetail.reviseQualityTitle') }}</span>
-                          <span class="revise-quality-score" :class="{ pass: lastReviseQuality.passed, warn: !lastReviseQuality.passed }">
-                            {{ lastReviseQuality.score }}/100
-                          </span>
-                          <span v-if="lastReviseQuality.fix_applied" class="revise-quality-badge">{{ $t('tripDetail.reviseQualityFixApplied') }}</span>
-                          <span v-if="lastReviseQuality.degraded" class="revise-quality-badge degraded">{{ $t('tripDetail.reviseQualityDegraded') }}</span>
-                        </div>
-                        <div v-if="lastReviseQuality.summary" class="revise-quality-summary">{{ lastReviseQuality.summary }}</div>
-                        <ul v-if="lastReviseQuality.issues && lastReviseQuality.issues.length" class="revise-quality-issues">
-                          <li v-for="(issue, i) in lastReviseQuality.issues.slice(0, 3)" :key="i" class="revise-quality-issue">
-                            <span class="revise-quality-sev" :class="issue.severity">{{ issue.severity }}</span>
-                            {{ issue.message }}
-                          </li>
-                        </ul>
-                      </div>
-                    </transition>
-                  </div>
-                </CollapsibleSection>
-
-                <!-- 行程：Plan B 备选 + TimeGate 时间校验 + AI 质检（行程域规划辅助） -->
-                <CollapsibleSection
-                  v-if="planB"
-                  plain
-                  :default-open="false"
-                  :storage-key="`tripDetail.aux.planb.${trip.id}`"
-                >
-                  <template #title>{{ $t('tripDetail.planBTitle') }}</template>
-                  <div class="planb-card aux-child">
-                    <div class="planb-head">
-                      <el-segmented v-model="activePlan" :options="planOptions" size="small" @change="onPlanChange" />
-                    </div>
-                    <div v-if="activePlan === 'plan_b'" class="planb-body">
-                      <div class="planb-meta">
-                        <span class="planb-label">{{ planB.label }}</span>
-                        <span class="planb-desc">{{ planB.description }}</span>
-                      </div>
-                      <div class="planb-deltas">
-                        <div v-for="(d, i) in planB.deltas" :key="i" class="planb-delta">
-                          <el-icon style="margin-right: 6px; color: var(--brand)"><RefreshRight /></el-icon>{{ d }}
-                        </div>
-                      </div>
-                      <div class="planb-budget" v-if="planBBudget">
-                        <el-icon style="margin-right: 6px"><Wallet /></el-icon>
-                        {{ $t('tripDetail.planBBudgetLabel') }} ¥{{ planBTotal }}
-                        <span v-if="planBBudget.by_type?.hotel" class="planb-budget-sub">
-                          {{ $t('common.typeHotel') }} ¥{{ planBBudget.by_type.hotel }}
-                        </span>
-                      </div>
-                      <div class="planb-hint">{{ $t('tripDetail.planBHint') }}</div>
-                    </div>
-                  </div>
-                </CollapsibleSection>
-
-                <CollapsibleSection
-                  v-if="plan?.time_gate?.issues?.length"
-                  plain
-                  :default-open="false"
-                  :storage-key="`tripDetail.aux.timegate.${trip.id}`"
-                >
-                  <template #title>{{ $t('tripDetail.timeGateTitle') }}</template>
-                  <div class="timegate-card aux-child">
-                    <div class="timegate-head">
-                      <span class="timegate-title"><el-icon style="margin-right: 6px"><Clock /></el-icon>{{ $t('tripDetail.timeGateTitle') }}</span>
-                      <span class="timegate-badge">{{ $t('tripDetail.timeGateBasis') }}</span>
-                    </div>
-                    <ul class="timegate-list">
-                      <li v-for="(iss, i) in plan.time_gate.issues.slice(0, 6)" :key="i" class="timegate-item">
-                        <span class="timegate-sev">{{ $t('tripDetail.timeGateWarn') }}</span>
-                        <span v-if="iss.day_number" class="timegate-day">Day {{ iss.day_number }}</span>
-                        <span class="timegate-msg">{{ iss.message }}</span>
-                        <span v-if="iss.suggestion" class="timegate-suggestion">→ {{ iss.suggestion }}</span>
-                      </li>
-                    </ul>
-                  </div>
-                </CollapsibleSection>
-
-                <CollapsibleSection
-                  plain
-                  :default-open="false"
-                  :storage-key="`tripDetail.aux.quality.${trip.id}`"
-                >
-                  <template #title>{{ $t('quality.reportTitle') }}</template>
-                  <div class="aux-child detail-quality">
-                    <QualityCard :quality="plan?.quality" />
-                  </div>
-                </CollapsibleSection>
-              </div>
-            </div>
-
-            <!-- ═══ 段3 · 工具箱：旅程执行 ═══ -->
-            <div class="toolbox-group">
-              <div class="toolbox-label"><el-icon style="margin-right: 5px"><DataLine /></el-icon>{{ $t('tripDetail.toolboxOps') }}</div>
-              <div class="aux-area">
-                <!-- 预订（可预订建议 + 凭证回填 + 状态机，执行层高频默认展开） -->
-                <CollapsibleSection
-                  plain
-                  :default-open="true"
-                  :storage-key="`tripDetail.aux.booking.${trip.id}`"
-                >
-                  <template #title>{{ $t('booking.panelTitle') }}</template>
-                  <template #extra>
-                    <span v-if="bookingBadge" class="cs-badge">{{ bookingBadge }}</span>
-                  </template>
-                  <BookingPanel
-                    :trip-id="trip.id"
-                    @changed="load"
-                  />
-                </CollapsibleSection>
-
-                <CollapsibleSection
-                  plain
-                  :default-open="true"
-                  :storage-key="`tripDetail.aux.journey.${trip.id}`"
-                >
-                  <template #title>{{ $t('journey.panelTitle') }}</template>
-                  <template #extra>
-                    <span v-if="journeyBadge" class="cs-badge">{{ journeyBadge }}</span>
-                  </template>
-                  <JourneyTimeline
-                    ref="journeyRef"
-                    :trip-id="trip.id"
-                  />
-                </CollapsibleSection>
-
-                <CollapsibleSection
-                  plain
-                  :default-open="false"
-                  :storage-key="`tripDetail.aux.passport.${trip.id}`"
-                >
-                  <template #title>{{ $t('passport.panelTitle') }}</template>
-                  <template #extra>
-                    <span v-if="passportBadge" class="cs-badge">{{ passportBadge }} ✦</span>
-                  </template>
-                  <PassportPanel
-                    ref="passportRef"
-                    :trip-id="trip.id"
-                  />
-                </CollapsibleSection>
-
-                <CollapsibleSection
-                  plain
-                  :default-open="false"
-                  :storage-key="`tripDetail.aux.story.${trip.id}`"
-                >
-                  <template #title>{{ $t('story.panelTitle') }}</template>
-                  <StoryCardGenerator
-                    :trip-id="trip.id"
-                  />
-                </CollapsibleSection>
-              </div>
-            </div>
-
-            <!-- ═══ 段3 · 工具箱：装备素材 ═══ -->
-            <div class="toolbox-group">
-              <div class="toolbox-label"><el-icon style="margin-right: 5px"><Suitcase /></el-icon>{{ $t('tripDetail.toolboxGear') }}</div>
-              <div class="aux-area">
-                <CollapsibleSection
-                  plain
-                  :default-open="false"
-                  :storage-key="`tripDetail.aux.packing.${trip.id}`"
-                >
-                  <template #title>{{ $t('packing.title') }}</template>
-                  <PackingList
-                    :trip-id="trip.id"
-                  />
-                </CollapsibleSection>
-
-                <CollapsibleSection
-                  plain
-                  :default-open="false"
-                  :storage-key="`tripDetail.aux.servicing.${trip.id}`"
-                >
-                  <template #title>{{ $t('servicing.panelTitle') }}</template>
-                  <TripServicing
-                    :transport="servicingProps.transport"
-                    :transit="servicingProps.transit"
-                    :checkin="servicingProps.checkin"
-                    :discount-rules="servicingProps.discountRules"
-                    :discounts="servicingProps.discounts"
-                  />
-                </CollapsibleSection>
-
-                <CollapsibleSection
-                  plain
-                  :default-open="false"
-                  :storage-key="`tripDetail.aux.hotel.${trip.id}`"
-                >
-                  <template #title>{{ $t('hotel.recommendTitle') }}</template>
-                  <HotelRecommend
-                    :hotels="hotelCandidates"
-                    :days="trip.days"
-                    actionable
-                    @arranged="load"
-                  />
-                </CollapsibleSection>
-
-                <CollapsibleSection
-                  plain
-                  :default-open="false"
-                  :storage-key="`tripDetail.aux.events.${trip.id}`"
-                >
-                  <template #title>{{ $t('events.title') }}</template>
-                  <TripEventFeed :trip-id="trip.id" />
-                </CollapsibleSection>
-              </div>
-            </div>
-          </div>
-
-          <!-- 侧栏：仪表盘 + 行中今日（sticky 常驻） -->
-          <div class="side-col">
-            <!-- 旅程仪表盘（预算 / 追踪进度 / 预订 / 徽章） -->
-            <TripDashboard
-              ref="dashRef"
-              :trip-id="trip.id"
-              :budget="budget"
-              :budget-percent="budgetPercent"
-              :basis-text="basisText"
-              :trip-budget="trip.budget"
-              :travelers="trip.travelers"
+            <!-- 地图 -->
+            <TripDetailMapCard
+              :markers="markers"
+              :active-day="activeDay"
+              :can-map-drag="canMapDrag"
+              :map-drag-error="mapDragError"
+              @clear-focus="activeDay = null"
+              @map-move="onMapMove"
             />
+
+            <!-- 规划工具：AI 调整行程 + 行程备选方案（地图下方，主路径上的高频操作） -->
+            <TripDetailPlanTools
+              v-if="planToolsVisible"
+              :plan-b="planB"
+              :active-plan="activePlan"
+              :plan-options="planOptions"
+              :plan-b-budget="planBBudget"
+              :plan-b-total="planBTotal"
+              :revise-msg="reviseMsg"
+              :revising="revising"
+              :revise-error="reviseError"
+              :last-revise-summary="lastReviseSummary"
+              :revise-done="reviseDone"
+              :last-revise-diff="lastReviseDiff"
+              :visible-revise-diff="visibleReviseDiff"
+              :revise-diff-more="reviseDiffMore"
+              :last-revise-quality="lastReviseQuality"
+              :diff-text="diffText"
+              @plan-change="onPlanChange"
+              @revise="revise"
+              @revise-input="(v) => (reviseMsg = v)"
+              @tool-open="onToolOpen"
+            />
+
+            <!-- 逐日大纲：标题行（概览 + 批量展开）+ 可折叠日程卡 -->
+            <div class="itinerary-head">
+              <span class="itinerary-title">
+                <el-icon><Calendar /></el-icon>{{ $t('tripDetail.itineraryTitle') }}
+              </span>
+              <span class="itinerary-meta">{{ itineraryMeta }}</span>
+              <button class="itinerary-toggle" type="button" @click="toggleAllDays">
+                {{ allDaysOpen ? $t('tripDetail.collapseAllDays') : $t('tripDetail.expandAllDays') }}
+              </button>
+            </div>
+
+            <TripDetailDayCard
+              v-for="(day, i) in trip.days"
+              :key="day.id"
+              :day="day"
+              :active-day="activeDay"
+              :day-index="i"
+              :open="isDayOpen(day)"
+              @toggle-open="toggleDayOpen"
+              @focus-day="focusDay"
+              @add-stop="openAddStop"
+              @day-cmd="onDayCommand"
+              @stop-cmd="onStopCommand"
+              @stop-edit="openEditStop"
+            />
+
+            <!-- 日程操作条（加天 / 批量生成 / 导出） -->
+            <TripDetailBottomBar
+              :exporting="exporting"
+              @add-day="openAddDay"
+              @gen-days="genDaysVisible = true; onToolOpen('batch_gen')"
+              @export="doExportPdfAll"
+              @export-cmd="onExportCommand"
+            />
+
+            <!-- 次级工作台：按时机收纳 12 个工具面板 -->
+            <TripDetailWorkspace
+              :tabs="wsTabs"
+              :model-value="wsTab"
+              :show-all="wsShowAll || exportAll"
+              :title="$t('tripDetail.workspaceTitle')"
+              @update:model-value="onWsTabChange"
+              @toggle-all="toggleWsAll"
+            >
+              <TripDetailToolbox
+                ref="toolboxRef"
+                :trip="trip"
+                :plan="plan"
+                :plan-b="planB"
+                :active-plan="activePlan"
+                :plan-options="planOptions"
+                :plan-b-budget="planBBudget"
+                :plan-b-total="planBTotal"
+                :hotel-candidates="hotelCandidates"
+                :servicing-props="servicingProps"
+                :booking-badge="bookingBadge"
+                :journey-badge="journeyBadge"
+                :passport-badge="passportBadge"
+                :export-all="exportAll"
+                :keys="wsKeys"
+                :flat="!(wsShowAll || exportAll)"
+                :hoisted-keys="hoistedPlanKeys"
+                :revise-msg="reviseMsg"
+                :revising="revising"
+                :revise-error="reviseError"
+                :last-revise-summary="lastReviseSummary"
+                :revise-done="reviseDone"
+                :last-revise-diff="lastReviseDiff"
+                :visible-revise-diff="visibleReviseDiff"
+                :revise-diff-more="reviseDiffMore"
+                :last-revise-quality="lastReviseQuality"
+                :diff-text="diffText"
+                @plan-change="onPlanChange"
+                @revise="revise"
+                @revise-input="(v) => (reviseMsg = v)"
+                @tool-open="onToolOpen"
+                @changed="load"
+                @arranged="load"
+              />
+            </TripDetailWorkspace>
           </div>
+
+          <!-- 侧栏：仪表盘（sticky 常驻） -->
+          <TripDetailSidebar
+            ref="sidebarRef"
+            :trip-id="trip.id"
+            :budget="budget"
+            :budget-percent="budgetPercent"
+            :basis-text="basisText"
+            :trip-budget="trip.budget"
+            :travelers="trip.travelers"
+          />
         </div>
-
-        <!-- 概览主视觉：地图（activeDay 联动）+ 逐日大纲 + 侧栏仪表盘；行中“今日”已上移全宽置顶 -->
-      </div>
-
-      <!-- 底部操作 -->
-      <div class="bottom-bar">
-        <el-button @click="openAddDay"><el-icon style="margin-right: 4px"><Plus /></el-icon>{{ $t('tripDetail.addDay') }}</el-button>
-        <el-button @click="genDaysVisible = true"><el-icon style="margin-right: 4px"><Calendar /></el-icon>{{ $t('tripDetail.genDays') }}</el-button>
-        <el-dropdown split-button type="primary" :loading="exporting" @click="doExportPdfAll" @command="onExportCommand">
-          <el-icon style="margin-right: 4px"><Document /></el-icon>{{ $t('tripDetail.exportPdf') }}
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="image" :icon="Picture">{{ $t('tripDetail.exportImage') }}</el-dropdown-item>
-              <el-dropdown-item command="json" :icon="Download">{{ $t('tripDetail.exportJson') }}</el-dropdown-item>
-              <el-dropdown-item command="print" :icon="Printer">{{ $t('tripDetail.exportPrint') }}</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
       </div>
     </template>
 
-    <!-- 小红书笔记（生成文案/封面 → 复制 → App 发布） -->
-    <XhsNoteDialog v-model="xhsNoteVisible" :trip-id="trip?.id" :trip="trip" />
-
-    <!-- 内容导入（笔记/截图/链接/邮件 → 候选并入当前行程） -->
-    <ImportDialog v-model="importVisible" :preset-trip-id="trip?.id" @imported="load" />
-
-    <!-- 批量生成日程对话框 -->
-    <el-dialog v-model="genDaysVisible" :title="$t('tripDetail.genDaysTitle')" width="440px">
-      <el-form label-width="80px">
-        <el-form-item :label="$t('tripDetail.genRange')">
-          <el-date-picker
-            v-model="genRange"
-            type="daterange"
-            :range-separator="$t('tripDetail.genRangeSep')"
-            :start-placeholder="$t('tripDetail.genStartPh')"
-            :end-placeholder="$t('tripDetail.genEndPh')"
-            value-format="YYYY-MM-DD"
-            style="width: 100%"
-          />
-        </el-form-item>
-        <div class="gen-days-hint">{{ $t('tripDetail.genDaysHint') }}</div>
-      </el-form>
-      <template #footer>
-        <el-button @click="genDaysVisible = false">{{ $t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="genDaysLoading" @click="genDays">{{ $t('tripDetail.genBtn') }}</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 分享设置（生命周期：TTL / 吊销 / 审计） -->
-    <el-dialog v-model="shareSettingsVisible" :title="$t('tripDetail.shareSettingsTitle')" width="680px" @open="loadShareLifecycle">
-      <div class="share-settings-hint">{{ $t('tripDetail.shareSettingsHint') }}</div>
-      <div v-loading="lifecycleLoading" class="share-settings-body">
-        <div v-if="!lifecycleLoading && !lifecycleItems.length" class="share-settings-empty">
-          {{ $t('tripDetail.shareLinkFetchFail') }}
-        </div>
-        <div v-for="item in lifecycleItems" :key="item.kind" class="share-setting-card" :class="lifecycleStatus(item)">
-          <div class="ss-head">
-            <span class="ss-kind">{{ item.kind === 'edit' ? $t('tripDetail.shareKindEdit') : $t('tripDetail.shareKindShare') }}</span>
-            <el-tag size="small" round :type="lifecycleStatus(item) === 'revoked' ? 'danger' : lifecycleStatus(item) === 'expired' ? 'warning' : 'success'">
-              {{ lifecycleStatus(item) === 'revoked' ? $t('tripDetail.shareStatusRevoked') : lifecycleStatus(item) === 'expired' ? $t('tripDetail.shareStatusExpired') : $t('tripDetail.shareStatusActive') }}
-            </el-tag>
-          </div>
-
-          <div class="ss-row">
-            <span class="ss-label">{{ $t('tripDetail.shareUrl') }}</span>
-            <span class="ss-value ss-url">
-              <template v-if="item.kind === 'edit'">{{ windowOrigin }}/share/{{ item.token }}?edit=1</template>
-              <template v-else>{{ item.share_url }}</template>
-            </span>
-            <el-button link type="primary" size="small" @click="copyShareUrl(item)">{{ $t('tripDetail.copyLink') }}</el-button>
-          </div>
-
-          <div class="ss-row">
-            <span class="ss-label">{{ $t('tripDetail.shareExpires') }}</span>
-            <span class="ss-value">{{ item.expires_at ? new Date(item.expires_at).toLocaleString() : $t('tripDetail.shareNever') }}</span>
-            <el-select
-              :model-value="0"
-              size="small"
-              style="width: 120px"
-              :disabled="lifecycleStatus(item) !== 'active'"
-              @change="(v) => setTtl(item.kind, v)"
-            >
-              <el-option v-for="opt in ttlOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
-            </el-select>
-          </div>
-
-          <div class="ss-row">
-            <span class="ss-label">{{ $t('tripDetail.shareLastUsed') }}</span>
-            <span class="ss-value">{{ item.last_used_at ? new Date(item.last_used_at).toLocaleString() : $t('tripDetail.shareNeverUsed') }}</span>
-          </div>
-
-          <div class="ss-actions" v-if="lifecycleStatus(item) === 'active'">
-            <el-button type="danger" plain size="small" :loading="revokingKind === item.kind" @click="revokeShareLink(item)">
-              {{ $t('tripDetail.shareStatusRevoked') }}
-            </el-button>
-          </div>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="shareSettingsVisible = false">{{ $t('common.cancel') }}</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 编辑对话框（三合一） -->
-    <el-dialog
-      v-model="dialogVisible"
-      :title="editType === 'edit-trip' ? $t('tripDetail.editTripTitle') : editType === 'add-day' ? $t('tripDetail.addDayTitle') : editType === 'edit-stop' ? $t('tripDetail.editStopTitle') : $t('tripDetail.addStopTitle')"
-      width="480px"
-    >
-      <el-form v-if="editType === 'edit-trip'" :model="tripForm" label-width="80px">
-        <el-form-item :label="$t('tripDetail.lblTitle')"><el-input v-model="tripForm.title" /></el-form-item>
-        <el-form-item :label="$t('tripDetail.lblDestination')"><el-input v-model="tripForm.destination" /></el-form-item>
-        <el-form-item :label="$t('tripDetail.lblDeparture')">
-          <el-input v-model="tripForm.departure" :placeholder="$t('tripDetail.departurePlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="$t('tripDetail.lblTripType')">
-          <el-select v-model="tripForm.trip_type" style="width: 100%">
-            <el-option v-for="opt in tripTypeOptions" :key="opt.key" :label="t('tripList.' + opt.key)" :value="opt.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="$t('tripDetail.lblTravelers')"><el-input-number v-model="tripForm.travelers" :min="1" /></el-form-item>
-        <el-form-item :label="$t('tripDetail.lblBudget')"><el-input-number v-model="tripForm.budget" :min="0" :step="500" /></el-form-item>
-      </el-form>
-
-      <el-form v-else-if="editType === 'add-day'" :model="dayForm" label-width="80px">
-        <el-form-item :label="$t('tripDetail.lblDayNumber')"><el-input-number v-model="dayForm.day_number" :min="1" /></el-form-item>
-        <el-form-item :label="$t('tripDetail.lblDate')"><el-date-picker v-model="dayForm.date" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item>
-        <el-form-item :label="$t('tripDetail.lblNote')"><el-input v-model="dayForm.note" type="textarea" :rows="2" /></el-form-item>
-      </el-form>
-
-      <el-form v-else ref="stopFormRef" :model="stopForm" label-width="90px">
-        <el-form-item :label="$t('tripDetail.lblName')" prop="name" :rules="[{ required: true, message: $t('tripDetail.stopNameRequired') }]">
-          <el-input v-model="stopForm.name" :placeholder="$t('tripDetail.stopNamePh')" />
-        </el-form-item>
-        <el-form-item :label="$t('tripDetail.lblType')">
-          <el-radio-group v-model="stopForm.stop_type">
-            <el-radio-button value="attraction">{{ $t('common.typeAttraction') }}</el-radio-button>
-            <el-radio-button value="food">{{ $t('common.typeFood') }}</el-radio-button>
-            <el-radio-button value="hotel">{{ $t('common.typeHotel') }}</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item :label="$t('tripDetail.lblLatLng')">
-          <div class="latlng">
-            <el-input v-model="stopForm.lat" :placeholder="$t('tripDetail.latPh')" />
-            <el-input v-model="stopForm.lng" :placeholder="$t('tripDetail.lngPh')" />
-          </div>
-        </el-form-item>
-        <el-form-item :label="$t('tripDetail.lblEstCost')"><el-input-number v-model="stopForm.estimated_cost" :min="0" :step="50" /></el-form-item>
-        <el-form-item :label="$t('tripDetail.lblDuration')"><el-input-number v-model="stopForm.estimated_duration_minutes" :min="0" :step="30" /></el-form-item>
-        <el-form-item :label="$t('tripDetail.lblDesc')"><el-input v-model="stopForm.description" type="textarea" :rows="2" /></el-form-item>
-      </el-form>
-    </el-dialog>
+    <!-- 对话框（小红书 / 导入 / 批量生成 / 分享设置 / 编辑三合一） -->
+    <TripDetailDialogs
+      v-bind="dialogsProps"
+      :trip="trip"
+      :edit-type="editType"
+      :dialog-visible="dialogVisible"
+      :stop-form="stopForm"
+      :day-form="dayForm"
+      :trip-form="tripForm"
+      :trip-type-options="tripTypeOptions"
+      :trip-type-display="tripTypeDisplay"
+      :gen-days-visible="genDaysVisible"
+      :gen-range="genRange"
+      :gen-days-loading="genDaysLoading"
+      :share-settings-visible="shareSettingsVisible"
+      :lifecycle-items="lifecycleItems"
+      :lifecycle-loading="lifecycleLoading"
+      :revoking-kind="revokingKind"
+      :ttl-options="ttlOptions"
+      :window-origin="windowOrigin"
+      :lifecycle-status="lifecycleStatus"
+      @update:dialog-visible="(v) => (dialogVisible = v)"
+      @update:stop-form-ref="(el) => (stopFormRef.value = el)"
+      @update:stop-form="(v) => Object.assign(stopForm, v)"
+      @update:day-form="(v) => Object.assign(dayForm, v)"
+      @update:trip-form="(v) => Object.assign(tripForm, v)"
+      @save-trip="saveTrip"
+      @save-day="saveDay"
+      @save-stop="saveStop"
+      @save-edit-stop="saveEditStop"
+      @update:gen-days-visible="(v) => (genDaysVisible = v)"
+      @update:gen-range="(v) => (genRange = v)"
+      @gen-days="genDays"
+      @update:share-settings-visible="(v) => (shareSettingsVisible = v)"
+      @load-share-lifecycle="loadShareLifecycle"
+      @copy-share-url="copyShareUrl"
+      @set-ttl="setTtl"
+      @revoke-share-link="revokeShareLink"
+      @imported="load"
+      @update:import-visible="(v) => (importVisible = v)"
+      @update:xhs-visible="(v) => (xhsNoteVisible = v)"
+    />
   </div>
 </template>
 
 <style scoped>
 .detail-page { max-width: 1080px; margin: 0 auto; }
 
+/* 未加载完成时的返回兜底 */
+.detail-back-fallback { margin-bottom: 16px; }
+
 /* PWA 离线模式标识 */
 .offline-banner { margin-bottom: 16px; }
 
-.topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 18px;
-}
-.back-btn {
-  display: inline-flex; align-items: center; gap: 4px;
-  background: none; border: none; cursor: pointer;
-  font-size: 14px; color: var(--ink-2); font-weight: 500;
-  padding: 8px 12px; border-radius: var(--radius-full);
-  transition: all .2s;
-}
-.back-btn:hover { background: var(--fill); color: var(--ink); }
-
-/* ── 段1 头部：紧凑摘要条（task-trip-detail-triptych） ── */
-.hero-bar {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 18px;
-  padding: 14px 18px;
-  background: linear-gradient(135deg, var(--brand-soft), var(--card) 55%);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-card);
-}
-.hero-main { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
-.hero-cover-mini {
-  width: 48px; height: 48px; border-radius: var(--radius-lg); flex-shrink: 0;
-  background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 55%, #a1c4fd 100%);
-  color: #fff; font-size: 22px; font-weight: 700;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: var(--shadow-sm);
-}
-.hero-info { flex: 1; min-width: 0; }
-.hero-row1 {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px;
-}
-.hero-title { margin: 0; font-size: 20px; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; }
-.status-badge {
-  font-size: 11.5px; font-weight: 600; padding: 4px 10px;
-  border-radius: var(--radius-full); background: rgba(255,255,255,0.9);
-  border: 1px solid var(--line);
-}
-.status-badge.success { color: var(--success); }
-.status-badge.warning { color: var(--warning); }
-.status-badge.info { color: var(--muted); }
-.status-switch { width: 108px; }
-.hero-meta { display: flex; flex-wrap: wrap; gap: 6px; }
-.hero-pill {
-  display: inline-flex; align-items: center; gap: 5px;
-  background: var(--card); color: var(--ink-2);
-  font-size: 12px; font-weight: 500;
-  padding: 4px 10px; border-radius: var(--radius-full);
-  border: 1px solid var(--line);
-}
-
-/* ── 地图 + 预算 ── */
-.map-budget-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; margin-bottom: 28px; }
-.map-card, .budget-card {
-  background: #fff; border: 1px solid var(--line); border-radius: var(--radius-lg);
-  padding: 18px; box-shadow: var(--shadow-card);
-}
-.card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.card-title { font-size: 15px; font-weight: 600; color: var(--ink); }
-.map-hint { font-size: 12px; color: var(--faint); }
-.map-drag-error { margin-bottom: 10px; }
-/* 地图聚焦态：activeDay 联动时品牌色描边提示 */
-.map-card.day-focused {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 3px var(--brand-soft), var(--shadow-card);
-}
-
-.budget-ring-wrap { text-align: center; padding: 8px 0 4px; }
-.budget-ring {
-  --pct: 0;
-  width: 120px; height: 120px; margin: 0 auto;
-  border-radius: 50%;
-  background: conic-gradient(var(--brand) calc(var(--pct) * 1%), var(--fill) 0);
-  display: flex; align-items: center; justify-content: center;
-}
-.budget-ring-inner {
-  width: 88px; height: 88px; border-radius: 50%; background: #fff;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-}
-.ring-total { font-size: 17px; font-weight: 700; color: var(--ink); }
-.ring-label { font-size: 11px; color: var(--faint); }
-.ring-caption { font-size: 12px; color: var(--muted); margin-top: 6px; }
-
-.budget-lines { margin-top: 12px; }
-.budget-line { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 13px; color: var(--ink-2); }
-.budget-dot { width: 8px; height: 8px; border-radius: 50%; }
-.budget-line-val { margin-left: auto; font-weight: 600; color: var(--ink); }
-.budget-line.total { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 12px; font-weight: 600; }
-.total-val { margin-left: auto; font-size: 17px; font-weight: 700; color: var(--brand); }
-.budget-daily { margin-top: 10px; font-size: 12.5px; color: var(--success); display: inline-flex; align-items: center; gap: 4px; }
-.budget-per-person { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 12.5px; color: var(--ink-2); display: flex; align-items: center; gap: 4px; }
-.budget-pp-sub { color: var(--muted); }
-/* 预算估算口径（诚实估算标注） */
-.budget-basis { display: flex; align-items: flex-start; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12px; color: var(--ink-2); line-height: 1.6; }
-.budget-basis .el-icon { margin-top: 2px; flex-shrink: 0; }
-.budget-basis-label { font-weight: 600; white-space: nowrap; color: var(--muted); }
-.budget-basis-text { word-break: break-all; }
-
-/* ── 双栏布局：主列（地图 + 每日行程）/ 侧栏（仪表盘 + 今日） ── */
+/* 双栏布局：主列（地图 + 每日行程 + 工作台）/ 侧栏（仪表盘） */
 .detail-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
@@ -1244,395 +994,65 @@ onBeforeUnmount(() => {
   margin-bottom: 20px;
 }
 .main-col { min-width: 0; }
-.side-col {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  position: sticky;
-  top: 76px; /* 顶部导航高度留白 */
-}
-.aux-area {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.aux-child { margin-bottom: 0; }
 
-/* ── 段2 逐日行程卡（task-trip-detail-triptych）── */
-.day-section.day-card {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  padding: 16px 18px;
-  margin-bottom: 14px;
-  box-shadow: var(--shadow-sm);
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-.day-card.day-active {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 3px var(--brand-soft), var(--shadow-card);
-}
-.day-headline.clickable { cursor: pointer; border-radius: var(--radius-md); }
-.day-headline.clickable:hover { background: var(--fill); }
-.day-badge {
-  width: 48px; height: 48px; border-radius: var(--radius-md); flex-shrink: 0;
-  background: var(--ink); color: #fff; font-weight: 700; font-size: 13px;
-  display: flex; align-items: center; justify-content: center;
-  letter-spacing: 0.02em;
-  transition: background 0.2s;
-}
-.day-badge.day-badge-active {
-  background: var(--brand);
-}
-.day-focus-icon { color: var(--faint); margin-left: 6px; vertical-align: -2px; }
-.day-card.day-active .day-focus-icon { color: var(--brand); }
-
-/* ── 段3 工具箱分组（task-trip-detail-triptych）── */
-.toolbox-group {
-  margin-top: 22px;
-  border-top: 1px dashed var(--line);
-  padding-top: 14px;
-}
-.toolbox-label {
+/* 逐日大纲标题行：标题 + 概览 + 批量展开 */
+.itinerary-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-  margin-bottom: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  gap: 10px;
+  margin: 18px 0 10px;
 }
-
-/* 窄屏：双栏降级单列，侧栏顺序调整（仪表盘在每日行程后自然跟随） */
-@media (max-width: 960px) {
-  .detail-layout { grid-template-columns: 1fr; }
-  .side-col { position: static; }
-}
-
-/* ── 时间校验卡片（TimeGate：营业时间/游玩时长提示） ── */
-.timegate-card {
-  margin-top: 4px; border: 1px solid var(--el-color-warning-light-7);
-  background: var(--el-color-warning-light-9);
-  border-radius: var(--radius-lg); padding: 12px 14px;
-}
-.timegate-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.timegate-title { font-size: 14px; font-weight: 600; color: var(--warning); display: inline-flex; align-items: center; }
-.timegate-badge { font-size: 11px; color: var(--warning); background: var(--el-color-warning-light-7); border-radius: 999px; padding: 1px 8px; }
-.timegate-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
-.timegate-item { display: flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--ink-2); }
-.timegate-sev { flex-shrink: 0; font-size: 11px; color: var(--warning); background: var(--el-color-warning-light-8); border-radius: 4px; padding: 0 6px; }
-.timegate-day { flex-shrink: 0; font-weight: 600; }
-.timegate-msg { flex: 1; min-width: 0; }
-.timegate-suggestion { color: var(--warning); font-size: 12px; }
-
-/* ── AI 调整行程（方案 B） ── */
-.revise-card {
-  background: linear-gradient(135deg, var(--brand-soft), var(--card) 60%);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
-  padding: 16px 20px;
-  margin-bottom: 20px;
-}
-.revise-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-.revise-hint { font-size: 12px; color: var(--muted); }
-.revise-row { display: flex; gap: 10px; }
-.revise-loading {
-  margin-top: 10px; font-size: 13px; color: var(--muted);
-  display: inline-flex; align-items: center; gap: 6px;
-}
-.revise-error {
-  margin-top: 10px; font-size: 13px; color: var(--warning);
-  background: var(--el-color-warning-light-9); border: 1px solid var(--el-color-warning-light-7);
-  border-radius: var(--radius-sm); padding: 8px 10px;
-  display: flex; align-items: flex-start;
-}
-.revise-error .el-icon { flex-shrink: 0; color: var(--warning); margin-top: 2px; }
-.revise-error-body { display: flex; flex-direction: column; gap: 2px; }
-.revise-error-sub { font-size: 12px; color: var(--muted); }
-.revise-summary {
-  margin-top: 10px; font-size: 13px; color: var(--success);
-  background: var(--el-color-success-light-9); padding: 8px 12px;
-  border: 1px solid var(--el-color-success-light-7);
-  border-radius: var(--radius-sm);
-  display: inline-flex; align-items: center;
-}
-.revise-diff {
-  margin-top: 10px; background: #fff; border: 1px solid var(--line);
-  border-radius: var(--radius-md); padding: 10px 12px;
-}
-.revise-diff-head {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 8px;
-}
-.revise-diff-title { font-size: 13px; font-weight: 600; color: var(--ink); display: inline-flex; align-items: center; }
-.revise-diff-count { font-size: 12px; color: var(--faint); }
-.revise-diff-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 8px; border-radius: var(--radius-sm);
-  font-size: 13px; color: var(--ink-2);
-}
-.revise-diff-item + .revise-diff-item { margin-top: 2px; }
-.revise-diff-item.op-add { background: rgba(16,185,129,.07); }
-.revise-diff-item.op-remove { background: rgba(239,68,68,.07); }
-.revise-diff-item.op-replace { background: rgba(217,119,6,.08); }
-.revise-diff-icon { font-size: 14px; flex-shrink: 0; }
-.revise-diff-item.op-add .revise-diff-icon { color: var(--success); }
-.revise-diff-item.op-remove .revise-diff-icon { color: var(--danger); }
-.revise-diff-item.op-replace .revise-diff-icon { color: var(--warning); }
-.revise-diff-text { line-height: 1.45; }
-.revise-diff-empty {
-  font-size: 12.5px; color: var(--faint);
-  padding: 6px 8px; background: rgba(0,0,0,.02);
-  border-radius: var(--radius-sm);
-}
-.revise-diff-more {
-  margin-top: 6px; font-size: 12px; color: var(--faint);
-  padding: 4px 8px; border-top: 1px dashed var(--line);
-}
-.detail-quality { margin-top: 4px; }
-
-/* ── 折叠头信息徽标（extra slot：预订数 / 追踪进度 / 护照徽章） ── */
-.cs-badge {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--muted);
-  background: var(--fill);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-full);
-  padding: 2px 10px;
-  line-height: 1.6;
-  white-space: nowrap;
-}
-
-/* ── 站点卡 hover 快捷操作（上移/下移/编辑） ── */
-.stop-head-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.stop-quick {
+.itinerary-title {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  opacity: 0;
-  transform: translateX(6px);
-  transition: opacity .16s ease, transform .16s ease;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
 }
-.stop-body:hover .stop-quick { opacity: 1; transform: translateX(0); }
-.stop-quick :deep(.el-button) {
+.itinerary-title .el-icon { color: var(--brand); }
+.itinerary-meta {
+  font-size: 12.5px;
   color: var(--muted);
-  transition: background .16s, color .16s;
 }
-.stop-quick :deep(.el-button:hover) { color: var(--brand); background: var(--brand-soft); }
-
-/* ── 逐日行程卡 hover（轻抬升 + 品牌描边） ── */
-.day-section.day-card:hover {
-  border-color: var(--el-color-primary-light-8);
-  box-shadow: var(--shadow-hover);
-}
-
-/* ── 行中“今日视图”（全宽置顶卡片） ── */
-.live-card {
-  margin-bottom: 18px;
-  border: 1.5px solid var(--brand);
-  border-radius: var(--radius-lg);
-  padding: 16px 18px;
-  background: linear-gradient(180deg, var(--card), transparent);
-  box-shadow: var(--shadow-sm);
-}
-.live-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.live-title { font-size: 16px; font-weight: 700; color: var(--ink); }
-.live-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
-.live-progress { display: flex; align-items: center; gap: 10px; }
-.live-progress-num { font-size: 14px; font-weight: 700; color: var(--brand); }
-.live-stops { display: flex; flex-direction: column; gap: 8px; }
-.live-stop {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 12px;
+.itinerary-toggle {
+  margin-left: auto;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  background: none;
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--card);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: color 0.18s, border-color 0.18s;
 }
-.live-stop.done { opacity: 0.6; }
-.live-stop-info { flex: 1; min-width: 0; }
-.live-stop-name { font-size: 14px; font-weight: 600; color: var(--ink); }
-.live-stop-name.muted { text-decoration: line-through; color: var(--muted); }
-.live-stop-type { font-size: 12px; color: var(--muted); margin-top: 2px; }
-.live-stop-actions { flex-shrink: 0; }
-.live-footer { margin-top: 14px; display: flex; justify-content: flex-end; }
+.itinerary-toggle:hover { color: var(--brand); border-color: var(--brand); }
+.itinerary-toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 
-/* 移动端（≤640px）：卡片压满、进度条换行 */
+/* 窄屏：双栏降级单列 */
+@media (max-width: 960px) {
+  .detail-layout { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 640px) {
-  .live-head { flex-direction: column; align-items: flex-start; }
-  .live-progress { width: 100%; justify-content: space-between; }
+  .itinerary-head { flex-wrap: wrap; gap: 6px 10px; margin: 14px 0 8px; }
+  .itinerary-toggle { margin-left: 0; }
 }
 
-/* ── 每日行程 ── */
-.day-section { margin-bottom: 24px; }
-.day-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 14px; gap: 12px; }
-.day-headline { display: flex; align-items: center; gap: 12px; }
-.day-badge {
-  width: 52px; height: 52px; border-radius: var(--radius-md); flex-shrink: 0;
-  background: var(--ink); color: #fff; font-weight: 700; font-size: 13px;
-  display: flex; align-items: center; justify-content: center;
-  letter-spacing: 0.02em;
-}
-.day-title { font-size: 15px; font-weight: 600; color: var(--ink); }
-.day-note { font-size: 12.5px; color: var(--muted); }
-.day-actions { display: flex; gap: 8px; }
-
-.stops-list { display: flex; flex-direction: column; }
-.stop-item { display: flex; gap: 14px; }
-.stop-rail { display: flex; flex-direction: column; align-items: center; width: 28px; flex-shrink: 0; }
-.stop-index {
-  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
-  color: #fff; font-size: 13px; font-weight: 600; z-index: 1;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 0 0 4px #fff;
-}
-.rail-line { flex: 1; width: 2px; background: var(--line); margin: 4px 0; }
-
-.stop-body {
-  flex: 1; min-width: 0; background: #fff;
-  border: 1px solid var(--line); border-radius: var(--radius-lg);
-  padding: 14px 18px; margin-bottom: 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
-  transition: box-shadow .2s;
-}
-.stop-body:hover { box-shadow: var(--shadow-card); }
-.stop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.stop-name { font-size: 15px; font-weight: 600; color: var(--ink); }
-.stop-meta { display: flex; gap: 14px; font-size: 12.5px; color: var(--muted); margin-top: 6px; align-items: center; }
-.stop-meta .el-icon { font-size: 13px; color: var(--faint); }
-.stop-desc { margin-top: 6px; font-size: 13px; color: var(--ink-2); line-height: 1.55; }
-.stop-actions { margin-top: 6px; display: flex; justify-content: flex-end; }
-
-/* ── 底部 ── */
-.bottom-bar { display: flex; gap: 12px; margin-top: 20px; padding: 8px 0 20px; flex-wrap: wrap; }
-
-.latlng { display: flex; gap: 8px; width: 100%; }
-
-/* ── 备选方案对比（Plan B） ── */
-.planb-card {
-  background: linear-gradient(135deg, var(--brand-soft), var(--card) 60%);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
-  padding: 14px 20px;
-  margin-bottom: 20px;
-}
-.planb-head {
-  display: flex; align-items: center; justify-content: flex-end; gap: 12px;
-  flex-wrap: wrap;
-}
-.planb-body { margin-top: 12px; }
-.planb-meta { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.planb-label {
-  font-size: 13px; font-weight: 700; color: var(--brand);
-  background: var(--brand-soft); padding: 3px 10px; border-radius: var(--radius-full);
-}
-.planb-desc { font-size: 13px; color: var(--ink-2); }
-.planb-deltas {
-  margin-top: 10px; background: #fff; border: 1px solid var(--line);
-  border-radius: var(--radius-md); padding: 8px 12px;
-}
-.planb-delta {
-  display: flex; align-items: flex-start; gap: 4px;
-  font-size: 13px; color: var(--ink-2); line-height: 1.5; padding: 4px 0;
-}
-.planb-delta .el-icon { flex-shrink: 0; margin-top: 3px; }
-.planb-budget {
-  margin-top: 10px; font-size: 13px; color: var(--ink); font-weight: 600;
-  display: inline-flex; align-items: center;
-}
-.planb-budget-sub {
-  margin-left: 10px; font-weight: 500; color: var(--muted);
-}
-.planb-hint { margin-top: 8px; font-size: 12px; color: var(--faint); }
-
-/* ── 分享设置弹窗（生命周期：TTL / 吊销 / 审计） ── */
-.share-settings-hint { font-size: 13px; color: var(--muted); margin-bottom: 14px; }
-.share-settings-body { min-height: 80px; }
-.share-settings-empty { text-align: center; color: var(--faint); padding: 24px 0; }
-.share-setting-card {
-  border: 1px solid var(--line); border-radius: var(--radius-lg);
-  padding: 14px 16px; margin-bottom: 12px; background: #fff;
-}
-.share-setting-card.revoked { opacity: 0.65; background: #fafafa; }
-.ss-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.ss-kind { font-size: 14px; font-weight: 600; color: var(--ink); }
-.ss-row {
-  display: flex; align-items: center; gap: 10px;
-  font-size: 13px; color: var(--ink-2); padding: 5px 0;
-  flex-wrap: wrap;
-}
-.ss-label { color: var(--faint); flex-shrink: 0; min-width: 64px; }
-.ss-value { flex: 1; min-width: 0; word-break: break-all; }
-.ss-url { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--brand); }
-.ss-actions { margin-top: 6px; display: flex; justify-content: flex-end; }
-
-/* 响应式 */
-@media (max-width: 860px) {
-  .hero-cover { height: 160px; }
-  .hero-overlay { padding: 24px; }
-  .hero-title { font-size: 24px; }
-}
-
-/* ── 移动端（≤640px）断点适配（task-mobile-views）：375px 可用、可滚动、无水平滚动 ── */
-@media (max-width: 640px) {
-  .detail-page { padding: 0 12px; }
-  /* 顶栏：返回按钮与操作区分行，操作按钮换行不溢出；触控目标 ≥40px */
-  .topbar { flex-direction: column; align-items: stretch; gap: 8px; }
-  .topbar-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-  .topbar-actions :deep(.el-button) { margin-left: 0; min-height: 40px; }
-  /* 头图：垂直堆叠（标题区 + 底部状态区），状态不再绝对定位重叠标题 */
-  .hero-cover { height: auto; min-height: 150px; flex-direction: column; align-items: stretch; }
-  /* 移动端：min-height 150px，字形 100px×1.4=140px，bottom 正值完整容纳 */
-  .hero-city { font-size: 100px; bottom: 20px; }
-  .hero-overlay { padding: 20px 16px 12px; }
-  .hero-title { font-size: 20px; margin-bottom: 10px; }
-  .hero-pill { font-size: 11.5px; padding: 5px 10px; }
-  .status-group { position: static; order: 2; display: flex; justify-content: flex-end; gap: 6px; padding: 8px 12px 12px; }
-  /* 卡片内边距收窄 */
-  .map-card, .budget-card { padding: 14px; }
-  .map-hint { font-size: 11px; }
-  /* AI 调整区：输入与按钮纵向堆叠，按钮全宽 + 44px 触控 */
-  .revise-card { padding: 14px; }
-  .revise-row { flex-direction: column; gap: 8px; }
-  .revise-row :deep(.el-button) { width: 100%; margin-left: 0; min-height: 44px; }
-  /* 每日行程：日期头纵向 + 操作右对齐换行；徽章缩小 */
-  .day-head { flex-direction: column; align-items: stretch; gap: 8px; }
-  .day-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; }
-  .day-actions :deep(.el-button) { margin-left: 0; min-height: 40px; }
-  .day-badge { width: 44px; height: 44px; font-size: 12px; }
-  .day-headline { gap: 10px; }
-  .stop-body { padding: 12px 14px; }
-  /* 触屏没有 hover：快捷操作常驻显示，避免“看着有操作但点不出” */
-  .stop-quick { opacity: 1; transform: none; }
-  .stop-quick :deep(.el-button) { min-height: 36px; min-width: 36px; }
-  /* 底部操作：2 列网格 + 44px 触控目标；导出 split 占整行 */
-  .bottom-bar { gap: 8px; }
-  .bottom-bar > :deep(.el-button) { flex: 1 1 calc(50% - 4px); margin-left: 0; min-height: 44px; }
-  .bottom-bar > :deep(.el-dropdown) { flex: 1 1 100%; }
-  .bottom-bar > :deep(.el-dropdown) :deep(.el-button-group) { width: 100%; }
-  /* 编辑对话框：经纬度输入纵向（对话框已由全局断点收窄） */
-  .latlng { flex-direction: column; }
-}
-
-/* ── 打印样式（task-export-offline：浏览器打印 → 存 PDF） ──
- * 只打印导出区（头图/概览/地图/预算/每日行程），隐藏操作控件与交互区；
- * 打印走浏览器原生分页（无需 html2canvas 长图裁切）。 */
+/* 打印样式：只打印导出区，隐藏交互 */
 @media print {
-  .topbar, .bottom-bar, .revise-card, .day-actions, .stop-quick, .live-card,
-  .map-hint, .status-switch, .map-drag-error,
+  .bottom-bar, .revise-card, .day-actions, .stop-quick, .live-card,
+  .map-hint, .map-drag-error, .itinerary-toggle, .workspace .ws-all,
   .share-settings-hint, .share-settings-body, .gen-days-hint,
   .el-dialog__wrapper, .el-overlay,
   .trip-servicing, .packing-list, .trip-event-feed, .quality-card {
     display: none !important;
   }
   .detail-page { padding: 0; }
-  .hero-cover { height: auto !important; min-height: 0 !important; }
-  .hero-city { display: none; }
   .map-card { max-height: 320px; overflow: hidden; }
-  /* 避免叶子节点/分页处截断 */
-  .day-card, .stop-item { break-inside: avoid; }
   .export-area { border: none; }
 }
 </style>

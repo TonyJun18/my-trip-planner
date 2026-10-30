@@ -26,6 +26,7 @@ from app.schemas.agent import (
     ReviseRequest,
     critic_fix_to_revise_diff,
 )
+from app.schemas.analytics import AnalyticsEventIn, AnalyticsEventPayload
 from app.schemas.auth import GoogleLoginIn, LoginIn, RegisterIn, TokenOut, UserCreateOut, UserMeOut
 from app.schemas.chat import (
     ChatMessageListOut,

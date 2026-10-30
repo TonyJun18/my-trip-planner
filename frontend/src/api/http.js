@@ -18,6 +18,13 @@ http.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  // 后端文案语种跟随「App 语言」（vue-i18n），不交给浏览器 Accept-Language：
+  // 浏览器头来自系统语言——系统英文 + App 选中文的用户，后端 Plan B 等
+  // 服务端文案会回英文（金额还按语种切换成 $），与界面语言不一致。
+  const appLocale = i18n.global.locale?.value
+  if (appLocale) {
+    config.headers['Accept-Language'] = appLocale
+  }
   return config
 })
 

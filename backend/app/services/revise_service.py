@@ -588,10 +588,29 @@ async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
 
     dyn_facts = check_plan_dynamic_facts({"days": new_days})
 
-    # 更新最新 TripPlan 快照（若无则跳过；前端详情页主数据来自 trip 本身）
+    # 更新最新 TripPlan 快照（若无则跳过；前端详情页主数据来自 trip 本身）。
+    # 版本保留（task-floattrip-borrow Story 3：修订产生新版本，保留原版本）：
+    # 更新前把当前快照复制为 archived 历史版本（沿用原 created_at），原行升级为
+    # 新版本（created_at=现在，排序恒为最新）——get_plan/escalate/分享读路径
+    # 全部按 created_at 倒序取 first，天然读到新版本，旧版本留在历史。
     stmt = select(TripPlan).where(TripPlan.trip_id == trip.id).order_by(TripPlan.created_at.desc())
     plan = (await db.execute(stmt)).scalars().first()
     if plan is not None:
+        import copy
+        from datetime import datetime, timezone as _tz
+
+        archived = TripPlan(
+            trip_id=plan.trip_id,
+            plan_data=copy.deepcopy(plan.plan_data),
+            trace=plan.trace,
+            provider=plan.provider,
+            model=plan.model,
+            status="archived",
+            created_at=plan.created_at,
+        )
+        db.add(archived)
+        # 原行 → 修订后的新版本（时间戳置为当前，保证排序为最新一条）
+        plan.created_at = datetime.now(_tz.utc)
         plan.plan_data = {
             **plan.plan_data,
             "budget": budget,

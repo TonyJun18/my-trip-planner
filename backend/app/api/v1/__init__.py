@@ -5,6 +5,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     auth,
+    analytics,
     chat,
     email_import,
     expenses,
@@ -17,6 +18,7 @@ from app.api.v1 import (
     plan_b,
     planner,
     profile,
+    reorder_commit,
     screenshot_import,
     social_import,
     trips_bookings,
@@ -50,6 +52,9 @@ api_router.include_router(trips_ratings.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_favorites.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_escalations.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_crud.router, prefix="/trips", tags=["trips"])
+# reorder-commit：三段字面量路径（/trips/{trip_id}/reorder-commit），与 crud 的
+# 二段 /{trip_id} 不冲突；自带 /trips 前缀，注册时不加 prefix。
+api_router.include_router(reorder_commit.router, tags=["trips"])
 # export 路由（/trips/{trip_id}/export 与 /trips/share/{token}/export）：
 # 声明在 trips 之后即可，段数不同不冲突；字面量 /share/ 由 trips_share 先注册，
 # /share/{token}/export 多一段，Starlette 按精确段匹配互不吞并。
@@ -69,6 +74,7 @@ api_router.include_router(plan_b.router, tags=["trips"])
 api_router.include_router(planner.router, prefix="/planner", tags=["planner"])
 api_router.include_router(ws.router, tags=["ws"])  # WebSocket 端点（prefix 在 ws.py 内）
 api_router.include_router(profile.router, prefix="/profile", tags=["profile"])
+api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 # 对话式行程助手（B 期）：会话/消息 REST + WS 流式
 # chat.router 内部已带 prefix="/chat"（含 WS 端点 /ws/chat/...），这里不再重复前缀
 api_router.include_router(chat.router, tags=["chat"])

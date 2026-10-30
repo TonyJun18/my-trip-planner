@@ -209,4 +209,19 @@ async def profile_for_request(db: AsyncSession, *, user_id: str) -> dict[str, An
         logger.debug("偏好推断失败（降级为仅声明画像）", exc_info=True)
 
     parts = [p for p in (declared, inferred) if p]
+
+    # 旅行记忆偏好条目（task-floattrip-borrow Story 2）：可查看/编辑/删除的
+    # 结构化条目 → items_to_text 注入，且显式声明「本次明确需求优先于历史画像」。
+    # 删除（忘记）后条目不再出现在 items → 此处自然不再注入（Story 2 AC-4）。
+    items_text = ""
+    try:
+        from app.services.preference_item_service import items_to_text, list_items
+
+        items, _ = await list_items(db, user_id=user_id)
+        items_text = items_to_text(items)
+    except Exception:  # noqa: BLE001 — 偏好条目读取失败绝不影响规划主流程
+        logger.debug("偏好条目注入失败（降级为仅画像）", exc_info=True)
+    if items_text:
+        parts.append(items_text)
+
     return {"profile_text": "\n\n".join(parts) if parts else ""}

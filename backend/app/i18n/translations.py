@@ -180,6 +180,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "plan.warning.dynfacts": "[日期特例] {message}{extra}",
         "plan.warning.dynfacts.sugg": "（{suggestion}）",
         "plan.trace.dynfacts.warn": "日期特例校验发现 {n} 个提示（周一闭馆/免费日/节假日，规则库估算）",
+        # ── SolverGate（task-floattrip-borrow Story 4：确定性求解）──
+        "plan.warning.solver": "确定性校验未通过：{n} 处硬约束未解决（已尽力修复，不静默当成功）",
+        "plan.trace.solver.pass": "确定性校验通过（规则排序 + 时间/距离硬约束）",
+        "plan.trace.solver.warn": "确定性校验未通过（{n} 处未解决）",
+        "solver.sorting.note": "排序依据：到前序站点距离升序优先、评分次之（规则库，非模型凭空排）",
         # ── agent 上下文标签（注入 LLM 的自然语言，随 locale） ──
         "agent.ctx.user_request": "【用户原始需求】",
         "agent.ctx.departure": "出发地：{value}；",
@@ -269,8 +274,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "planb.relaxed.delta": "Day {src} has too many stops ({n}), moved \"{names}\" to the morning of Day {dst}.",
         "planb.budget.label": "Budget version",
         "planb.budget.description": "Switches all stays to economy tier (about -30%) with the itinerary unchanged.",
-        "planb.budget.delta.hotel": "\"{name}\" adjusted to economy: about ${old} → ${new}",
-        "planb.budget.delta.total": "Estimated total saving: about ${saved} (Budget version).",
+        "planb.budget.delta.hotel": "\"{name}\" adjusted to economy tier: about ¥{old} → ¥{new}",
+        "planb.budget.delta.total": "Estimated total saving: about ¥{saved} (Budget version).",
         "planb.curated.label": "Curated version",
         "planb.curated.description": "Trims optional stops (extra meals / longest ones) and keeps the core itinerary.",
         "planb.curated.delta": "Day {day}: removed \"{name}\" ({reason})",
@@ -420,6 +425,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "plan.warning.dynfacts": "[Date exception] {message}{extra}",
         "plan.warning.dynfacts.sugg": " ({suggestion})",
         "plan.trace.dynfacts.warn": "Date-exception check found {n} notes (Monday closures / free days / holidays, rule-based estimate)",
+        # ── SolverGate (task-floattrip-borrow Story 4: deterministic solve) ──
+        "plan.warning.solver": "[Deterministic check] {n} hard constraint(s) unresolved (best-effort repair done, never silently passed)",
+        "plan.trace.solver.pass": "Deterministic check passed (rule sort + time/distance hard constraints)",
+        "plan.trace.solver.warn": "Deterministic check failed ({n} unresolved)",
+        "solver.sorting.note": "Sorting basis: distance-to-previous ascending first, then rating (rule-based, not model whim)",
         # ── agent 上下文标签 ──
         "agent.ctx.user_request": "[USER ORIGINAL REQUEST]",
         "agent.ctx.departure": "Departure: {value}; ",

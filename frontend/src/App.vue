@@ -96,6 +96,9 @@ function goHome() {
                     <div>{{ auth.user?.display_name || t('app.traveler') }}</div>
                     <div class="user-contact">{{ auth.user?.email || auth.user?.phone || '-' }}</div>
                   </el-dropdown-item>
+                  <el-dropdown-item divided @click="router.push('/preferences')">
+                    <el-icon style="margin-right: 6px"><User /></el-icon>{{ t('app.preferencesNav') }}
+                  </el-dropdown-item>
                   <el-dropdown-item divided @click="logout">
                     <el-icon style="margin-right: 6px"><SwitchButton /></el-icon>{{ t('app.logout') }}
                   </el-dropdown-item>
@@ -244,8 +247,13 @@ function goHome() {
 .user-contact { font-size: 12px; color: var(--faint); }
 
 /* ── 主内容 ── */
+/* 注意：el-main 默认 overflow:auto。页面实际滚动发生在 document 上，而 .app-main 高度
+   由内容撑开、自身从不滚动 → 它仍会作为「最近滚动祖先」存在，导致内部任何
+   position: sticky（详情页头部、侧栏仪表盘）退化成静态位移、无法吸附。
+   改为 visible 后 sticky 才能相对文档滚动生效（本应用各视图均按文档滚动设计）。 */
 .app-main {
   flex: 1;
+  overflow: visible;
   padding: 32px 28px 48px;
   max-width: 1240px;
   margin: 0 auto;
@@ -268,15 +276,25 @@ function goHome() {
 
 /* ── 响应式 ── */
 @media (max-width: 720px) {
-  .app-header { padding: 0 16px; height: 56px; }
+  .app-header { padding: 0 16px; height: 56px; gap: 8px; }
   .brand-sub { display: none; }
+  .brand-text { white-space: nowrap; }
   .app-main { padding: 20px 16px 56px; } /* 底部 Tab 高度 + 余量，避免内容被遮挡 */
   .user-name { display: none; }
   .app-footer { display: none; }
 
   /* 顶栏窄屏进一步压缩：登录态隐藏「我的行程」文字导航（Tab 已有），仅保留品牌 + 新建 + 语言 + 用户 */
+  .nav { gap: 8px; flex-wrap: nowrap; min-width: 0; }
   .nav .nav-link { display: none; }
-  .nav .btn-primary { padding: 8px 12px; font-size: 13px; }
+  .user-chip { min-width: 0; }
+  .nav :deep(.el-button), .nav .btn-primary { white-space: nowrap; }
+}
+
+/* 超窄屏（≤480）：新建行程已在底部 Tab，顶栏只留品牌 / 语言 / 用户，避免按钮挤成两行 */
+@media (max-width: 480px) {
+  .nav .btn-primary { display: none; }
+  .brand-text { font-size: 18px; }
+  .brand { gap: 8px; min-width: 0; }
 }
 
 /* ── 移动端底部 Tab（≤720px）── */
