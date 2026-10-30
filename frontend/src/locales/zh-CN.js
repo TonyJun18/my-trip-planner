@@ -10,6 +10,7 @@ export default {
     logout: '退出登录',
     traveler: '旅行者',
     chatNav: 'AI 助手',
+    preferencesNav: '旅行偏好',
     features: '产品特性',
     inspiration: '灵感示例',
     footer: '为你的每一次出发，准备好一切',

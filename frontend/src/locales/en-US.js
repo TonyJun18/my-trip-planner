@@ -10,6 +10,7 @@ export default {
     logout: 'Log out',
     traveler: 'Traveler',
     chatNav: 'AI Assistant',
+    preferencesNav: 'Travel Preferences',
     features: 'Features',
     inspiration: 'Inspiration',
     footer: 'Prepared for every departure',
