@@ -76,8 +76,11 @@ from app.schemas.booking import (
     BookingIn,
     BookingListOut,
     BookingOut,
+    BookingScanItemOut,
+    BookingScanOut,
     BookingStatusIn,
     BookingSuggestedOut,
+    StopLinkIn,
 )
 from app.schemas.journey import (
     DayJourneyOut,

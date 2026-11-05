@@ -1,4 +1,4 @@
-"""预订条目 Schemas（task-booking-outlink：可预订建议 + 凭证回填）。"""
+"""预订条目 Schemas（task-booking-outlink：可预订建议 + 凭证回填；task-book-ahead-scan：前瞻扫描）。"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -15,7 +15,7 @@ class BookingIn(BaseModel):
     - reference：plan.generated / user.confirmed / channel.callback
     """
 
-    kind: Literal["train", "hotel"] = "train"
+    kind: Literal["train", "hotel", "ticket"] = "train"
     provider: Literal["ctrip", "qunar", "12306", "feizhu", "tongcheng", "manual"] = "ctrip"
     title: str | None = Field(default=None, max_length=300)
     provider_url: str | None = Field(default=None, max_length=500)
@@ -76,3 +76,37 @@ class BookingListOut(BaseModel):
 
     items: list[BookingOut] = Field(default_factory=list)
     total: int = 0
+
+
+class BookingScanItemOut(BaseModel):
+    """前瞻扫描建议（task-book-ahead-scan：Passage AI「Need tickets?」）。
+
+    - 规则库扫描（timed-entry / 热门类目关键词）产出，basis=rule_based 诚实标注；
+    - ``booking_payload``：可直接提交 POST /trips/{id}/bookings 的 BookingIn 载荷
+      （复用既有 booking 链路落库；前端一键采纳）。
+    """
+
+    stop_id: str
+    stop_name: str
+    kind: Literal["train", "hotel", "ticket"] = "ticket"
+    provider: Literal["ctrip", "qunar", "12306", "feizhu", "tongcheng", "manual"] = "ctrip"
+    title: str | None = None
+    reason: str | None = None
+    priority: Literal["high", "medium", "low"] = "medium"
+    timed_entry: bool = False
+    booking_payload: dict = Field(default_factory=dict)
+
+
+class BookingScanOut(BaseModel):
+    """行程预订前瞻扫描结果（owner 触发，规则库零凭证）。"""
+
+    items: list[BookingScanItemOut] = Field(default_factory=list)
+    total: int = 0
+    basis: str = "rule_based"
+    note: str = "规则库扫描，不含实时价格/余票；确认前请以 OTA 页面为准"
+
+
+class StopLinkIn(BaseModel):
+    """预订 ↔ 站点绑定请求（task-book-ahead-scan：确认号回填 stop）。"""
+
+    stop_id: str = Field(min_length=1, max_length=36, description="行程内站点 id")
