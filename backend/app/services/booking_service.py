@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError, NotFoundError
-from app.models import TripBooking
+from app.models import Stop, Trip, TripBooking
 from app.schemas import BookingIn, BookingStatusIn
 
 Provider = Literal["ctrip", "qunar", "12306", "feizhu", "tongcheng", "manual"]
@@ -297,3 +297,154 @@ async def delete_booking(
     if result.rowcount == 0:
         raise NotFoundError("预订不存在", code="booking_not_found")
     await db.commit()
+
+
+# ── 预订前瞻扫描（task-book-ahead-scan：Passage AI「Need tickets?」） ──
+# 规则库：timed-entry / 热门类目关键词表。零凭证、零 LLM、纯确定性。
+# 扫描行程 stops → 标记值得提前预订的站点 → 复用 booking 链路产出建议。
+_TIMED_ENTRY_KEYWORDS: tuple[str, ...] = (
+    # 世界遗产 / 博物馆 / 热门景区（timed-entry 常见）
+    "故宫", "博物馆", "展览馆", "美术馆", "科技馆", "熊猫", "迪士尼", "环球影城",
+    "长隆", "方特", "海洋公园", "欢乐谷", "天坛", "颐和园", "长城", "兵马俑",
+    "莫高窟", "布达拉宫", "黄山", "张家界", "九寨沟", "鼓浪屿", "西湖",
+    # 演出 / 展览 / 体验
+    "演出", "演唱会", "音乐节", "show", "秀", "话剧", "剧院", "马戏",
+)
+
+_HOT_ATTRACTION_KEYWORDS: tuple[str, ...] = (
+    "博物馆", "故宫", "长城", "兵马俑", "莫高窟", "迪士尼", "环球影城",
+    "长隆", "熊猫", "张家界", "九寨沟", "黄山", "鼓浪屿",
+)
+
+
+def _match_keywords(name: str, keywords: tuple[str, ...]) -> bool:
+    """站点名命中任一词条（子串匹配，大小写不敏感）。"""
+    if not name:
+        return False
+    low = name.lower()
+    return any(k.lower() in low for k in keywords)
+
+
+def scan_bookable_stops(trip: Trip) -> list[dict[str, Any]]:
+    """规则库扫描：找出行程中「值得提前预订」的站点（纯函数，无 DB 副作用）。
+
+    规则（全部确定性，basis=rule_based 诚实标注）：
+    1. hotel 站点 → 建议提前预订（kind=hotel，城市维度 deeplink）；
+    2. timed-entry 关键词命中（timed_entry=True）→ 建议提前预订（kind=ticket）；
+    3. 热门类目词命中 → 建议提前预订（kind=ticket，priority=medium 区别于强 timed-entry）。
+    """
+    suggestions: list[dict[str, Any]] = []
+    days = getattr(trip, "days", None) or []
+    for day in days:
+        for stop in day.stops or []:
+            name = (stop.name or "").strip()
+            if not name:
+                continue
+            stop_type = (stop.stop_type or "").lower()
+            if stop_type == "hotel":
+                suggestions.append({
+                    "stop_id": stop.id,
+                    "stop_name": name,
+                    "kind": "hotel",
+                    "provider": "ctrip",
+                    "title": f"{name} 提前预订",
+                    "reason": "住宿建议提前预订（行程核心节点）",
+                    "priority": "high",
+                    "timed_entry": False,
+                })
+                continue
+            timed = _match_keywords(name, _TIMED_ENTRY_KEYWORDS)
+            hot = _match_keywords(name, _HOT_ATTRACTION_KEYWORDS)
+            if timed or hot:
+                suggestions.append({
+                    "stop_id": stop.id,
+                    "stop_name": name,
+                    "kind": "ticket",
+                    "provider": "ctrip",
+                    "title": f"{name} 门票",
+                    "reason": "热门/限时场馆建议提前购票（timed-entry）" if timed
+                    else "热门景点建议提前购票",
+                    "priority": "high" if timed else "medium",
+                    "timed_entry": timed,
+                })
+    return suggestions
+
+
+async def link_booking_to_stop(
+    db: AsyncSession,
+    trip_id: str,
+    booking_id: str,
+    stop_id: str,
+    *,
+    owner: str | None = None,
+) -> Stop:
+    """把确认号/预订条目回填到站点（stop.details.booking_id，零迁移）。
+
+    - 校验行程归属 + 预订属于该行程 + 站点属于该行程（三路交叉，防跨行程串号）；
+    - stop.details 为 JSON 列：写入 booking_id（保留既有 details 字段）；
+    - 幂等：重复 link 相同 booking 自然覆盖，无副作用。
+    """
+    from app.services.trip_service import get_trip
+
+    trip = await get_trip(db, trip_id, owner=owner)
+
+    stmt = select(TripBooking).where(TripBooking.id == booking_id, TripBooking.trip_id == trip_id)
+    booking = (await db.execute(stmt)).scalars().first()
+    if booking is None:
+        raise NotFoundError("预订不存在", code="booking_not_found")
+
+    stop_found = None
+    for day in trip.days or []:
+        for stop in day.stops or []:
+            if stop.id == stop_id:
+                stop_found = stop
+                break
+        if stop_found:
+            break
+    if stop_found is None:
+        raise NotFoundError("站点不存在", code="stop_not_found")
+
+    details = dict(stop_found.details or {})
+    details["booking_id"] = booking_id
+    stop_found.details = details
+    await db.commit()
+    await db.refresh(stop_found)
+    return stop_found
+
+
+async def unlink_booking_from_stop(
+    db: AsyncSession,
+    trip_id: str,
+    booking_id: str,
+    stop_id: str,
+    *,
+    owner: str | None = None,
+) -> Stop:
+    """解除站点与预订的关联（stop.details.booking_id 移除；预订条目本身保留）。"""
+    from app.services.trip_service import get_trip
+
+    trip = await get_trip(db, trip_id, owner=owner)
+
+    stmt = select(TripBooking).where(TripBooking.id == booking_id, TripBooking.trip_id == trip_id)
+    booking = (await db.execute(stmt)).scalars().first()
+    if booking is None:
+        raise NotFoundError("预订不存在", code="booking_not_found")
+
+    stop_found = None
+    for day in trip.days or []:
+        for stop in day.stops or []:
+            if stop.id == stop_id:
+                stop_found = stop
+                break
+        if stop_found:
+            break
+    if stop_found is None:
+        raise NotFoundError("站点不存在", code="stop_not_found")
+
+    details = dict(stop_found.details or {})
+    if details.get("booking_id") == booking_id:
+        details.pop("booking_id", None)
+        stop_found.details = details or None
+        await db.commit()
+        await db.refresh(stop_found)
+    return stop_found
