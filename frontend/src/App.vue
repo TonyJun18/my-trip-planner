@@ -78,7 +78,7 @@ function goHome() {
             <button class="nav-link" :class="{ active: $route.path === '/chat' }" @click="router.push('/chat')">
               <el-icon style="margin-right: 4px"><ChatDotRound /></el-icon>{{ t('app.chatNav') }}
             </button>
-            <button class="nav-link" :class="{ active: $route.query.view === 'gallery' }" @click="router.push('/?view=gallery')">
+            <button class="nav-link" :class="{ active: $route.path === '/gallery' }" @click="router.push('/gallery')">
               {{ t('app.galleryNav') }}
             </button>
             <button class="btn-primary" @click="router.push('/plan')">

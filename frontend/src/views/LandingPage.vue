@@ -4,16 +4,21 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
+import GalleryCard from '@/components/gallery/GalleryCard.vue'
 
 const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
 const auth = useAuthStore()
 
-// 已登录用户访问产品门面 → 直接进「我的行程」（门面面向陌生访客）；
-// 但带 ?view=gallery 时保留首页，让登录用户也能看自己发布到画廊的行程
+// 已登录用户访问产品门面 → 直接进「我的行程」（门面面向陌生访客）。
+// 旧链接 ?view=gallery（画廊曾是首页底部区块）→ 302 到独立画廊页，避免"点了回首页"。
 onMounted(() => {
-  if (auth.isLoggedIn && route.query.view !== 'gallery') router.replace('/trips')
+  if (route.query.view === 'gallery') {
+    router.replace('/gallery')
+    return
+  }
+  if (auth.isLoggedIn) router.replace('/trips')
   loadGallery()
 })
 
@@ -56,33 +61,28 @@ const demoSteps = computed(() => [
   { no: '03', title: t('landing.demo3Title'), desc: t('landing.demo3Desc') },
 ])
 
-// ── 灵感画廊 + 城市模板（task-gallery-featured / city-templates） ──
+// ── 灵感画廊 teaser（完整画廊在 /gallery） ──
 const galleryItems = ref([])
-const cityTemplates = ref([])
 
 async function loadGallery() {
   try {
-    const [g, tpl] = await Promise.all([api.getGallery({ limit: 6 }), api.getCityTemplates({ limit: 8 })])
+    const g = await api.getGallery({ limit: 4, sort: 'hot' })
     galleryItems.value = g.items || []
-    cityTemplates.value = tpl.items || []
   } catch {
-    // 画廊/模板失败静默：门面页不因后端数据缺失而报错
+    // 画廊失败静默：门面页不因后端数据缺失而报错
   }
 }
 
-// 模板卡 → 深链预填规划（带目的地/天数；未登录先登录再回跳）
-function startFromTemplate(tpl) {
-  const query = { destination: tpl.destination }
-  if (tpl.days) query.days = tpl.days
-  const target = `/plan?${new URLSearchParams(query).toString()}`
-  if (auth.isLoggedIn) router.push(target)
-  else router.push(`/login?redirect=${encodeURIComponent(target)}`)
+// 卡片「看详情」→ 只读行程页（带 from=gallery 指出处，页内有「以此为蓝本创建」）
+function openGalleryItem(item) {
+  if (!item.share_token) return
+  router.push(`/share/${item.share_token}?from=gallery`)
 }
 
 // 画廊卡 → 以此为基础创建（复制到我的账号）
 async function createFromGallery(item) {
   if (!auth.isLoggedIn) {
-    router.push('/login?redirect=/')
+    router.push('/login?redirect=/gallery')
     return
   }
   try {
@@ -259,49 +259,21 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <!-- ── 社区精选 + 城市模板（task-gallery-featured / city-templates） ── -->
-    <section v-if="galleryItems.length || cityTemplates.length" class="section reveal" id="gallery">
-      <h2 class="section-title">社区精选与城市模板</h2>
-      <p class="section-sub">真实用户分享的路线，或直接用城市模板开工——点一下就复制成你自己的行程。</p>
-
-      <div v-if="cityTemplates.length" class="gallery-block">
-        <div class="gallery-block-title">城市模板</div>
-        <div class="gallery-grid">
-          <article
-            v-for="tpl in cityTemplates"
-            :key="'tpl-' + tpl.destination"
-            class="gallery-card"
-            @click="startFromTemplate(tpl)"
-          >
-            <div class="gallery-emoji">📍</div>
-            <div class="gallery-name">{{ tpl.destination }}</div>
-            <div class="gallery-meta">{{ tpl.days }} 天 · {{ tpl.budget_tier }} · 约 ¥{{ tpl.est_daily_budget }}/天</div>
-            <div class="gallery-cta">用它开工 →</div>
-          </article>
-        </div>
+    <!-- ── 灵感画廊 teaser（完整内容在 /gallery，导航与「发布到画廊」都落到那里） ── -->
+    <section v-if="galleryItems.length" class="section reveal" id="gallery">
+      <h2 class="section-title">{{ t('gallery.teaserTitle') }}</h2>
+      <p class="section-sub">{{ t('gallery.teaserSub') }}</p>
+      <div class="teaser-grid">
+        <GalleryCard
+          v-for="item in galleryItems.slice(0, 4)"
+          :key="item.trip_id"
+          :item="item"
+          @open="openGalleryItem(item)"
+          @clone="createFromGallery(item)"
+        />
       </div>
-
-      <div v-if="galleryItems.length" class="gallery-block">
-        <div class="gallery-block-title">真实用户分享</div>
-        <div class="gallery-grid">
-          <article
-            v-for="item in galleryItems"
-            :key="'g-' + item.trip_id"
-            class="gallery-card"
-            @click="createFromGallery(item)"
-          >
-            <div class="gallery-emoji">🗺️</div>
-            <div class="gallery-name">{{ item.title }}</div>
-            <div class="gallery-meta">{{ item.destination }} · {{ item.days }} 天{{ item.budget ? ' · ¥' + item.budget : '' }}</div>
-            <div v-if="item.rating_count > 0" class="gallery-rating">
-              <span class="stars">{{ '★'.repeat(Math.round(item.rating_avg || 0)) }}<span class="stars-empty">{{ '★'.repeat(5 - Math.round(item.rating_avg || 0)) }}</span></span>
-              <span class="rating-num">{{ item.rating_avg ? item.rating_avg.toFixed(1) : '—' }}（{{ item.rating_count }} 人评）</span>
-              <span v-if="item.visited_count > 0" class="visited-num">{{ item.visited_count }} 人去过</span>
-            </div>
-            <div v-if="item.blurb" class="gallery-blurb">{{ item.blurb }}</div>
-            <div class="gallery-cta">以此为基础创建 →</div>
-          </article>
-        </div>
+      <div class="teaser-cta">
+        <button class="btn-primary" @click="router.push('/gallery')">{{ t('gallery.teaserCta') }} →</button>
       </div>
     </section>
 
@@ -481,26 +453,9 @@ a.btn-ghost { text-decoration: none; }
 .insp-body { padding: 10px 14px; }
 .insp-go { font-size: 13px; font-weight: 600; color: var(--brand); }
 
-/* ── 社区精选 + 城市模板 ── */
-.gallery-block { margin-top: 26px; }
-.gallery-block-title { font-size: 14px; font-weight: 700; color: var(--ink); margin-bottom: 10px; }
-.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
-.gallery-card {
-  border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius-lg);
-  padding: 14px; cursor: pointer; box-shadow: var(--shadow-card);
-  transition: transform .2s, box-shadow .2s;
-}
-.gallery-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-hover); }
-.gallery-emoji { font-size: 22px; }
-.gallery-name { margin-top: 6px; font-size: 15px; font-weight: 650; color: var(--ink); }
-.gallery-meta { margin-top: 4px; font-size: 12px; color: var(--muted); }
-.gallery-blurb { margin-top: 6px; font-size: 12.5px; color: var(--ink-2); }
-.gallery-rating { margin-top: 6px; font-size: 12px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.gallery-rating .stars { color: #f5a623; letter-spacing: 1px; }
-.gallery-rating .stars-empty { color: #ddd; }
-.gallery-rating .rating-num { color: var(--muted); }
-.gallery-rating .visited-num { color: var(--muted); }
-.gallery-cta { margin-top: 10px; font-size: 12.5px; font-weight: 600; color: var(--brand); }
+/* ── 灵感画廊 teaser ── */
+.teaser-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+.teaser-cta { text-align: center; margin-top: 24px; }
 
 /* ── 最终 CTA ── */
 .final-cta { position: relative; text-align: center; padding: 72px 0 28px; overflow: hidden; }

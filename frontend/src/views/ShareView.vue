@@ -1,14 +1,17 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as api from '@/api'
+import { useAuthStore } from '@/stores/auth'
 import { readCachedJson, isOnline } from '@/utils/pwa'
 import TripMap from '@/components/TripMap.vue'
 import JourneyTimeline from '@/components/JourneyTimeline.vue'
 
 const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
 const { t } = useI18n()
 const loading = ref(false)
 const error = ref('')
@@ -22,6 +25,62 @@ function handleOnline() {
 
 // ── 受邀编辑模式：URL 带 ?edit=1（owner 生成的 edit_url）→ 用 edit_token 访问 ──
 const editMode = computed(() => route.query.edit === '1')
+
+// ── 灵感画廊来源（task-gallery-v2）：详情页承担「先看再复制」的一步 ──
+// 免登录也能看完整逐日行程；登录后一键复制成自己的行程（clone 不复制令牌/协作数据）。
+const cloning = ref(false)
+const fromGallery = computed(() => route.query.from === 'gallery' || trip.value?.is_featured === true)
+const showGalleryCta = computed(() => !editMode.value && !!trip.value && fromGallery.value)
+
+async function cloneFromGallery() {
+  if (!auth.isLoggedIn) {
+    router.push(`/login?redirect=${encodeURIComponent(route.fullPath)}`)
+    return
+  }
+  if (cloning.value || !trip.value) return
+  cloning.value = true
+  try {
+    const cloned = await api.cloneGalleryTrip(trip.value.id)
+    ElMessage.success(t('gallery.cloneDone'))
+    router.push(`/trips/${cloned.id}`)
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.error?.message || t('gallery.cloneFail'))
+  } finally {
+    cloning.value = false
+  }
+}
+
+// ── 评分 / 我去过（画廊来源，登录后可用；后端 upsert 幂等）──────────
+const ratingAgg = ref({ count: 0, avg: null, visited_count: 0 })
+const myRating = ref(0)
+const myVisited = ref(false)
+const ratingSaving = ref(false)
+
+async function loadRating() {
+  if (!auth.isLoggedIn || !trip.value?.id) return
+  try {
+    const r = await api.getTripRating(trip.value.id)
+    ratingAgg.value = { count: r.count || 0, avg: r.avg, visited_count: r.visited_count || 0 }
+    myRating.value = r.user_rating || 0
+    myVisited.value = !!r.user_visited
+  } catch {
+    // 评分读取失败静默：不影响阅读行程
+  }
+}
+
+async function saveRating() {
+  if (!auth.isLoggedIn || !trip.value?.id || ratingSaving.value || !myRating.value) return
+  ratingSaving.value = true
+  try {
+    await api.submitTripRating(trip.value.id, { rating: myRating.value, visited: myVisited.value })
+    ElMessage.success(t('gallery.rateDone'))
+    await loadRating()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.error?.message || t('gallery.rateFail'))
+  } finally {
+    ratingSaving.value = false
+  }
+}
 // 行内编辑缓冲：stop_id -> { name, description }
 const editingStop = ref(null)
 const editBuf = ref({ name: '', description: '' })
@@ -146,6 +205,8 @@ async function load() {
       return
     }
     await Promise.all([loadComments(), loadVotes()])
+    // 画廊来源：登录后加载「我的评分 / 聚合热度」
+    if (showGalleryCta.value) loadRating()
     // 行中「今日视图」+ WS feed（仅受邀编辑模式；只读分享无操作权限）
     if (editMode.value) {
       await loadLive()
@@ -411,6 +472,38 @@ function watchCollabFeed() {
       <el-icon style="margin-right: 6px"><component :is="editMode ? 'EditPen' : 'View'" /></el-icon>
       <span v-if="!editMode">{{ $t('share.readonlyBanner') }}</span>
       <span v-else>{{ $t('share.editBanner') }}</span>
+    </div>
+
+    <!-- 画廊来源：看完行程再决定是否复制（免登录可看，复制需登录） -->
+    <div v-if="showGalleryCta" class="gallery-cta">
+      <div class="gallery-cta-copy">
+        <span class="gallery-cta-title">{{ $t('gallery.detailCtaTitle') }}</span>
+        <span class="gallery-cta-sub">
+          <template v-if="trip.gallery_blurb">「{{ trip.gallery_blurb }}」·</template>
+          {{ $t('gallery.detailCtaSub') }}
+        </span>
+      </div>
+      <div class="gallery-cta-acts">
+        <el-button text @click="router.push('/gallery')">{{ $t('gallery.backToGallery') }}</el-button>
+        <el-button type="primary" :loading="cloning" @click="cloneFromGallery">
+          {{ $t('gallery.detailCta') }}
+        </el-button>
+      </div>
+    </div>
+
+    <!-- 评分 / 我去过：登录用户可给这条画廊行程打分（后端 upsert 幂等） -->
+    <div v-if="showGalleryCta && auth.isLoggedIn" class="gallery-rate">
+      <span class="gallery-rate-label">{{ $t('gallery.rateLabel') }}</span>
+      <el-rate v-model="myRating" :disabled="ratingSaving" @change="saveRating" />
+      <el-checkbox v-model="myVisited" :disabled="ratingSaving" @change="saveRating">
+        {{ $t('gallery.rateVisited') }}
+      </el-checkbox>
+      <span class="gallery-rate-meta">
+        <template v-if="ratingAgg.count">
+          {{ $t('gallery.ratingMeta', { avg: Number(ratingAgg.avg || 0).toFixed(1), n: ratingAgg.count }) }}
+        </template>
+        <template v-else>{{ $t('gallery.noRating') }}</template>
+      </span>
     </div>
 
     <div v-if="error" class="share-error">
@@ -711,6 +804,46 @@ function watchCollabFeed() {
 }
 /* 受邀编辑：勾选后的站点置灰 */
 .stop-item.checked .stop-body { opacity: 0.62; }
+
+/* 画廊来源 CTA（task-gallery-v2）：看完行程再决定复制 */
+.gallery-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  background: var(--surface);
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-md);
+}
+.gallery-cta-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.gallery-cta-title { font-size: 13.5px; font-weight: 650; color: var(--ink); }
+.gallery-cta-sub { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+.gallery-cta-acts { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* 评分条：与 CTA 同列（浅底，弱化于主 CTA） */
+.gallery-rate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 16px;
+  margin: -8px 0 18px;
+  background: var(--brand-soft);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.gallery-rate-label { font-weight: 600; color: var(--ink); }
+.gallery-rate-meta { font-size: 12.5px; color: var(--muted); }
+
+@media (max-width: 640px) {
+  .gallery-cta { align-items: stretch; }
+  .gallery-cta-acts { width: 100%; }
+  .gallery-cta-acts :deep(.el-button) { flex: 1; margin-left: 0; }
+}
 .stop-item.checked .stop-name { text-decoration: line-through; }
 .inline-edit-name { width: 220px; display: inline-flex; vertical-align: middle; }
 .edit-group { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }

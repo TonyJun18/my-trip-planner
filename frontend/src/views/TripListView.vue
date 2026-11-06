@@ -289,7 +289,7 @@ onBeforeUnmount(() => {
     <!-- 手动创建行程对话框 -->
     <el-dialog v-model="createVisible" :title="t('tripList.createDialogTitle')" width="460px">
       <el-form label-width="80px">
-        <el-form-item :label="t('tripList.title')" required>
+        <el-form-item :label="t('tripList.titleLabel')" required>
           <el-input v-model="createForm.title" :placeholder="t('tripList.titlePlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('tripList.destination')" required>

@@ -149,6 +149,7 @@ function changeStatus(value) {
           :has-shared-token="hasSharedToken"
           :edit-token="editToken"
           :show-adjust="showAdjust"
+          :show-export-pdf="phase !== 'finished'"
           @command="(cmd) => emit('more', cmd)"
         />
       </div>

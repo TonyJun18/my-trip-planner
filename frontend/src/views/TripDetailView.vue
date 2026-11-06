@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Calendar } from '@element-plus/icons-vue'
+import { Calendar, Plus } from '@element-plus/icons-vue'
 import * as api from '@/api'
 // 阶段一拆分：TripDetailView 收敛为 orchestrator（装配 + 共享状态 + 对话框）
 // 阶段二信息架构：头部合并（Header）+ 次级工具按时机收纳（Workspace）
@@ -16,7 +16,6 @@ import TripDetailDayCard from '@/components/trip-detail/TripDetailDayCard.vue'
 import TripDetailToolbox from '@/components/trip-detail/TripDetailToolbox.vue'
 import TripDetailWorkspace from '@/components/trip-detail/TripDetailWorkspace.vue'
 import TripDetailSidebar from '@/components/trip-detail/TripDetailSidebar.vue'
-import TripDetailBottomBar from '@/components/trip-detail/TripDetailBottomBar.vue'
 import TripDetailDialogs from '@/components/trip-detail/TripDetailDialogs.vue'
 import { useTripDetailLoad } from '@/composables/useTripDetailLoad'
 import { useRevise } from '@/composables/useRevise'
@@ -225,12 +224,14 @@ const wsKeys = computed(() => {
 })
 
 // ── 规划修订 + 行程备选：提到主路径（地图与行程大纲之间）──────
-// 这两个是规划阶段的高频主操作，收在工作台底部需要先滚完整段大纲才够得着。
-// 时机规则与工作台一致：规划期常驻；非规划期由「更多 → 调整行程」显式展开。
-// 导出时隐藏（导出物是给同行人看的行程，不该出现输入框）。
-const planToolsVisible = computed(
-  () => iaV2.value && !exportAll.value && (phase.value === 'planning' || wsPlanExtra.value),
-)
+// 这两个是主线操作，收在工作台底部需要先滚完整段大纲才够得着。
+// 时机策略（2026-11-06 修正）：AI 调整行程**任何时机都常驻**。
+//   上一版按 phase==='planning' 才显示，行前（prep）/行中（live）/已结束（finished）
+//   全部隐藏，只剩「更多 → 调整行程」这一个隐藏入口 —— 用户在详情页根本找不到改行程，
+//   而改行程正是本产品的核心 AI 动作（行前换酒店、行中顺延/删站都靠它）。
+//   因此这里不再跟时机绑定，只保留导出态隐藏（导出物是给同行人看的行程，不该出现输入框）。
+// 行程备选方案（planB 段）仍按数据条件渲染：后端没生成备选就不占版面。
+const planToolsVisible = computed(() => iaV2.value && !exportAll.value)
 // 交给工具箱的「已提升」名单：IA v2 下这两个面板永远不在工具箱里渲染，避免同屏两份
 const hoistedPlanKeys = computed(() => (iaV2.value ? ['revise', 'planb'] : []))
 
@@ -368,8 +369,8 @@ function scrollToWorkspace() {
   scrollToSelector('.workspace')
 }
 
-// 「更多 → 调整行程」：非规划时机打开规划工具（AI 修订的唯一入口）。
-// 规划工具已提到主路径（地图与大纲之间），滚动目标随之改为那里。
+// 「更多 → 调整行程」：聚焦到主路径上的 AI 调整卡片（任何时机都常驻），
+// 顺带打开工作台的「规划」tab（时间校验 / 质检 / 住宿等次级规划工具在那里）。
 function openPlanTool() {
   wsPlanExtra.value = true
   wsShowAll.value = false
@@ -482,6 +483,19 @@ async function onMoreCommand(cmd) {
     case 'adjust':
       openPlanTool()
       break
+    // 导出四态收进「更多」（原底部操作条的 split 下拉；页头 finished 时机另有 导出 PDF 主按钮）
+    case 'export-pdf':
+      await doExportPdfAll()
+      break
+    case 'export-image':
+      await doExportImageAll()
+      break
+    case 'export-json':
+      await doExportJson()
+      break
+    case 'export-print':
+      doPrint()
+      break
     case 'import':
       importVisible.value = true
       break
@@ -539,6 +553,12 @@ async function askAI() {
 function onToolOpen(tool) {
   if (!trip.value?.id) return
   trackEvent(ANALYTICS_EVENTS.planningToolOpen, { trip_id: trip.value.id, trip_phase: phaseName.value, tool })
+}
+
+// 按日期批量生成日程（原底部操作条的「按日期生成」；入口已上提到大纲标题行）
+function onGenDaysClick() {
+  genDaysVisible.value = true
+  onToolOpen('batch_gen')
 }
 
 // ── 每日站点操作（上移/下移/删除收进更多，仅编辑常驻） ──────
@@ -835,15 +855,25 @@ onBeforeUnmount(() => {
               @tool-open="onToolOpen"
             />
 
-            <!-- 逐日大纲：标题行（概览 + 批量展开）+ 可折叠日程卡 -->
+            <!-- 逐日大纲：标题行（概览 + 日程操作 + 批量展开）+ 可折叠日程卡 -->
             <div class="itinerary-head">
               <span class="itinerary-title">
                 <el-icon><Calendar /></el-icon>{{ $t('tripDetail.itineraryTitle') }}
               </span>
               <span class="itinerary-meta">{{ itineraryMeta }}</span>
-              <button class="itinerary-toggle" type="button" @click="toggleAllDays">
-                {{ allDaysOpen ? $t('tripDetail.collapseAllDays') : $t('tripDetail.expandAllDays') }}
-              </button>
+              <!-- 日程操作跟随它们的对象（日程列表）放在标题行右侧：
+                   旧版在列表之后单起一条底栏，把「大纲 → 工作台」切成两段，形成断档 -->
+              <div class="itinerary-acts">
+                <button class="itinerary-act" type="button" @click="openAddDay">
+                  <el-icon><Plus /></el-icon>{{ $t('tripDetail.addDay') }}
+                </button>
+                <button class="itinerary-act" type="button" @click="onGenDaysClick">
+                  <el-icon><Calendar /></el-icon>{{ $t('tripDetail.genDays') }}
+                </button>
+                <button class="itinerary-toggle" type="button" @click="toggleAllDays">
+                  {{ allDaysOpen ? $t('tripDetail.collapseAllDays') : $t('tripDetail.expandAllDays') }}
+                </button>
+              </div>
             </div>
 
             <TripDetailDayCard
@@ -861,14 +891,7 @@ onBeforeUnmount(() => {
               @stop-edit="openEditStop"
             />
 
-            <!-- 日程操作条（加天 / 批量生成 / 导出） -->
-            <TripDetailBottomBar
-              :exporting="exporting"
-              @add-day="openAddDay"
-              @gen-days="genDaysVisible = true; onToolOpen('batch_gen')"
-              @export="doExportPdfAll"
-              @export-cmd="onExportCommand"
-            />
+            <!-- 日程操作条已上提到大纲标题行（加天 / 批量生成），导出收进头部「更多」 -->
 
             <!-- 次级工作台：按时机收纳 12 个工具面板 -->
             <TripDetailWorkspace
@@ -1016,8 +1039,20 @@ onBeforeUnmount(() => {
   font-size: 12.5px;
   color: var(--muted);
 }
-.itinerary-toggle {
+.itinerary-acts {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* 日程操作（加天 / 按日期生成）：与「展开全部日程」同规格的 pill 按钮，
+   紧贴被操作的对象（日程列表标题行），不再单独占一条底栏 */
+.itinerary-act,
+.itinerary-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 4px 10px;
   font: inherit;
   font-size: 12px;
@@ -1027,10 +1062,13 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line);
   border-radius: var(--radius-full);
   cursor: pointer;
-  transition: color 0.18s, border-color 0.18s;
+  transition: color 0.18s, border-color 0.18s, background 0.18s;
 }
+.itinerary-act:hover,
 .itinerary-toggle:hover { color: var(--brand); border-color: var(--brand); }
+.itinerary-act:focus-visible,
 .itinerary-toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.itinerary-act .el-icon { font-size: 13px; }
 
 /* 窄屏：双栏降级单列 */
 @media (max-width: 960px) {
@@ -1039,13 +1077,13 @@ onBeforeUnmount(() => {
 
 @media (max-width: 640px) {
   .itinerary-head { flex-wrap: wrap; gap: 6px 10px; margin: 14px 0 8px; }
-  .itinerary-toggle { margin-left: 0; }
+  .itinerary-acts { margin-left: 0; width: 100%; }
 }
 
 /* 打印样式：只打印导出区，隐藏交互 */
 @media print {
-  .bottom-bar, .revise-card, .day-actions, .stop-quick, .live-card,
-  .map-hint, .map-drag-error, .itinerary-toggle, .workspace .ws-all,
+  .revise-card, .day-actions, .stop-quick, .live-card,
+  .map-hint, .map-drag-error, .itinerary-toggle, .itinerary-act, .workspace .ws-all,
   .share-settings-hint, .share-settings-body, .gen-days-hint,
   .el-dialog__wrapper, .el-overlay,
   .trip-servicing, .packing-list, .trip-event-feed, .quality-card {

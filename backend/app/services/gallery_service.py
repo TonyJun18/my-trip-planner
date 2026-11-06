@@ -16,11 +16,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
-from app.models import Stop, Trip, TripDay
+from app.models import Stop, Trip, TripDay, TripRating
 from app.services._common import TRIP_LOADS as _TRIP_LOADS
 from app.services.inspiration_service import DESTINATIONS
 
@@ -28,6 +28,8 @@ from app.services.inspiration_service import DESTINATIONS
 DEFAULT_TEMPLATE_DAYS = 3
 # 画廊单页上限
 MAX_GALLERY_LIMIT = 50
+# 排序口径：new=最近更新 / hot=评分热度（评分人数 → 均分 → 更新时间）
+GALLERY_SORTS = ("new", "hot")
 
 
 def city_templates(limit: int = 20) -> list[dict[str, Any]]:
@@ -100,20 +102,76 @@ async def _attach_rating_summaries(
     return summaries
 
 
-async def list_gallery(db: AsyncSession, *, limit: int = 20, offset: int = 0) -> list[dict[str, Any]]:
-    """公开画廊列表（已发布 + 有分享令牌，按更新时间倒序）。"""
+async def list_gallery(
+    db: AsyncSession,
+    *,
+    limit: int = 20,
+    offset: int = 0,
+    sort: str = "new",
+    destination: str | None = None,
+    owner: str | None = None,
+) -> dict[str, Any]:
+    """公开画廊列表（已发布 + 有分享令牌）。
+
+    返回 ``{items, total, limit, offset}``——``total`` 是**过滤后的真实总数**
+    （此前返回 ``len(items)``，前端无法做分页）。
+
+    - ``sort``：``new`` 最近更新 / ``hot`` 评分热度（人数 → 均分 → 更新时间）
+    - ``destination``：目的地模糊匹配（画廊筛选条）
+    - ``owner``：只列某个 owner 的发布（「我发布的」；由 API 层从登录态取）
+    """
     limit = max(1, min(int(limit or 20), MAX_GALLERY_LIMIT))
-    stmt = (
-        select(Trip)
-        .options(*_TRIP_LOADS)
-        .where(Trip.is_featured.is_(True), Trip.share_token.is_not(None))
-        .order_by(Trip.updated_at.desc())
-        .limit(limit)
-        .offset(max(0, int(offset or 0)))
+    offset = max(0, int(offset or 0))
+    sort = sort if sort in GALLERY_SORTS else "new"
+
+    conditions: list[Any] = [Trip.is_featured.is_(True), Trip.share_token.is_not(None)]
+    dest = (destination or "").strip()
+    if dest:
+        conditions.append(Trip.destination.ilike(f"%{dest}%"))
+    if owner:
+        conditions.append(Trip.owner == owner)
+
+    total = int(
+        (await db.execute(select(func.count(Trip.id)).where(*conditions))).scalar_one() or 0
     )
+
+    if sort == "hot":
+        # 评分聚合作子查询后 join：排序在 SQL 里做，分页才不会错位
+        agg = (
+            select(
+                TripRating.trip_id.label("trip_id"),
+                func.count(TripRating.id).label("cnt"),
+                func.avg(TripRating.rating).label("avg"),
+            )
+            .group_by(TripRating.trip_id)
+            .subquery()
+        )
+        stmt = (
+            select(Trip)
+            .options(*_TRIP_LOADS)
+            .outerjoin(agg, agg.c.trip_id == Trip.id)
+            .where(*conditions)
+            .order_by(
+                func.coalesce(agg.c.cnt, 0).desc(),
+                func.coalesce(agg.c.avg, 0).desc(),
+                Trip.updated_at.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+    else:
+        stmt = (
+            select(Trip)
+            .options(*_TRIP_LOADS)
+            .where(*conditions)
+            .order_by(Trip.updated_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+
     trips = (await db.execute(stmt)).scalars().all()
-    summaries = [_gallery_summary(t) for t in trips]
-    return await _attach_rating_summaries(db, summaries)
+    summaries = await _attach_rating_summaries(db, [_gallery_summary(t) for t in trips])
+    return {"items": summaries, "total": total, "limit": limit, "offset": offset}
 
 
 async def publish_to_gallery(

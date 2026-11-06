@@ -24,22 +24,29 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        'trip_ratings',
-        sa.Column('id', sa.String(length=36), nullable=False),
-        sa.Column('trip_id', sa.String(length=36), nullable=False),
-        sa.Column('user_id', sa.String(length=36), nullable=False),
-        sa.Column('rating', sa.Integer(), nullable=False),  # 1-5
-        sa.Column('visited', sa.Boolean(), server_default=sa.text('false'), nullable=False),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.ForeignKeyConstraint(['trip_id'], ['trips.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('user_id', 'trip_id', name='uq_trip_ratings_user_trip'),
-    )
-    op.create_index(op.f('ix_trip_ratings_trip_id'), 'trip_ratings', ['trip_id'], unique=False)
-    op.create_index(op.f('ix_trip_ratings_user_id'), 'trip_ratings', ['user_id'], unique=False)
+    # 防御式幂等（项目哲学）：`create_all` 可能已建表/索引，先查后建
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if not inspector.has_table('trip_ratings'):
+        op.create_table(
+            'trip_ratings',
+            sa.Column('id', sa.String(length=36), nullable=False),
+            sa.Column('trip_id', sa.String(length=36), nullable=False),
+            sa.Column('user_id', sa.String(length=36), nullable=False),
+            sa.Column('rating', sa.Integer(), nullable=False),  # 1-5
+            sa.Column('visited', sa.Boolean(), server_default=sa.text('false'), nullable=False),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+            sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+            sa.ForeignKeyConstraint(['trip_id'], ['trips.id'], ondelete='CASCADE'),
+            sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+            sa.PrimaryKeyConstraint('id'),
+            sa.UniqueConstraint('user_id', 'trip_id', name='uq_trip_ratings_user_trip'),
+        )
+    existing_indexes = {ix['name'] for ix in sa.inspect(bind).get_indexes('trip_ratings')}
+    if op.f('ix_trip_ratings_trip_id') not in existing_indexes:
+        op.create_index(op.f('ix_trip_ratings_trip_id'), 'trip_ratings', ['trip_id'], unique=False)
+    if op.f('ix_trip_ratings_user_id') not in existing_indexes:
+        op.create_index(op.f('ix_trip_ratings_user_id'), 'trip_ratings', ['user_id'], unique=False)
 
 
 def downgrade() -> None:

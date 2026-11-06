@@ -106,6 +106,9 @@ class TripOut(BaseModel):
     status: str
     share_token: str | None = None
     edit_token: str | None = None
+    # 灵感画廊状态（分享页/详情页据此显示「以此为蓝本创建」CTA，Task gallery-v2）
+    is_featured: bool = False
+    gallery_blurb: str | None = None
     # 人工兜底（task-human-escalation-eval）：最新 AI plan 的 quality 是否命中
     # 需人工复核信号（finalized / passed=false / degraded）。派生字段，非存储。
     escalated: bool = False

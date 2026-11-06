@@ -116,3 +116,24 @@
   - 验收：专项 36 例全绿（原 27 过 9 红全转绿）、全套 729 passed、前端 build 通过、i18n solver/profile/App 键 zh/en 双侧齐
   - 提交：分支 nightly/2026-10-29/8-task-floattrip-borrow，2 commits（de3b301 主接线 / fb2fbb7 导航入口）
   - **遗留（诚实标注）**：①useDragEdit 未接入详情页 UI（Story 1 交互切换待排期，后端契约/API/composable 已就位）；②Story 3 @ 选择器前端未实现（本次只做了版本保留后端基石）；③Story 5 任务运行时 / 移动端 / 补充卡片为 P2 未做；④stash@{0} 另有一批 floattrip WIP（含 PlanTaskEventsOut 导出修复）按 stash 标注留给白天核验
+
+## 2026-11-06 画廊 v2 交付 + 方案 3 备忘录（仓库路径 ~/Documents/my-agent/my-trip-planner）
+
+- [x] task-gallery-v2: 灵感画廊闭环（frontend+backend，工作区已实现未提交）
+  - 背景：导航「灵感画廊」曾跳 `/?view=gallery`（营销首页，画廊是页面最底部 section，y≈2330/3469），等于「发布到画廊」没有落地页；卡片整卡点击直接 clone，无预览；发布后无撤回入口。
+  - 后端：`gallery_service.list_gallery` 返回真实 `{items,total,limit,offset}`（此前 total=len(items) 无法分页）+ `sort=new|hot`（hot 用评分聚合子查询 outer join，排序在 SQL 里做保证分页正确）+ `destination=` ilike 筛选 + `owner=`（我的发布）；`TripOut` 增 `is_featured/gallery_blurb`（分享详情页 CTA 依据）；`GET /trips/gallery` 新增 `sort/destination/mine` 参数，`mine=1` 未登录 401。
+  - 前端：新路由 `/gallery`（public）+ `views/GalleryView.vue`（全部精选 / 我发布的 tab、目的地筛选、最新/最热、分页、空态、城市模板开工位、撤回发布）；`components/gallery/GalleryCard.vue`（封面渐变 + 天数角标 + 评分热度 + 「看详情」/「以此为蓝本创建」双动作）；导航改真跳转 + `?view=gallery` 兼容 302；LandingPage 画廊块改 4 张 i18n teaser（清掉硬编码中文）；`ShareView` 加画廊来源 CTA（`?from=gallery` 或 `is_featured`，未登录先登录回跳）；i18n `gallery.*` 39 键 zh/en。
+  - 顺带修复（环境）：dev 库 alembic 落后两个版本（`c2d4e6f8a0b2` trip_ratings / `f2a3b4c5d6e7` share_tokens.password_hash），导致**所有分享链接 500**（`column share_tokens.password_hash does not exist`）；`c2d4e6f8a0b2` 迁移非幂等（create_all 已建表 → DuplicateTable），已改防御式（has_table/get_indexes 先查后建）后 upgrade 到 head。
+  - 验收：`test_gallery_v2.py` 6 例新用例全绿（分页 total / 目的地筛选 / 热度排序 / mine 401 / mine 只列自己+撤回 / 分享载荷暴露 is_featured）；全套 752 passed；前端 build 通过 + `npm run check:i18n` 915 键双侧齐；浏览器实测：`/gallery` 中英双语气泡、`?view=gallery` → `/gallery`、分享页 CTA 与未登录回跳、390px 无横向溢出。
+  - 未做（诚实标注）：「我发布的」撤回与复制链路的**登录态 UI 点击实测**未跑（harness 浏览器 token 已被后端 401 清掉，临时注册用户属写操作、审批被拦）；API 层由 6 例测试覆盖，UI 仅渲染/路由验证。
+
+- [ ] task-gallery-community-v3（方案 3 · 社区化，备忘录，暂不排期）: 画廊从「能逛能复制」升级为社区内容库。
+  - 城市聚合页 `/gallery/city/:name`（SEO 入口：聚合该城市精选 + 模板 + 当季提示）
+  - 榜单：本周热门 / 编辑精选——需把现有 `is_featured`（发布标记）拆成 `published` + `editorial_pick`（或加 `gallery_rank`/`picked_at`），否则运营置顶与用户自发布混在一起
+  - 互动：点赞 / 收藏（复用 TripFavorite）/ 评论聚合 / 「被复制 N 次」社会证明（需 clone 计数列或事件表）
+  - 运营位：专题合集（"秋天适合去的 8 个地方"）、OG 分享图（复用 useExport 长图能力）
+  - UGC 治理：举报、敏感词、人工下架队列、发布频率限制（公开内容上量后是硬需求）
+  - 前置：内容量。当前库内仅 1 条真实发布 + 8 张城市模板，先做「官方精选铺首屏」再谈社区化
+  - 验收建议：城市页可被搜索引擎索引（SSR/预渲染或 meta 注入）+ 榜单口径可在 SQL 复现 + 举报到隐藏的时限 SLA + 测试覆盖
+
+- [ ] task-gallery-cold-start（内容冷启动，方案 2 上线前置）: 把 3–5 条打磨过的官方行程 `is_featured=True` 并写卖点，铺满画廊首屏；无评分时卡片诚实显示「还没有评分」（已实现），不做假数据。

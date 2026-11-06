@@ -5,6 +5,8 @@ const routes = [
   { path: '/', name: 'landing', component: () => import('@/views/LandingPage.vue'), meta: { public: true } },
   { path: '/login', name: 'login', component: () => import('@/views/AuthView.vue'), meta: { public: true } },
   { path: '/share/:token', name: 'share', component: () => import('@/views/ShareView.vue'), meta: { public: true } },
+  // 灵感画廊（公开：未登录也能逛，登录后才能复制成自己的行程）
+  { path: '/gallery', name: 'gallery', component: () => import('@/views/GalleryView.vue'), meta: { public: true } },
   // 登录后页面
   { path: '/trips', name: 'trips', component: () => import('@/views/TripListView.vue') },
   { path: '/plan', name: 'plan', component: () => import('@/views/PlanWizard.vue') },

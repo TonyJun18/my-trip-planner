@@ -5,11 +5,14 @@
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, get_optional_user
 from app.core.database import get_session
+from app.core.exceptions import UnauthorizedError
 from app.models import User
 from app.schemas import TripOut
 
@@ -20,13 +23,29 @@ router = APIRouter()
 async def list_gallery(
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0),
+    sort: Literal["new", "hot"] = Query("new", description="new=最近更新 / hot=评分热度"),
+    destination: str | None = Query(None, max_length=64, description="目的地模糊筛选"),
+    mine: bool = Query(False, description="只列我发布的（需登录）"),
     db: AsyncSession = Depends(get_session),
+    user: User | None = Depends(get_optional_user),
 ) -> dict:
-    """精选画廊：owner 发布 + 有分享令牌的行程摘要（目的地/天数/预算/卖点）。"""
+    """精选画廊：owner 发布 + 有分享令牌的行程摘要（目的地/天数/预算/卖点）。
+
+    返回 ``{items, total, limit, offset}``，``total`` 为过滤后的真实总数（分页用）。
+    ``mine=1`` 时按登录态过滤 owner；未登录直接 401（管理视图不能匿名）。
+    """
     from app.services import gallery_service
 
-    items = await gallery_service.list_gallery(db, limit=limit, offset=offset)
-    return {"items": items, "total": len(items)}
+    if mine and user is None:
+        raise UnauthorizedError("请先登录后查看我发布的行程")
+    return await gallery_service.list_gallery(
+        db,
+        limit=limit,
+        offset=offset,
+        sort=sort,
+        destination=destination,
+        owner=user.id if (mine and user) else None,
+    )
 
 
 @router.get("/gallery/templates", summary="城市模板卡（23 目的地知识库，免登录）")
