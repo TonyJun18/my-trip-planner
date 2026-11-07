@@ -127,7 +127,7 @@
   - 验收：`test_gallery_v2.py` 6 例新用例全绿（分页 total / 目的地筛选 / 热度排序 / mine 401 / mine 只列自己+撤回 / 分享载荷暴露 is_featured）；全套 752 passed；前端 build 通过 + `npm run check:i18n` 915 键双侧齐；浏览器实测：`/gallery` 中英双语气泡、`?view=gallery` → `/gallery`、分享页 CTA 与未登录回跳、390px 无横向溢出。
   - 未做（诚实标注）：「我发布的」撤回与复制链路的**登录态 UI 点击实测**未跑（harness 浏览器 token 已被后端 401 清掉，临时注册用户属写操作、审批被拦）；API 层由 6 例测试覆盖，UI 仅渲染/路由验证。
 
-- [ ] task-gallery-community-v3（方案 3 · 社区化，备忘录，暂不排期）: 画廊从「能逛能复制」升级为社区内容库。
+- [x] task-gallery-community-v3（方案 3 · 社区化，备忘录，暂不排期）: 画廊从「能逛能复制」升级为社区内容库。
   - 城市聚合页 `/gallery/city/:name`（SEO 入口：聚合该城市精选 + 模板 + 当季提示）
   - 榜单：本周热门 / 编辑精选——需把现有 `is_featured`（发布标记）拆成 `published` + `editorial_pick`（或加 `gallery_rank`/`picked_at`），否则运营置顶与用户自发布混在一起
   - 互动：点赞 / 收藏（复用 TripFavorite）/ 评论聚合 / 「被复制 N 次」社会证明（需 clone 计数列或事件表）
@@ -135,6 +135,7 @@
   - UGC 治理：举报、敏感词、人工下架队列、发布频率限制（公开内容上量后是硬需求）
   - 前置：内容量。当前库内仅 1 条真实发布 + 8 张城市模板，先做「官方精选铺首屏」再谈社区化
   - 验收建议：城市页可被搜索引擎索引（SSR/预渲染或 meta 注入）+ 榜单口径可在 SQL 复现 + 举报到隐藏的时限 SLA + 测试覆盖
+  - （2026-11-07 worker-7 关闭登记：备忘录在案——docs/plans/2026-11-06-gallery-completion-options.md §方案3「约 1.5–2 周，暂不建议」；11-07 竞品分析佐证行重申「正式排期仍以内容量前置为准」。本项为「备忘录，暂不排期」定性：备忘录已交付、不实现代码；社区化大工程按铁律 10 不自由发挥，重启需用户按内容量数据立项（当前库内 1 条真实发布 + 8 张城市模板，冷启动已标记 3 条 featured 铺首屏））
 
 - [x] task-gallery-cold-start（内容冷启动，方案 2 上线前置）: 把 3–5 条打磨过的官方行程 `is_featured=True` 并写卖点，铺满画廊首屏；无评分时卡片诚实显示「还没有评分」（已实现），不做假数据。（2026-11-07 worker-6 完成：库存审计 5 条 → 标记 3 条真实合格行程（大理/上海/成都，含卖点+share_token），厦门（纯餐饮 critical）与青岛（复制成都的脏数据）如实不标记；新增可复用运营脚本 backend/scripts/gallery_cold_start.py（幂等、默认 dry-run、`--apply` 落库、自动生成缺失 share_token）；验证：库内 is_featured=3 + 画廊服务视角 total=3 + 评分诚实 0/无伪造；评估记录 docs/nightly/evaluations/task-gallery-cold-start-2026-11-07.md（含残余问题：厦门待补景点、青岛建议删除、成都 warning 待白天修订）；分支 nightly/2026-11-07/1-task-gallery-cold-start）
 

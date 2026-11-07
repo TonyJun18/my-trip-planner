@@ -12,9 +12,10 @@
   ],
   "completed": [
     "competitive-analysis",
-    "task-gallery-cold-start"
+    "task-gallery-cold-start",
+    "task-gallery-community-v3"
   ],
-  "current_index": 2,
+  "current_index": 3,
   "claims": {},
   "issues": [
     "2026-11-07 night-start 重建：checkpoint 停在 2026-11-06（night=2026-11-06，current_index=0，completed=[]——night-start 已初始化但 11-06 夜无 worker 产出记录，跨夜按当前日期重建）。todo 文件 11-06 追加条目：task-gallery-community-v3（方案3备忘录，暂不排期）、task-gallery-cold-start（内容冷启动，方案2上线前置，纯运营无代码）为现存唯一 [ ] 项；task-book-ahead-scan 已核验在 main（b4dcd50 rule engine + 1ddc393 merge 11-05），todo 文件漏勾已补勾，不进新队列。按手册铁律 2 竞品分析先行（todo[0]=competitive-analysis）。",
@@ -25,10 +26,12 @@
     "2026-11-07 worker-5 补登记核验：todo 文件 105 行 task-book-ahead-scan 漏勾——worker-4 issues 曾记载「漏勾已补勾」但实际未落盘（main 版 checkpoint 41 行仍 night=2026-11-05 旧版），本夜核对 git branch --contains b4dcd50（main + nightly/2026-11-05/1-task-book-ahead-scan）+ backend/tests/test_booking_scan.py 在案后补勾，无新代码改动。",
     "2026-11-07 worker-6：task-gallery-cold-start 完成——库存审计 5 条 trips：大理（passed=84）已 featured、上海（76，DB 站点已修订版）、成都（75，内容完整但含 warning：编造杭州返程/餐饮 0 计价/占位 POI）；厦门（66，critical 纯餐饮零景点）与青岛（无 plan、整段复制成都的脏数据）**不标记**（不做假数据）。标记 3 条（大理 blurb 优化 + 上海 + 成都），新增 backend/scripts/gallery_cold_start.py（幂等、默认 dry-run、--apply 落库、自动补 share_token），评估记录 docs/nightly/evaluations/task-gallery-cold-start-2026-11-07.md，后端 752 测试全绿。分支 nightly/2026-11-07/1-task-gallery-cold-start。残余问题：① 厦门待白天补景点后再发布/或删除；② 青岛为复制脏数据建议删除；③ 成都 warning 待白天修订（补餐饮价/真实 POI/删杭州返程）——不入本夜队列。",
     "实现观察（继续有效）：10-31 worker-6 开工时白天的 5 个未提交前端改动已由 10-31 worker-6 存入 stash@{0}（BookingPanel/i18n/ChatView/LandingPage），至今存在待用户白天核验；stash@{1} 为 floattrip-borrow WIP 遗留。",
-    "用户视角遗留（继续有效）：task-trip-detail-refactor 阶段二（信息架构/Tab/Flag）未做待 review；share-gate 前端 ShareView 密码 UI 未接线；price-realism rating 前端候选卡展示未接线；trip-rating-signal 评分交互入口未接线。"
+    "用户视角遗留（继续有效）：task-trip-detail-refactor 阶段二（信息架构/Tab/Flag）未做待 review；share-gate 前端 ShareView 密码 UI 未接线；price-realism rating 前端候选卡展示未接线；trip-rating-signal 评分交互入口未接线。",
+    "2026-11-07 worker-7：task-gallery-community-v3 按「备忘录，暂不排期」定性关闭（登记完成、不实现代码）——核验方案 3 备忘录在案（docs/plans/2026-11-06-gallery-completion-options.md §方案3「约 1.5–2 周，暂不建议」+ 11-07 竞品分析佐证行重申「正式排期仍以内容量前置为准」，当前库内 1 条真实发布 + 8 张城市模板、冷启动已标记 3 条 featured）；社区化大工程（城市聚合页/榜单拆分/互动评论/UGC 治理）按铁律 10 不自由发挥，重启需用户按内容量数据立项。无代码改动，纯登记。分支 nightly/2026-11-07/2-task-gallery-community-v3。"
   ],
   "branches": [
     "nightly/2026-11-07/0-competitive-analysis",
-    "nightly/2026-11-07/1-task-gallery-cold-start"
+    "nightly/2026-11-07/1-task-gallery-cold-start",
+    "nightly/2026-11-07/2-task-gallery-community-v3"
   ]
 }
