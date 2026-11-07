@@ -102,7 +102,7 @@
 
 ## 2026-10-30 竞品分析追加（Passage AI 行中预订管理 + 步行体验微调，来自 docs/nightly/competitive-analysis/2026-10-30.md）
 
-- [ ] task-book-ahead-scan: 全行程「预订前瞻扫描」（补功能，backend）——Passage AI「Need tickets?」是 2026 市场上唯一的行中预订管理差异化（扫描全行程、标记 ≤12 个值得提前预订的站点、理由+链接、确认号回填到站点）。我们 10-28 已完成 booking outlink（TripBooking 状态机 suggested→…→confirmed），但只在行程生成时产出建议，没有「对现有行程扫描值得提前订」的独立动作，行中改版/新增站点后无提醒；确认号也只挂在 booking 表、未回填到 stop 级。这是「规划→执行」断点的最后一块砖：最小版（零凭证）= 规则库扫描（timed-entry/热门类目表，复用 booking 链路）+ POST /trips/{id}/bookings/scan 返回可订建议 + 确认号可回填 stop（复用 TripBooking reference 或 stop 挂 booking_id）+ 测试覆盖。与 10-28 方案 A 定位一致（仍不碰钱/库存/合规）。（验收：扫描端点 + 规则库建议 + 确认号回填 + 测试覆盖；排在 task-meal-walk-anchors-eval 之后）
+- [x] task-book-ahead-scan: 全行程「预订前瞻扫描」（补功能，backend）——Passage AI「Need tickets?」是 2026 市场上唯一的行中预订管理差异化（扫描全行程、标记 ≤12 个值得提前预订的站点、理由+链接、确认号回填到站点）。我们 10-28 已完成 booking outlink（TripBooking 状态机 suggested→…→confirmed），但只在行程生成时产出建议，没有「对现有行程扫描值得提前订」的独立动作，行中改版/新增站点后无提醒；确认号也只挂在 booking 表、未回填到 stop 级。这是「规划→执行」断点的最后一块砖：最小版（零凭证）= 规则库扫描（timed-entry/热门类目表，复用 booking 链路）+ POST /trips/{id}/bookings/scan 返回可订建议 + 确认号可回填 stop（复用 TripBooking reference 或 stop 挂 booking_id）+ 测试覆盖。与 10-28 方案 A 定位一致（仍不碰钱/库存/合规）。（验收：扫描端点 + 规则库建议 + 确认号回填 + 测试覆盖；排在 task-meal-walk-anchors-eval 之后）（2026-11-07 worker-5 补登记：主体已由 2026-11-05 完成入 main——b4dcd50 rule engine + 1ddc393 merge（git branch --contains 含 main，backend/tests/test_booking_scan.py 在案）；todo 文件漏勾已补勾，仅登记无新代码改动。注：11-07 checkpoint issues 曾记载「漏勾已补勾」实际未落盘，本夜核对后补勾）
 - [x] task-meal-walk-anchors-eval: 餐饮时段锚定评估（候选评估，backend）——Passage AI 步行导向核心（餐饮放进合理时段、站间步行分钟数）；我们 time_validation 有类目营业基准/体力系数，但无餐饮窗口锚定、无站间步行时长。评估：①MEAL_WINDOWS 规则（早餐 7-10 / 午餐 11:30-14 / 晚餐 17-21，把同类餐饮候选锚定到合理时段，纯规则零凭证）；②站间步行估算（零凭证：城市中心 POI 间 5-15 分钟规则估算 vs 高德距离 API 需凭证——大概率后者关单，与 open-hours-real 同构）；可行则最小版先做餐饮锚定（排程校验 warning + 建议），步行时长评估后再说；不可行记降级关单。（验收：评估记录 +（若可行）餐饮锚定 warning + 测试覆盖；不可行记降级关单）（2026-10-30 worker-4 完成：①餐饮锚定评估通过并实现——time_validation.py 增 MEAL_WINDOWS（breakfast 07:00-10:00 / lunch 11:30-14:00 / dinner 17:00-21:00 半开区间）+ _classify_meal_window 纯函数（窗口内正常；gap_early <07:00 / gap_brunch 10:00-11:30 / gap_afternoon 14:00-17:00（最典型翻车）/ gap_late ≥21:00 四类明确间隙 → warning + 建议窗口）+ _ALL_DAY_MEAL_EXEMPT_KEYWORDS 全天候类目豁免（夜市/夜宵/烧烤/咖啡/甜品/快餐/小吃…宽时段营业不误伤）+ check_plan_time_gate 内独立餐饮锚定循环（复用 cursor 推进，CritiqueIssue 结构进 plan.time_gate.issues + timegate-card 透出通道，basis=rule_based）；i18n zh/en 5 键（timegate.meal.{breakfast,lunch,dinner}/msg.meal_anchor/suggest.meal_anchor）；test_time_validation.py 增 6 组专项全绿，全套 692 passed；②站间步行降级关单——数据源矩阵：规则估算跨城/远郊臆断不可靠且与 DrivingGate 自驾语义重叠矛盾，高德步行 API/Google Directions 需凭证、OSRM 自托管运维成本，与 open-hours-real 同构关单，维持「站间交通不在时间规则库」现状；评估记录 docs/nightly/evaluations/task-meal-walk-anchors-eval-2026-10-30.md；分支 nightly/2026-10-30/1-task-meal-walk-anchors-eval 待用户 review）
 
 ## 2026-10-30 白天收编（用户续做 task-floattrip-borrow）——对标 FloatTrip 迭代：取回悬空 WIP + 接线
@@ -137,3 +137,14 @@
   - 验收建议：城市页可被搜索引擎索引（SSR/预渲染或 meta 注入）+ 榜单口径可在 SQL 复现 + 举报到隐藏的时限 SLA + 测试覆盖
 
 - [ ] task-gallery-cold-start（内容冷启动，方案 2 上线前置）: 把 3–5 条打磨过的官方行程 `is_featured=True` 并写卖点，铺满画廊首屏；无评分时卡片诚实显示「还没有评分」（已实现），不做假数据。
+
+## 2026-11-07 竞品分析追加（OTA/巨头全量自带 AI 规划 + 收购收编 + 巨头 token 成本，来自 docs/nightly/competitive-analysis/2026-11-07.md）
+
+- [ ] content-acquisition-endgame: 文章《收购季：规划入口巨头化》（内容沉淀，docs）——2026 收官实证：Expedia×Layla（7-31 收购细节：€5M/25 人/对话式规划+live pricing 预订/并入 Expedia/Hotels.com/Vrbo，Skift 直抓正文）+ Airbnb 2027 H1 AI agent 官宣（11-06，TechCrunch/Verge/Engadget 多源）+ Hilton/Marriott/Booking/Trip.com/Kayak/eDreams 一周内全量上线 AI planner；与 14 文《巨头免费化之后》衔接（被收购 vs 关停 vs 小而锋利），论证独立工具只剩「深度 + 中立」缝隙（验收：docs/articles/15-*.md 存在且内容完整，代码引用与仓库一致，发布清单补卡片；与 14 文时间线衔接）
+- [ ] task-booking-neutrality-eval: 预订中立性显性化（候选评估，backend/docs）——OTA 收购/自带后「中立规划」从默认变稀缺（Layla/Airbnb/Hilton/Booking/Trip.com 全自营预订闭环），我们 10-28 方案 A outlink 是「中立跳转不碰钱」。评估把「中立立场」做成显性差异的最小成本路径（落地页/README 声明 + 导出 JSON 用户数据自由已在手）+ 是否值得并入 15 文或单独立项；可行则最小版声明落地，不可行记降级关单。（验收：评估记录 +（若可行）声明落地 + 测试覆盖；纯文档则无 pytest 需求）
+- [ ] task-quota-governance-eval: 登录用户额度治理（候选评估，backend，10-30 观察项升级）——Wanderlog 免费 5 条/行程封顶 + Hilton CIO 公开谈 tokenomics（11-07）= 巨头也在治理 LLM 成本；我们规则库优先已有成本压舱，但登录用户无硬额度仍是敞口。评估：轻量额度提示（规划次数计数 + 文案，零表零迁移）vs 配额表/限流（与 guest-trial 重启同源，需用户立项）；可行则最小版后端计数 + 前端提示 + 测试覆盖，不可行记降级关单。（验收：评估记录（额度方案矩阵 + 建议）+（若可行）实现 + 测试覆盖）
+- [ ] content-trust-gap-update: 13 文《信任缺口》补 11 月实证（内容沉淀，docs）——Hilton AI planner 用户不买账（「Customers Aren't So Sure Yet」）+ Airbnb 1/3 客服 AI 化 + Agoda 调查「AI 规划上升但旅客保留预订控制权」= 13 文新一批量化素材。（验收：13 文补「2026-11 更新」段落（日期明确 + 与正文衔接）+ 发布清单注释）
+
+## 2026-11-07 备忘追加（gallery-community-v3 外部佐证，来自 docs/nightly/competitive-analysis/2026-11-07.md）
+
+- [ ] （备注追加）task-gallery-community-v3 佐证：Airbnb AI search + social features、Hilton/Trip.com AI planner 均带 inspiration 内容位——「内容社区化」是巨头默认动作，与画廊 v2→v3 方向一致；正式排期仍以内容量前置为准（当前库内 1 条真实发布 + 8 张城市模板）。
