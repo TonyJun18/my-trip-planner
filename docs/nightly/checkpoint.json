@@ -1,6 +1,6 @@
 {
   "night": "2026-11-07",
-  "status": "in_progress",
+  "status": "completed_with_issues",
   "todo": [
     "competitive-analysis",
     "task-gallery-cold-start",
@@ -13,9 +13,10 @@
   "completed": [
     "competitive-analysis",
     "task-gallery-cold-start",
-    "task-gallery-community-v3"
+    "task-gallery-community-v3",
+    "content-acquisition-endgame"
   ],
-  "current_index": 3,
+  "current_index": 4,
   "claims": {},
   "issues": [
     "2026-11-07 night-start 重建：checkpoint 停在 2026-11-06（night=2026-11-06，current_index=0，completed=[]——night-start 已初始化但 11-06 夜无 worker 产出记录，跨夜按当前日期重建）。todo 文件 11-06 追加条目：task-gallery-community-v3（方案3备忘录，暂不排期）、task-gallery-cold-start（内容冷启动，方案2上线前置，纯运营无代码）为现存唯一 [ ] 项；task-book-ahead-scan 已核验在 main（b4dcd50 rule engine + 1ddc393 merge 11-05），todo 文件漏勾已补勾，不进新队列。按手册铁律 2 竞品分析先行（todo[0]=competitive-analysis）。",
@@ -27,11 +28,13 @@
     "2026-11-07 worker-6：task-gallery-cold-start 完成——库存审计 5 条 trips：大理（passed=84）已 featured、上海（76，DB 站点已修订版）、成都（75，内容完整但含 warning：编造杭州返程/餐饮 0 计价/占位 POI）；厦门（66，critical 纯餐饮零景点）与青岛（无 plan、整段复制成都的脏数据）**不标记**（不做假数据）。标记 3 条（大理 blurb 优化 + 上海 + 成都），新增 backend/scripts/gallery_cold_start.py（幂等、默认 dry-run、--apply 落库、自动补 share_token），评估记录 docs/nightly/evaluations/task-gallery-cold-start-2026-11-07.md，后端 752 测试全绿。分支 nightly/2026-11-07/1-task-gallery-cold-start。残余问题：① 厦门待白天补景点后再发布/或删除；② 青岛为复制脏数据建议删除；③ 成都 warning 待白天修订（补餐饮价/真实 POI/删杭州返程）——不入本夜队列。",
     "实现观察（继续有效）：10-31 worker-6 开工时白天的 5 个未提交前端改动已由 10-31 worker-6 存入 stash@{0}（BookingPanel/i18n/ChatView/LandingPage），至今存在待用户白天核验；stash@{1} 为 floattrip-borrow WIP 遗留。",
     "用户视角遗留（继续有效）：task-trip-detail-refactor 阶段二（信息架构/Tab/Flag）未做待 review；share-gate 前端 ShareView 密码 UI 未接线；price-realism rating 前端候选卡展示未接线；trip-rating-signal 评分交互入口未接线。",
-    "2026-11-07 worker-7：task-gallery-community-v3 按「备忘录，暂不排期」定性关闭（登记完成、不实现代码）——核验方案 3 备忘录在案（docs/plans/2026-11-06-gallery-completion-options.md §方案3「约 1.5–2 周，暂不建议」+ 11-07 竞品分析佐证行重申「正式排期仍以内容量前置为准」，当前库内 1 条真实发布 + 8 张城市模板、冷启动已标记 3 条 featured）；社区化大工程（城市聚合页/榜单拆分/互动评论/UGC 治理）按铁律 10 不自由发挥，重启需用户按内容量数据立项。无代码改动，纯登记。分支 nightly/2026-11-07/2-task-gallery-community-v3。"
+    "2026-11-07 worker-7：task-gallery-community-v3 按「备忘录，暂不排期」定性关闭（登记完成、不实现代码）——核验方案 3 备忘录在案（docs/plans/2026-11-06-gallery-completion-options.md §方案3「约 1.5–2 周，暂不建议」+ 11-07 竞品分析佐证行重申「正式排期仍以内容量前置为准」，当前库内 1 条真实发布 + 8 张城市模板、冷启动已标记 3 条 featured）；社区化大工程（城市聚合页/榜单拆分/互动评论/UGC 治理）按铁律 10 不自由发挥，重启需用户按内容量数据立项。无代码改动，纯登记。分支 nightly/2026-11-07/2-task-gallery-community-v3。",
+    "2026-11-07 worker-8：content-acquisition-endgame 完成——① 新增 docs/articles/15-acquisition-season.md（收购季：Expedia×Layla 细节 €5M/25人/并入三大品牌 + Airbnb 2027 H1 agent 官宣 + Hilton/Marriott/Booking/Trip.com/Kayak/eDreams 一周全量上线；衔接 14 文，论证独立工具只剩「深度（四维质检/修订闭环/行中/诚实预算，均引真实代码）+ 中立（outlink 不碰钱 + JSON 导出）」两缝隙 + 巨头软肋 tokenomics/用户不买账）；② 发布清单补 ⑮ 卡片 + 速查表 14-15；③ todo 勾选该条目（同步 8b01d5d 的 todo 覆盖 main 旧版——竞品分析追加条目 11-07 已在分支未入 main，本次用 git checkout 8b01d5d -- docs/night-build-todo.md 带最新登记）；④ 代码引用核验全部在案（revise_service diff 原子应用 / TravelCriticAgent+T-A-O / TimeGate/DrivingGate/dynamic_facts / budget_service.estimate_hotel_cost / inspiration_service / booking_service build_deeplink / export_service JSON / gallery_service）。纯 docs 内容任务，无 pytest/build 需求。分支 nightly/2026-11-07/3-content-acquisition-endgame。工作区白天未提交改动（gallery v2 等）未触碰，commit 只 add 本任务产物。"
   ],
   "branches": [
     "nightly/2026-11-07/0-competitive-analysis",
     "nightly/2026-11-07/1-task-gallery-cold-start",
-    "nightly/2026-11-07/2-task-gallery-community-v3"
+    "nightly/2026-11-07/2-task-gallery-community-v3",
+    "nightly/2026-11-07/3-content-acquisition-endgame"
   ]
 }
