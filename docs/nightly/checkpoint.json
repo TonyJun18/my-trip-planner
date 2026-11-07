@@ -11,9 +11,10 @@
     "content-trust-gap-update"
   ],
   "completed": [
-    "competitive-analysis"
+    "competitive-analysis",
+    "task-gallery-cold-start"
   ],
-  "current_index": 1,
+  "current_index": 2,
   "claims": {},
   "issues": [
     "2026-11-07 night-start 重建：checkpoint 停在 2026-11-06（night=2026-11-06，current_index=0，completed=[]——night-start 已初始化但 11-06 夜无 worker 产出记录，跨夜按当前日期重建）。todo 文件 11-06 追加条目：task-gallery-community-v3（方案3备忘录，暂不排期）、task-gallery-cold-start（内容冷启动，方案2上线前置，纯运营无代码）为现存唯一 [ ] 项；task-book-ahead-scan 已核验在 main（b4dcd50 rule engine + 1ddc393 merge 11-05），todo 文件漏勾已补勾，不进新队列。按手册铁律 2 竞品分析先行（todo[0]=competitive-analysis）。",
@@ -22,10 +23,12 @@
     "2026-11-07 worker-5：competitive-analysis 由 worker-5 接管完成（worker-4 于 06:09 CST 认领，至 08:25 无任何产出——无 11-07 文档/无分支/checkpoint 未更新，超 90 分钟认领窗口按重试协议接管；先核验无未提交实现后执行）。产出 docs/nightly/competitive-analysis/2026-11-07.md + todo 4 行动项入库 + book-ahead 漏勾补勾，分支 nightly/2026-11-07/0-competitive-analysis（2 commits：f6b31fb 分析文档 / 574cac2 todo 登记）。纯 docs 任务无 pytest/build 需求。",
     "2026-11-07 worker-5 网络观察：web_search 三个 keyless 后端（Parallel/Exa/Tavily）全部 SSL EOF 不可用（与 10-17/10-21/10-23/10-30 记录一致，未重试）；web_extract 对 skift.com/cybernews.com 仍被 URL 过滤 Blocked；改用 Google News RSS（6 组查询）+ curl 直抓 Skift 正文成功完成本夜分析。",
     "2026-11-07 worker-5 补登记核验：todo 文件 105 行 task-book-ahead-scan 漏勾——worker-4 issues 曾记载「漏勾已补勾」但实际未落盘（main 版 checkpoint 41 行仍 night=2026-11-05 旧版），本夜核对 git branch --contains b4dcd50（main + nightly/2026-11-05/1-task-book-ahead-scan）+ backend/tests/test_booking_scan.py 在案后补勾，无新代码改动。",
+    "2026-11-07 worker-6：task-gallery-cold-start 完成——库存审计 5 条 trips：大理（passed=84）已 featured、上海（76，DB 站点已修订版）、成都（75，内容完整但含 warning：编造杭州返程/餐饮 0 计价/占位 POI）；厦门（66，critical 纯餐饮零景点）与青岛（无 plan、整段复制成都的脏数据）**不标记**（不做假数据）。标记 3 条（大理 blurb 优化 + 上海 + 成都），新增 backend/scripts/gallery_cold_start.py（幂等、默认 dry-run、--apply 落库、自动补 share_token），评估记录 docs/nightly/evaluations/task-gallery-cold-start-2026-11-07.md，后端 752 测试全绿。分支 nightly/2026-11-07/1-task-gallery-cold-start。残余问题：① 厦门待白天补景点后再发布/或删除；② 青岛为复制脏数据建议删除；③ 成都 warning 待白天修订（补餐饮价/真实 POI/删杭州返程）——不入本夜队列。",
     "实现观察（继续有效）：10-31 worker-6 开工时白天的 5 个未提交前端改动已由 10-31 worker-6 存入 stash@{0}（BookingPanel/i18n/ChatView/LandingPage），至今存在待用户白天核验；stash@{1} 为 floattrip-borrow WIP 遗留。",
     "用户视角遗留（继续有效）：task-trip-detail-refactor 阶段二（信息架构/Tab/Flag）未做待 review；share-gate 前端 ShareView 密码 UI 未接线；price-realism rating 前端候选卡展示未接线；trip-rating-signal 评分交互入口未接线。"
   ],
   "branches": [
-    "nightly/2026-11-07/0-competitive-analysis"
+    "nightly/2026-11-07/0-competitive-analysis",
+    "nightly/2026-11-07/1-task-gallery-cold-start"
   ]
 }

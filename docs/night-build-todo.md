@@ -136,7 +136,7 @@
   - 前置：内容量。当前库内仅 1 条真实发布 + 8 张城市模板，先做「官方精选铺首屏」再谈社区化
   - 验收建议：城市页可被搜索引擎索引（SSR/预渲染或 meta 注入）+ 榜单口径可在 SQL 复现 + 举报到隐藏的时限 SLA + 测试覆盖
 
-- [ ] task-gallery-cold-start（内容冷启动，方案 2 上线前置）: 把 3–5 条打磨过的官方行程 `is_featured=True` 并写卖点，铺满画廊首屏；无评分时卡片诚实显示「还没有评分」（已实现），不做假数据。
+- [x] task-gallery-cold-start（内容冷启动，方案 2 上线前置）: 把 3–5 条打磨过的官方行程 `is_featured=True` 并写卖点，铺满画廊首屏；无评分时卡片诚实显示「还没有评分」（已实现），不做假数据。（2026-11-07 worker-6 完成：库存审计 5 条 → 标记 3 条真实合格行程（大理/上海/成都，含卖点+share_token），厦门（纯餐饮 critical）与青岛（复制成都的脏数据）如实不标记；新增可复用运营脚本 backend/scripts/gallery_cold_start.py（幂等、默认 dry-run、`--apply` 落库、自动生成缺失 share_token）；验证：库内 is_featured=3 + 画廊服务视角 total=3 + 评分诚实 0/无伪造；评估记录 docs/nightly/evaluations/task-gallery-cold-start-2026-11-07.md（含残余问题：厦门待补景点、青岛建议删除、成都 warning 待白天修订）；分支 nightly/2026-11-07/1-task-gallery-cold-start）
 
 ## 2026-11-07 竞品分析追加（OTA/巨头全量自带 AI 规划 + 收购收编 + 巨头 token 成本，来自 docs/nightly/competitive-analysis/2026-11-07.md）
 
