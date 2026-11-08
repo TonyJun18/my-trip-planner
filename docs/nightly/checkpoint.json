@@ -1,6 +1,6 @@
 {
   "night": "2026-11-08",
-  "status": "in_progress",
+  "status": "completed",
   "todo": [
     "competitive-analysis",
     "task-booking-neutrality-eval",
@@ -8,18 +8,25 @@
     "content-trust-gap-update"
   ],
   "completed": [
-    "competitive-analysis"
+    "competitive-analysis",
+    "task-booking-neutrality-eval",
+    "task-quota-governance-eval",
+    "content-trust-gap-update"
   ],
-  "current_index": 1,
+  "current_index": 4,
   "claims": {},
   "issues": [
     "2026-11-08 night-start 重建：checkpoint 停在 2026-11-07（night=2026-11-07，status=completed_with_issues，current_index=4）且 11-07 全部任务已完成——11-07 23:30 的 night-start 未见重建痕迹，跨夜按当前日期重建。todo 文件现存 [ ] 项：task-booking-neutrality-eval / task-quota-governance-eval / content-trust-gap-update；gallery-community-v3 佐证为备注追加不入队列。按手册铁律 2 竞品分析先行（todo[0]=competitive-analysis）。",
-    "2026-11-08 06:20 night-worker-7 认领 competitive-analysis 后无任何产出（无 docs/nightly/competitive-analysis/2026-11-08.md、无分支、checkpoint 未推进）——超 90 分钟认领窗口，本日白天按重试协议接管执行（先核验无未提交实现：工作区仅有白天 gallery v2 残留，与本任务无关）。产出 docs/nightly/competitive-analysis/2026-11-08.md + todo 追加 2 个补功能项（task-ics-export / task-auto-optimize-cta）+ 3 条佐证，claims 清空、current_index 推进至 1。",
+    "2026-11-08 06:20 night-worker-7 认领 competitive-analysis 后无任何产出（无 11-08 文档、无分支、checkpoint 未推进）——超 90 分钟认领窗口，2026-11-08 白天按重试协议接管执行（先核验无未提交实现）。产出 docs/nightly/competitive-analysis/2026-11-08.md + todo 追加 2 个补功能项（task-ics-export / task-auto-optimize-cta）+ 3 条佐证，claims 清空、current_index 推进至 1。",
+    "2026-11-08 完成 task-booking-neutrality-eval（commit e5e2e4a）：评估通过、方案 B 落地——落地页 whyPoints 第 4 张价值卡（landing.whyNeutralTitle/Desc）+ README「中立立场：规划不卖货」小节 + 「已知局限」表把「无预订闭环」改写为有意边界；方案 C/D 关单；评估记录 docs/nightly/evaluations/task-booking-neutrality-eval-2026-11-08.md；check:i18n 921 键 ×2、build 4.07s 通过。纯文案+docs，无新增 pytest 用例（全量回归见下条）。",
+    "2026-11-08 完成 task-quota-governance-eval（commit 8b3ac6a）：实现最小版方案 B——app/services/quota_service.py（零表零迁移，投影既有 plan_tasks，24h 滚动窗口 count+min 单查询、summarize 纯函数、resets_at）+ PlanQuotaOut + GET /api/v1/planner/quota（只读、登录必需、不拦截提交）+ 前端 PlanWizard 提交按钮下软提示（未登录不发请求、达阈值转琥珀色、成功后本地 +1）+ http.js 支持 config.silent；test_quota_service.py 9 例全绿（含「额度耗尽仍 202 入队」），全套 761 passed、build 3.86s、check:i18n 923 键 ×2；硬配额（方案 C）/匿名 IP 限流（方案 D）与升级触发条件写入 docs/nightly/evaluations/task-quota-governance-eval-2026-11-08.md，需用户立项。",
+    "2026-11-08 完成 content-trust-gap-update（commit 4b0c439）：13 文补 §八（Allianz 37% 渗透率 / Airbnb「通用 agent 流量与成交都少 + chat 窗口是错误规划形态」/ Hilton「用户还不确定」+ tokenomics / Cape Town Tourism 本地专业度）+「新证据 → 工程对应」对照表；publish-list ⑬ 卡片补更新说明；纯 docs。",
+    "2026-11-08 白天另闭环 11-06 遗留的 gallery v2 未提交成果（commits 422ec0e 前端 / 2366116 六例测试 / 19475a1 方案备忘录与 11-07 夜报 / e0eb35c OPC 付费点文档）：核验 build 3.76s + check:i18n 919 键 ×2 + test_gallery_v2 6 passed。此前 main 上 /gallery 路由与 package.json check:i18n 已存在、组件本体未入库，属隐性破损，已消除。",
     "路径偏差（继续有效）：手册第0节项目路径写 /Users/pengjun/Desktop/my-agent/my-trip-planner，实际仓库在 /Users/pengjun/Documents/my-agent/my-trip-planner，按实际路径执行。",
-    "工作区 gallery v2 白天成果已闭环（2026-11-08 白天）：422ec0e 前端（GalleryView/GalleryCard/ratings.js/check-i18n.mjs）+ 2366116 六例测试 + 19475a1 方案备忘录与 11-07 夜报 + e0eb35c OPC 付费点文档；核验 build 3.76s + check:i18n 919 键 ×2 + test_gallery_v2 6 passed。此后工作区应保持干净。",
-    "网络观察（继续有效，本夜重测）：10-17/10-21/10-23/10-30/11-07 web_search keyless 后端（Parallel/Exa/Tavily）SSL EOF 不可用；web_extract 部分域名被 URL 过滤。2026-11-08 实测：web_search 可用（firecrawl + exa 双后端均返回），无需降级；本夜未用 web_extract。",
+    "网络观察（继续有效）：10-17/10-21/10-23/10-30/11-07 web_search keyless 后端 SSL EOF；2026-11-08 实测 web_search 可用（firecrawl + exa 双后端均返回），无需降级；本日未使用 web_extract。",
     "stash 遗留（继续有效）：stash@{0} 为 10-31 白天 5 个前端改动（BookingPanel/i18n/ChatView/LandingPage），stash@{1} 为 floattrip-borrow WIP，待用户白天核验。",
-    "用户视角遗留（继续有效）：task-trip-detail-refactor 阶段二（信息架构/Tab/Flag）未做待 review；share-gate 前端 ShareView 密码 UI 未接线；price-realism rating 前端候选卡展示未接线；trip-rating-signal 评分交互入口未接线（画廊 v2 已在分享页接了评分条，详情页控件仍缺）。"
+    "用户视角遗留（继续有效）：task-trip-detail-refactor 阶段二（信息架构/Tab/Flag）未做待 review；share-gate 前端 ShareView 密码 UI 未接线；price-realism rating 前端候选卡展示未接线；trip-rating-signal 详情页评分控件未接线（画廊分享页评分条已上线）。",
+    "新队列（本日竞品分析追加，未排期）：task-ics-export（导出补 ICS 日历订阅，Petrel Voyage 对标）、task-auto-optimize-cta（详情页「按最优顺序重排」一键入口，复用既有 solver/reorder 内核）。"
   ],
   "branches": []
 }
