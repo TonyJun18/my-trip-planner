@@ -10,6 +10,7 @@ from app.api.v1 import (
     email_import,
     expenses,
     export,
+    flags,
     health,
     inspiration,
     link_import,
@@ -36,6 +37,8 @@ from app.api.v1 import (
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(health.router, tags=["health"])
+# 前端 feature flag 下发（服务端回滚口）：无鉴权、只回布尔，见 api/v1/flags.py
+api_router.include_router(flags.router, tags=["flags"])
 # inspiration 先于 trips 注册：/trips/inspiration 是字面量路径，
 # 若排在 trips_* 之后会被 GET /{trip_id} 吞掉（trip_id="inspiration" → 404）
 api_router.include_router(inspiration.router, prefix="/trips", tags=["trips"])

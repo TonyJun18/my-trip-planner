@@ -8,6 +8,7 @@ import en from 'element-plus/es/locale/lang/en'
 import LangSwitcher from '@/components/LangSwitcher.vue'
 import { useInstallPrompt } from '@/composables/useInstallPrompt'
 import { registerSW } from '@/utils/pwa'
+import { primeFlags } from '@/utils/flags'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -28,6 +29,9 @@ const showInstallPrompt = computed(() => auth.isLoggedIn && install.shouldShow.v
 onMounted(() => {
   auth.fetchMe()
   install.bind()
+  // 服务端 feature flag 快照（回滚口）：失败静默，不阻塞首屏；拿到后响应式生效。
+  // 放在 onMounted 而不是 setup 顶部：不让网络等待拖慢首帧（默认值先渲染）。
+  primeFlags()
   // PWA 更新监听：新版本就绪时提示（updatefound + controllerchange 双通道，防时序丢失）
   unregisterSW = registerSW(() => {
     showUpdatePrompt.value = true

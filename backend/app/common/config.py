@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     HOST: str = "127.0.0.1"
     PORT: int = 8090
 
+    # ── 前端 feature flag（服务端回滚口） ────────────────────
+    FEATURE_FLAGS_JSON: str = "{}"
+    """前端开关下发（JSON 对象；键必须以 ``tripDetail.`` 开头，值 ``true/false`` 或 ``{"on": bool}``）。
+
+    改这里 + 重启后端 = **全站版面回滚，不需要重新发布前端**（前端 60s 缓存内自愈）。
+    详情页 IA v2 的运维回滚口，见 ``docs/plans/2026-11-08-trip-detail-ia-v2-phase2-closeout.md`` §3.1。
+    非法 JSON 一律降级为空开关，绝不阻断启动（``app/services/feature_flags.py``）。
+    """
+
     SERPAPI_API_KEY: str | None = None
     TAVILY_API_KEY: str | None = None
     LLM_TIMEOUT: int = 60

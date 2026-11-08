@@ -24,7 +24,7 @@ import { useEditDialog } from '@/composables/useEditDialog'
 import { useTripShareActions } from '@/composables/useTripShareActions'
 import { useExport } from '@/composables/useExport'
 import { useTripTypes } from '@/composables/useTripTypes'
-import { isFlagOn } from '@/utils/flags'
+import { useFlag } from '@/utils/flags'
 import { detailPhase, currentDayNumber } from '@/utils/tripPhase'
 import { trackEvent, ANALYTICS_EVENTS, tripPhase } from '@/api/modules/analytics'
 
@@ -167,9 +167,17 @@ function focusDay(dayNumber) {
 // 四态只服务版面与操作换血；埋点仍用三态 tripPhase（基线口径不能漂移）
 const phase = computed(() => (trip.value ? detailPhase(trip.value) : 'planning'))
 
-// ── 信息架构 v2（feature flag 可回滚）────────────────────
-// flag off = 恢复「三段式工具箱全部平铺」，用于 G1 工具流失对照组
-const iaV2 = ref(isFlagOn('tripDetail.ia.v2'))
+// ── 信息架构 v2（feature flag 分级可回滚）────────────────
+// 总闸 off = 恢复「三段式工具箱全部平铺」，用于 G1 工具流失对照组
+// 子开关仅在总闸开启时生效（依赖关系在 flags.js 里统一处理），分别控制：
+//   tabs        时机 tab 收纳（off = 12 面板平铺，主路径 PlanTools 保留）
+//   hoist       AI 修订 / 备选提升到主路径（off = 回工具箱，G1 对照组）
+//   collapseDays 逐日默认折叠（off = 全展开）
+const iaV2 = useFlag('tripDetail.ia.v2')
+const tabsV2 = useFlag('tripDetail.ia.v2.tabs')
+const hoistV2 = useFlag('tripDetail.ia.v2.hoist')
+const collapseDaysV2 = useFlag('tripDetail.ia.v2.collapseDays')
+
 
 // ── 次级工作台：按时机收纳面板（tab + 全部工具开关）──────────
 const WS_PLAN_KEYS = ['revise', 'planb', 'timegate', 'quality', 'hotel']
@@ -212,6 +220,9 @@ const planTab = computed(() => ({
 }))
 
 const wsTabs = computed(() => {
+  // flag 关闭（总闸 off 或只关 tab 收纳）→ 不出现 tab 条：
+  // 此时 wsKeys 为 null（渲染全部面板），留一个点了不生效的死 tab 是最糟的对照组形态
+  if (!iaV2.value || !tabsV2.value) return []
   const tabs = phaseTabs.value
   if (wsPlanExtra.value && !tabs.some((x) => x.key === 'plan')) return [...tabs, planTab.value]
   return tabs
@@ -219,9 +230,9 @@ const wsTabs = computed(() => {
 
 const activeTab = computed(() => wsTabs.value.find((x) => x.key === wsTab.value) || wsTabs.value[0] || null)
 
-// 传给工具箱的面板白名单：null = 全部（全部工具 / 导出模式）
+// 传给工具箱的面板白名单：null = 全部（全部工具 / 导出模式 / flag 关闭）
 const wsKeys = computed(() => {
-  if (!iaV2.value || wsShowAll.value || exportAll.value) return null
+  if (!iaV2.value || !tabsV2.value || wsShowAll.value || exportAll.value) return null
   return activeTab.value?.keys || null
 })
 
@@ -233,25 +244,52 @@ const wsKeys = computed(() => {
 //   而改行程正是本产品的核心 AI 动作（行前换酒店、行中顺延/删站都靠它）。
 //   因此这里不再跟时机绑定，只保留导出态隐藏（导出物是给同行人看的行程，不该出现输入框）。
 // 行程备选方案（planB 段）仍按数据条件渲染：后端没生成备选就不占版面。
-const planToolsVisible = computed(() => iaV2.value && !exportAll.value)
-// 交给工具箱的「已提升」名单：IA v2 下这两个面板永远不在工具箱里渲染，避免同屏两份
-const hoistedPlanKeys = computed(() => (iaV2.value ? ['revise', 'planb'] : []))
+const planToolsVisible = computed(() => iaV2.value && hoistV2.value && !exportAll.value)
+// 交给工具箱的「已提升」名单：hoist 开启时这两个面板永远不在工具箱里渲染，避免同屏两份。
+// 注意：导出态（PlanTools 卸载）仍然算「已提升」——修订输入框不该被截图/PDF 带走。
+const hoistedPlanKeys = computed(() => (iaV2.value && hoistV2.value ? ['revise', 'planb'] : []))
 
 // 时机切换后重定位到该时机的主 tab（并收起「额外打开的规划」）
 watch(phase, () => {
   wsPlanExtra.value = false
   wsShowAll.value = false
-  wsTab.value = phaseTabs.value[0]?.key || ''
+  wsTab.value = wsTabs.value[0]?.key || ''
 }, { immediate: true })
 
-// 用户手动切 tab 时退出「全部工具」态
+// 开关变化（含服务端 kill switch 运行中到达）→ 回到当前时机的首个 tab。
+// 旧座面残留的 wsTab（如 v2 的 'prep' 在 v1 下不存在）会让 activeTab 落空，
+// 表现为「工作台一片空白」，比整块回滚更糟。
+watch([iaV2, tabsV2], () => {
+  wsPlanExtra.value = false
+  wsShowAll.value = false
+  wsTab.value = wsTabs.value[0]?.key || ''
+})
+
+// 用户手动切 tab 时退出「全部工具」态（顺带埋点：G1 的「tab 迷路」信号）
 function onWsTabChange(key) {
+  if (trip.value?.id) {
+    trackEvent(ANALYTICS_EVENTS.workspaceTabSwitch, {
+      trip_id: trip.value.id,
+      trip_phase: phaseName.value,
+      tab: key || undefined,
+      from: wsShowAll.value ? 'all' : (wsTab.value || undefined),
+    })
+  }
   wsShowAll.value = false
   wsTab.value = key
 }
 
+// 「全部工具」＝ 收纳失败时的逃生通道：打开频次是 G1 最直接的风险信号
 function toggleWsAll() {
-  wsShowAll.value = !wsShowAll.value
+  const next = !wsShowAll.value
+  wsShowAll.value = next
+  if (trip.value?.id) {
+    trackEvent(ANALYTICS_EVENTS.workspaceAllToggle, {
+      trip_id: trip.value.id,
+      trip_phase: phaseName.value,
+      on: next,
+    })
+  }
 }
 
 // ── 逐日折叠：默认只展开当天（行中）/ 第一天，导出全开 ────────
@@ -270,6 +308,8 @@ function initOpenDays() {
 
 function isDayOpen(day) {
   if (exportAll.value) return true
+  // 折叠开关关闭（对照组 / 排查中）：逐日默认全展开
+  if (!collapseDaysV2.value) return true
   return openDayIds.value.has(day.id)
 }
 
@@ -290,6 +330,7 @@ function openDayByNumber(dayNumber) {
 
 const allDaysOpen = computed(() => {
   const days = trip.value?.days || []
+  if (!collapseDaysV2.value) return days.length > 0
   return days.length > 0 && days.every((d) => openDayIds.value.has(d.id))
 })
 
@@ -363,7 +404,8 @@ function scrollToToday() {
 function openTrackTab() {
   wsPlanExtra.value = false
   wsShowAll.value = false
-  wsTab.value = 'live'
+  // flag 关闭时没有 tab 可切，只滚到工具区（不能设一个不存在的 wsTab）
+  if (iaV2.value && tabsV2.value) wsTab.value = 'live'
   scrollToSelector('.workspace')
 }
 
@@ -374,6 +416,13 @@ function scrollToWorkspace() {
 // 「更多 → 调整行程」：聚焦到主路径上的 AI 调整卡片（任何时机都常驻），
 // 顺带打开工作台的「规划」tab（时间校验 / 质检 / 住宿等次级规划工具在那里）。
 function openPlanTool() {
+  // v1 平铺对照组（总闸 off / tab 收纳 off）：没有 tab 可开，滚到工具区即可。
+  // 不发 ai_revise 埋点——埋点口径是「面板被打开」，这里的点击并不能证明它被打开；
+  // 面板自身带 @click capture，用户真展开时会照常上报。
+  if (!iaV2.value || !tabsV2.value) {
+    scrollToWorkspace()
+    return
+  }
   wsPlanExtra.value = true
   wsShowAll.value = false
   wsTab.value = 'plan'
@@ -909,7 +958,12 @@ onBeforeUnmount(() => {
                 <button class="itinerary-act" type="button" @click="onGenDaysClick">
                   <el-icon><Calendar /></el-icon>{{ $t('tripDetail.genDays') }}
                 </button>
-                <button class="itinerary-toggle" type="button" @click="toggleAllDays">
+                <button
+                  v-if="collapseDaysV2"
+                  class="itinerary-toggle"
+                  type="button"
+                  @click="toggleAllDays"
+                >
                   {{ allDaysOpen ? $t('tripDetail.collapseAllDays') : $t('tripDetail.expandAllDays') }}
                 </button>
               </div>
