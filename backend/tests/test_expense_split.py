@@ -13,10 +13,20 @@ from app.models import TripExpense
 
 
 # ── 纯函数：compute_balance ──────────────────────────────────────
-def _rec(amount: float, payer: str = "", category: str = "other") -> TripExpense:
+def _rec(
+    amount: float,
+    payer: str = "",
+    category: str = "other",
+    *,
+    amount_base: float | None = None,
+    currency: str = "CNY",
+    rate_to_base: float = 1.0,
+) -> TripExpense:
     return TripExpense(
         id="x", trip_id="t1", category=category,
         amount=amount, payer=payer, note=None,
+        amount_base=amount_base if amount_base is not None else amount,
+        currency=currency, rate_to_base=rate_to_base,
     )
 
 
@@ -291,3 +301,170 @@ class TestExpenseAPI:
         assert resp.status_code == 200, resp.text
         assert "expenses" not in resp.json()
         assert "balance" not in resp.json()
+
+
+# ── 多币种（task-multi-currency-expense-eval）─────────────────────────
+class TestMultiCurrency:
+    """多币种费用追踪：录入时锁定汇率 + 按基准币折算 + 规则库兜底。"""
+
+    def test_resolve_rate_explicit_wins(self):
+        from app.services.expense_service import resolve_rate_to_base
+
+        assert resolve_rate_to_base("USD", 7.0) == 7.0  # 显式优先
+        assert resolve_rate_to_base("CNY", None) == 1.0
+        assert resolve_rate_to_base("xyz", 3.2) == 3.2  # 未知币种但给了汇率
+
+    def test_resolve_rate_rule_fallback(self):
+        from app.services.expense_service import resolve_rate_to_base
+
+        assert resolve_rate_to_base("USD", None) == 7.1  # 规则库兜底
+        assert resolve_rate_to_base("jpy", None) == 0.047  # 大小写不敏感
+        assert resolve_rate_to_base("", None) == 1.0  # 空 → CNY
+
+    def test_resolve_rate_unknown_raises(self):
+        """未知币种且未给汇率 → 报错，不编造汇率（诚实口径）。"""
+        from app.core.exceptions import AppError
+        from app.services.expense_service import resolve_rate_to_base
+
+        try:
+            resolve_rate_to_base("VND", None)
+            raise AssertionError("应抛 AppError")
+        except AppError as e:
+            assert e.code == "currency_rate_required"
+
+    def test_balance_uses_amount_base(self):
+        """compute_balance 一律按 amount_base 聚合（锁定汇率，不因汇率波动漂移）。"""
+        from app.services.expense_service import compute_balance
+
+        # USD 100 @ 7.1 ≈ CNY 710；JPY 1000 @ 0.047 ≈ CNY 47；CNY 50 直记
+        b = compute_balance(
+            [
+                _rec(100, "小彭", amount_base=710.0, currency="USD", rate_to_base=7.1),
+                _rec(1000, "阿兰", amount_base=47.0, currency="JPY", rate_to_base=0.047),
+                _rec(50, "小彭"),
+            ],
+            travelers=2,
+        )
+        assert b["total"] == 807.0
+        assert b["per_person"] == 403.5
+        assert b["balances"] == {"小彭": 356.5, "阿兰": -356.5}
+        assert b["currencies"] == ["CNY", "JPY", "USD"]
+
+    def test_balance_currencies_collected(self):
+        from app.services.expense_service import compute_balance
+
+        b = compute_balance([_rec(30, "", currency="USD", amount_base=213.0)], travelers=1)
+        assert b["currencies"] == ["USD"]
+        assert b["unassigned"] == 213.0
+
+    async def test_add_expense_with_currency_and_rate(self, db_session):
+        from app.schemas import ExpenseIn
+        from app.services.expense_service import add_expense, list_expenses
+
+        trip = await _make_trip(db_session)
+        e = await add_expense(
+            db_session, trip.id,
+            ExpenseIn(category="food", amount=100, currency="USD", rate_to_base=7.0, payer="小彭"),
+            owner="u-expense",
+        )
+        assert e.currency == "USD"
+        assert e.rate_to_base == 7.0
+        assert e.amount_base == 700.0
+
+        records, balance = await list_expenses(db_session, trip.id, owner="u-expense")
+        assert balance["total"] == 700.0
+        assert balance["balances"] == {"小彭": 350.0}  # 700/2
+        assert balance["currencies"] == ["USD"]
+
+    async def test_add_expense_rule_fallback(self, db_session):
+        """不给汇率时规则库兜底（EUR → 7.7）。"""
+        from app.schemas import ExpenseIn
+        from app.services.expense_service import add_expense
+
+        trip = await _make_trip(db_session)
+        e = await add_expense(
+            db_session, trip.id,
+            ExpenseIn(category="food", amount=10, currency="EUR"),
+            owner="u-expense",
+        )
+        assert e.currency == "EUR"
+        assert e.rate_to_base == 7.7
+        assert e.amount_base == 77.0
+
+    async def test_add_expense_unknown_currency_without_rate_400(self, db_session):
+        """未知币种且未给汇率 → AppError（400），不落库。"""
+        from app.core.exceptions import AppError
+        from app.schemas import ExpenseIn
+        from app.services.expense_service import add_expense
+
+        trip = await _make_trip(db_session)
+        try:
+            await add_expense(
+                db_session, trip.id,
+                ExpenseIn(category="food", amount=10, currency="VND"),
+                owner="u-expense",
+            )
+            raise AssertionError("应抛 AppError")
+        except AppError:
+            pass
+
+    async def test_legacy_records_default_cny(self, db_session):
+        """存量语义兼容：amount_base 缺省时回落 amount（CNY 口径）。"""
+        from app.services.expense_service import compute_balance
+
+        # 直接构造旧式记录（amount_base=None 模拟存量数据）
+        legacy = TripExpense(
+            id="legacy", trip_id="t1", category="food",
+            amount=80, payer="小彭", note=None,
+            amount_base=None, currency="CNY", rate_to_base=1.0,
+        )
+        b = compute_balance([legacy], travelers=2)
+        assert b["total"] == 80.0
+        assert b["balances"] == {"小彭": 40.0}
+
+    async def test_api_multi_currency_full_flow(self, client, auth_user):
+        """API 端到端：USD 记账 → 列表含折算 → 汇总按基准币。"""
+        _, headers = auth_user
+        trip_id = await _make_api_trip(client, headers)
+
+        resp = await client.post(f"/api/v1/trips/{trip_id}/expenses", json={
+            "category": "food", "amount": 100, "currency": "USD",
+            "rate_to_base": 7.0, "payer": "小彭", "note": "晚餐",
+        }, headers=headers)
+        assert resp.status_code == 201, resp.text
+        item = resp.json()
+        assert item["currency"] == "USD"
+        assert item["rate_to_base"] == 7.0
+        assert item["amount_base"] == 700.0
+
+        resp = await client.get(f"/api/v1/trips/{trip_id}/expenses", headers=headers)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["balance"]["total"] == 700.0
+        assert data["balance"]["balances"] == {"小彭": 350.0}
+        assert data["balance"]["currencies"] == ["USD"]
+
+    async def test_api_unknown_currency_without_rate_422(self, client, auth_user):
+        """未知币种且未给汇率 → 400（AppError，非 500）。"""
+        _, headers = auth_user
+        trip_id = await _make_api_trip(client, headers)
+
+        resp = await client.post(f"/api/v1/trips/{trip_id}/expenses", json={
+            "category": "food", "amount": 10, "currency": "VND", "payer": "小彭",
+        }, headers=headers)
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["error"]["code"] == "currency_rate_required"
+
+    async def test_api_currency_default_cny(self, client, auth_user):
+        """不传 currency → 默认 CNY，行为与旧版一致。"""
+        _, headers = auth_user
+        trip_id = await _make_api_trip(client, headers)
+
+        resp = await client.post(f"/api/v1/trips/{trip_id}/expenses", json={
+            "category": "food", "amount": 120, "payer": "小彭",
+        }, headers=headers)
+        assert resp.status_code == 201, resp.text
+        item = resp.json()
+        assert item["currency"] == "CNY"
+        assert item["rate_to_base"] == 1.0
+        assert item["amount_base"] == 120.0
