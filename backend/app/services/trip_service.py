@@ -412,7 +412,17 @@ async def generate_days_for_range(
         db.add(day)
         created.append(day)
     await db.flush()
-    return created
+    if not created:
+        return []
+    # eager-load stops，避免序列化 DayOut.stops 时 MissingGreenlet
+    # （与 add_day 同一坑：bulk 路径漏了一次，2026-11-08 验收时实测 500）
+    stmt = (
+        select(TripDay)
+        .options(selectinload(TripDay.stops))
+        .where(TripDay.id.in_([day.id for day in created]))
+        .order_by(TripDay.day_number)
+    )
+    return list((await db.execute(stmt)).scalars().all())
 
 
 def _daterange(start: date, end: date):
