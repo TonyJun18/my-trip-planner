@@ -159,3 +159,9 @@
 - [ ] （佐证）task-booking-neutrality-eval：11-08 新增三证——Airbnb 明确自建可视化 agent（自营库存）、Mindtrip 已 chat 内直接成交机票/酒店、Layla 被 Expedia 收购后转为「AI 规划 + 真人顾问成交」打包行程；「免费规划 + 中立跳转、不碰库存佣金」正从默认变成稀缺位（本日执行）。
 - [ ] （佐证）task-quota-governance-eval：Wanderlog 给出行业事实标准——**免费档 AI 5–10 条封顶、Pro $39.99/年无限，但行程数与协作人数永不限制**；Hilton CIO 公开谈 tokenomics；我们规则库优先已有压舱石，缺登录用户软提示（本日执行）。
 - [ ] （佐证）content-trust-gap-update：Airbnb「通用 agent（Meta Muse）带来的流量很少、成交更少」+ Allianz 调查 37% 美国旅客已用 AI 规划 + Cape Town Tourism 主打「本地专业度胜过 ChatGPT」= 13 文信任/渗透/供给真实度三条新证据（本日执行）。
+
+## 2026-11-09 竞品分析追加（相册照片入口 + 行中离线天气费用 + 巨头「接地与知情掌控」信任叙事，来自 docs/nightly/competitive-analysis/2026-11-09.md）
+
+- [ ] task-weather-gate-eval: 天气感知排程（候选评估，backend）。Journelyx v3.2.1（2026-11-08 更新）把「15 天预报 + 降雨 >60% 自动室内替代」做成付费卖点，圆周旅迹在行程日旁标天气；我们 agent 规划期已有 query_weather（高德 AMAP / wttr.in 降级，零常态化成本）但**不进排程约束、行中无天气展示**。评估最小版：①排程校验注入天气 warning（雨天/酷暑 → 室内替代建议，复用 time_validation/质检 warning 通道，basis=rule_based 诚实标注）②live 快照加当日天气卡（复用 wttr.in 预报，零凭证）；可行则最小版后端 + 测试，窗口不足或「预报不可作硬约束」评估不过则记录降级关单。（验收：评估记录 +（若可行）天气 warning + 测试覆盖；与 task-open-hours-real-eval 同构注意「预报不可作硬约束」口径）
+- [ ] task-multi-currency-expense-eval: 多币种费用追踪（候选评估，backend）。Journelyx 多币种实时汇率 + 12 类自动分类 + 24h 超预算预警（行中完整度付费卖点）；我们 expense 仅单币种（Trip.currency 默认 CNY）、手动分类、无预警。零凭证评估：记账时输入「当地金额 + 币种 + （可选）汇率」→ 按 trip.currency 折算汇总（汇率规则库/用户填，禁引实时汇率 API 凭证书）；自动分类与常驻预警明确不做（需常驻任务）。可行则最小版 + 测试，否则记录降级关单。（验收：评估记录（数据源矩阵）+（若可行）多币种折算 + 测试覆盖）
+- [ ] task-photo-import-eval: 相册照片 → 行程候补（候选评估，backend）。Iter（2026-11-02）把「照片/视频 → 旅行风格 → 行程」当核心入口（免费，不做里程/比价）；我们截图导入要求主动截图，相册批量是「零额外动作」输入。评估零凭证最小版：单张照片 EXIF（拍摄时间 + GPS）→ 地点候补（反向地理编码需凭证则降级为「仅时间 + 用户填地点」）；隐私/相册授权是主要评估点。大概率评估不过（相册授权 + 反向地理编码凭证），记录降级关单即可（铁律 9/10）。（验收：评估记录 +（若可行）最小版 + 测试覆盖；不可行记降级关单）
