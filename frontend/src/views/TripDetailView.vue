@@ -16,6 +16,7 @@ import TripDetailDayCard from '@/components/trip-detail/TripDetailDayCard.vue'
 import TripDetailToolbox from '@/components/trip-detail/TripDetailToolbox.vue'
 import TripDetailWorkspace from '@/components/trip-detail/TripDetailWorkspace.vue'
 import TripDetailSidebar from '@/components/trip-detail/TripDetailSidebar.vue'
+import TripDetailRatingCard from '@/components/trip-detail/TripDetailRatingCard.vue'
 import TripDetailDialogs from '@/components/trip-detail/TripDetailDialogs.vue'
 import { useTripDetailLoad } from '@/composables/useTripDetailLoad'
 import { useRevise } from '@/composables/useRevise'
@@ -992,6 +993,10 @@ onBeforeUnmount(() => {
           />
         </div>
       </div>
+
+      <!-- 行程评分（收尾动作：行程结束后给这次行程打分 + 标记去过）
+           刻意放在导出区之外：评分是私域操作，不该被截图 / PDF 导出带走 -->
+      <TripDetailRatingCard :trip-id="trip.id" :phase="phase" />
     </template>
 
     <!-- 对话框（小红书 / 导入 / 批量生成 / 分享设置 / 编辑三合一） -->
