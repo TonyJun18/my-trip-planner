@@ -414,6 +414,7 @@ export default {
       plan: '规划',
       prep: '行前',
       live: '行中',
+      review: '回顾',
     },
     workspaceTitle: '工具',
     toolsAll: '全部工具',

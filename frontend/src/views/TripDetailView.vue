@@ -183,6 +183,9 @@ const collapseDaysV2 = useFlag('tripDetail.ia.v2.collapseDays')
 const WS_PLAN_KEYS = ['revise', 'planb', 'timegate', 'quality', 'hotel']
 const WS_PREP_KEYS = ['booking', 'hotel', 'servicing', 'packing', 'events']
 const WS_LIVE_KEYS = ['journey', 'passport', 'story']
+// 已结束：行程走完了，「追踪进度」仍有意义（回顾走到了哪），但事件流重新有价值（消费/打卡记录），
+// 而「行中」这个标签已经不成立 —— 单独一组，标签用「回顾」。
+const WS_FINISHED_KEYS = ['journey', 'passport', 'story', 'events']
 
 const wsTab = ref('')
 const wsShowAll = ref(false)
@@ -204,10 +207,18 @@ const journeyProgress = computed(() => {
 const phaseTabs = computed(() => {
   const p = phase.value
   if (p === 'prep') {
-    return [{ key: 'prep', label: t('tripDetail.tabs.prep'), keys: WS_PREP_KEYS, badge: bookingBadge.value }]
+    // 行前给两个 tab：默认停在「行前」，但质检/时间校验（规划工具）不再需要
+    // 「更多 → 调整行程」两跳才能看见 —— 徽标直接告诉你还有几个问题没处理。
+    return [
+      { key: 'prep', label: t('tripDetail.tabs.prep'), keys: WS_PREP_KEYS, badge: bookingBadge.value },
+      planTab.value,
+    ]
   }
-  if (p === 'live' || p === 'finished') {
+  if (p === 'live') {
     return [{ key: 'live', label: t('tripDetail.tabs.live'), keys: WS_LIVE_KEYS, badge: journeyProgress.value }]
+  }
+  if (p === 'finished') {
+    return [{ key: 'review', label: t('tripDetail.tabs.review'), keys: WS_FINISHED_KEYS, badge: journeyProgress.value }]
   }
   return [planTab.value]
 })
@@ -404,8 +415,9 @@ function scrollToToday() {
 function openTrackTab() {
   wsPlanExtra.value = false
   wsShowAll.value = false
-  // flag 关闭时没有 tab 可切，只滚到工具区（不能设一个不存在的 wsTab）
-  if (iaV2.value && tabsV2.value) wsTab.value = 'live'
+  // flag 关闭 / 当前时机没有「行中」tab（如已结束用「回顾」）时只滚到工具区，
+  // 绝不写一个不存在的 wsTab（否则 activeTab 落空、工作台空白）
+  if (iaV2.value && tabsV2.value && wsTabs.value.some((x) => x.key === 'live')) wsTab.value = 'live'
   scrollToSelector('.workspace')
 }
 

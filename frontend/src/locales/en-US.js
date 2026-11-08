@@ -414,6 +414,7 @@ export default {
       plan: 'Planning',
       prep: 'Pre-trip',
       live: 'On the trip',
+      review: 'Recap',
     },
     workspaceTitle: 'Tools',
     toolsAll: 'All tools',
