@@ -49,5 +49,15 @@ extensions 参数 1 + 顶层优先 1 + biz_ext 兜底 1），全套 **501 测试
 
 ## 四、遗留
 
-- `rating` 已透传到 POI 结构，但前端候选卡展示接线视窗口另立；
+- ~~`rating` 已透传到 POI 结构，但前端候选卡展示接线视窗口另立~~ → **2026-11-08 已闭环**
+  （`frontend/src/components/HotelRecommend.vue`）：候选卡右上角展示 `★ 4.6` 高德评分芯片
+  （仅 `0 < rating <= 5` 才显示，缺失/0/越界一律不显示，绝不编造），hover 提示
+  「高德 POI 评分（聚合展示口径，非本站用户评分）」；卡片区底部加诚实口径脚注
+  「评分来自高德 POI；房费为城市类目参考价估算，不是实时房价，请以预订平台实时价为准」。
+  详情页「住宿推荐」面板与 PlanWizard 结果页共用该组件，两处同时生效。
+  实测（真库上海行程 6 家候选）：6 个评分芯片 ★4.6/4.6/4.7/4.6/4.7/4.7 + 脚注渲染正常，
+  `check:i18n` 946 键 ×2、`npm run build` 11.33s 通过。
+- 已知未接线（另立）：行程站点本身的评分——`StopSchema` 为 `extra="ignore"` 且未声明 `rating`，
+  LLM 若在 stop 里输出 rating 会被校验丢弃，`Stop.details.rating` 实际只有旧数据；
+  地图弹窗（`TripMap.buildPopup`）已支持 `details.rating` 渲染，补数据需改 Schema + 提示词，单独评估。
 - 多币种汇率不在本任务范围（沿用 budget_service 注释口径）。

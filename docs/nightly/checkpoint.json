@@ -26,7 +26,7 @@
     "路径偏差（继续有效）：手册第0节项目路径写 /Users/pengjun/Desktop/my-agent/my-trip-planner，实际仓库在 /Users/pengjun/Documents/my-agent/my-trip-planner，按实际路径执行。",
     "网络观察（继续有效）：10-17/10-21/10-23/10-30/11-07 web_search keyless 后端 SSL EOF；2026-11-08 实测 web_search 可用（firecrawl + exa 双后端均返回），无需降级；本日未使用 web_extract。",
     "stash 遗留（继续有效）：stash@{0} 为 10-31 白天 5 个前端改动（BookingPanel/i18n/ChatView/LandingPage），stash@{1} 为 floattrip-borrow WIP，待用户白天核验。",
-    "用户视角遗留（继续有效）：task-trip-detail-refactor 阶段二（信息架构/Tab/Flag）未做待 review；share-gate 前端 ShareView 密码 UI 未接线；price-realism rating 前端候选卡展示未接线；~~trip-rating-signal 详情页评分控件未接线~~ → 2026-11-08 白天已接线（TripDetailRatingCard：行程结束/已有评分时露出，1-5 星 + 我去过 + 清除，挂导出区之外；build + check:i18n 944 键 + test_trip_rating 8 passed + 浏览器实测打分/持久化/清除/时机门禁全通过）。"
+    "用户视角遗留（继续有效）：task-trip-detail-refactor 阶段二（信息架构/Tab/Flag）未做待 review；share-gate 前端 ShareView 密码 UI 未接线；~~price-realism rating 前端候选卡展示~~ → 2026-11-08 白天已接线（HotelRecommend 候选卡 ★ 高德评分芯片 + 「评分来自高德 POI / 房费为类目参考价估算」脚注；详情页住宿推荐面板与 PlanWizard 共用）；~~trip-rating-signal 详情页评分控件~~ → 2026-11-08 白天已接线（TripDetailRatingCard：行程结束/已有评分时露出，1-5 星 + 我去过 + 清除，挂导出区之外）。两项均 build + check:i18n 946 键 + 浏览器实测通过。"
   ],
   "branches": []
 }

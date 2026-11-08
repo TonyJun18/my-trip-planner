@@ -770,6 +770,8 @@ export default {
     needDaysFirst: '请先添加日程，再安排酒店',
     priceQuote: '价格以实际询价为准',
     priceFrom: '¥{cost} 起',
+    ratingTooltip: '高德 POI 评分（聚合展示口径，非本站用户评分）',
+    basisNote: '评分来自高德 POI；房费为城市类目参考价估算，不是实时房价，请以预订平台实时价为准。',
   },
   // ── 打包清单（PackingList · 纯前端零凭证） ────────────────
   packing: {

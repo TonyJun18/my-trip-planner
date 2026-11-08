@@ -62,6 +62,13 @@ function hotelPriceText(h) {
   return t('hotel.priceQuote')
 }
 
+// 高德 POI 评分（price-realism：_normalize_hotels 透传 rating）。
+// 只认 0 < r <= 5 的值——缺失/0/越界一律不显示，绝不编造分数（与后端「诚实口径」一致）。
+function hotelRating(h) {
+  const r = Number(h?.rating)
+  return Number.isFinite(r) && r > 0 && r <= 5 ? r : null
+}
+
 // ── 安排进日程 ──
 // dayId 由父组件通过 slot 提供（详情页：trip.days[].id；向导页：无 trip，隐藏）
 const dayOptions = computed(() => (props.days || []).map((d) => ({ id: d.id, label: `Day ${d.day_number}${d.date ? ' · ' + d.date : ''}` })))
@@ -112,7 +119,14 @@ async function confirmArrange() {
       <div v-for="(h, idx) in hotels" :key="idx" class="hotel-card" :class="{ arranged: isArranged(h) }">
         <div class="hotel-top">
           <span class="hotel-name">{{ h.name }}</span>
-          <el-tag v-if="isArranged(h)" size="small" type="success" round>{{ t('hotel.arranged') }}</el-tag>
+          <span class="hotel-badges">
+            <span
+              v-if="hotelRating(h)"
+              class="hotel-rating"
+              :title="t('hotel.ratingTooltip')"
+            >★ {{ hotelRating(h).toFixed(1) }}</span>
+            <el-tag v-if="isArranged(h)" size="small" type="success" round>{{ t('hotel.arranged') }}</el-tag>
+          </span>
         </div>
         <div class="hotel-meta">
           <span v-if="h.address" class="hotel-addr"><el-icon><Location /></el-icon>{{ h.address }}</span>
@@ -129,6 +143,9 @@ async function confirmArrange() {
         </div>
       </div>
     </div>
+
+    <!-- 诚实口径（price-realism）：评分来自高德 POI 聚合；房费是类目参考价估算，不是实时房价 -->
+    <div class="hotel-basis">{{ t('hotel.basisNote') }}</div>
 
     <!-- 安排到哪一天 -->
     <el-dialog v-model="dialogVisible" :title="t('hotel.arrangeDialogTitle')" width="420px">
@@ -165,6 +182,23 @@ async function confirmArrange() {
 .hotel-card.arranged { border-color: var(--success); background: rgba(16,185,129,.05); }
 .hotel-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .hotel-name { font-size: 14px; font-weight: 600; color: var(--ink); }
+.hotel-badges { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.hotel-rating {
+  font-size: 12px;
+  font-weight: 600;
+  color: #d97706;
+  background: rgba(217, 119, 6, .08);
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  cursor: help;
+}
+.hotel-basis {
+  margin-top: 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--faint);
+}
 .hotel-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }
 .hotel-addr { display: inline-flex; align-items: center; gap: 3px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hotel-addr .el-icon { font-size: 13px; color: var(--faint); flex-shrink: 0; }

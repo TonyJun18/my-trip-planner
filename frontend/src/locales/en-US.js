@@ -770,6 +770,8 @@ export default {
     needDaysFirst: 'Add itinerary days first, then arrange hotels',
     priceQuote: 'Check actual price on request',
     priceFrom: 'from ¥{cost}',
+    ratingTooltip: 'Amap POI rating (aggregated display, not this site’s user ratings)',
+    basisNote: 'Ratings come from Amap POIs; room rates are city category reference estimates, not live prices — check the booking platform for the current rate.',
   },
   // ── Packing list (PackingList · pure frontend, zero credential) ──
   packing: {
