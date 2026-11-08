@@ -1357,7 +1357,8 @@ async def run_planning_agents(
 
     await run_finalize_stage(
         plan, request, trace=trace,
-        t_res=t_res, d_res=d_res, driving_reports=driving_reports,
+        t_res=t_res, d_res=d_res, w_res=w_res,
+        driving_reports=driving_reports,
     )
     await run_servicing_stage(plan, request, trace=trace, provider=provider)
     # 预订化收尾（BookingStep）：从定稿 plan 产出可预订外链建议（plan.bookings）。

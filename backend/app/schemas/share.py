@@ -119,6 +119,8 @@ class LiveSnapshotOut(BaseModel):
     stops: list[LiveStopOut] = []
     completed: int = 0
     total: int = 0
+    # 今日天气卡（task-weather-gate-eval）：行中当日天气摘要；无数据/非 live → None
+    weather: dict | None = None
 
 
 class LiveCheckIn(BaseModel):

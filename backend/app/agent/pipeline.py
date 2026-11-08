@@ -472,9 +472,13 @@ class FinalizePlanStep(PipelineStep):
 
             asyncio.create_task(A._emit_plan_event({"type": "trace", "trace": entry}))
 
-        # ── 采集产物回填（详情页大交通/折扣；预算口径依赖此数据）──
+        # ── 采集产物回填（详情页大交通/折扣/天气；预算口径依赖此数据）──
         plan["transport"] = (t_res.get("transport") or {}) if isinstance(t_res, dict) else None
         plan["discount_rules"] = (d_res.get("rules") or []) if isinstance(d_res, dict) else []
+        # 天气快照回填：WeatherGate 消费 plan.weather（降水/酷暑 → 室内替代建议）；
+        # 同时供行中「今日天气卡」与导出快照使用（weather_card 纯函数读取）。
+        w_res = kwargs.get("w_res")
+        plan["weather"] = (w_res.get("weather") or {}) if isinstance(w_res, dict) else {}
         # 自驾校验报告注入 plan.driving（最终一代；历史各代摘要进 driving_history）
         if driving_reports:
             final_driving = driving_reports[-1]
@@ -581,6 +585,35 @@ class FinalizePlanStep(PipelineStep):
             "issues": dyn_facts.get("issues") or [],
         })
 
+        # ── WeatherGate：天气感知排程校验（task-weather-gate-eval，2026-11-09）──
+        # 雨天/酷暑 → 室内替代建议 warning（预报非事实，只提示不裁决，basis 诚实标注）。
+        # 与 TimeGate 同构：只报告不阻断；无对应日期天气数据 → 保持沉默。
+        from app.services.weather_validation import check_plan_weather_gate
+
+        weather_gate = check_plan_weather_gate(plan, locale=locale)
+        plan["weather_gate"] = {
+            **{k: v for k, v in weather_gate.items() if k != "issues"},
+            "issues": weather_gate.get("issues") or [],
+            "basis": "weather_forecast",
+        }
+        for iss in weather_gate.get("issues") or []:
+            plan.setdefault("warnings", []).append(
+                t(locale, "plan.warning.weathergate", message=iss.get("message") or "",
+                  extra=(t(locale, "plan.warning.weathergate.sugg", suggestion=iss.get("suggestion")) if iss.get("suggestion") else ""))
+            )
+        if weather_gate.get("issues"):
+            _append_trace({
+                "agent": "WeatherGate",
+                "action": "check_weather",
+                "observation": t(locale, "plan.trace.weathergate.warn", n=weather_gate.get("warning_count", 0)),
+                "status": "warning",
+            })
+        A._fire_artifact("weather_gate", {
+            "passed": weather_gate.get("passed"),
+            "warning_count": weather_gate.get("warning_count", 0),
+            "issues": weather_gate.get("issues") or [],
+        })
+
         # ── SolverGate：确定性求解（任务floattrip-borrow Story 4）──
         # LLM 候选 → 规则排序 + 时间/距离硬约束校验 + 有限修复。
         # 产出 plan.solver_meta（排序依据/校验结果/修复记录）；不通过 → warnings
@@ -621,6 +654,7 @@ async def run_finalize_stage(
     trace: list[dict[str, Any]] | None = None,
     t_res: dict[str, Any] | None = None,
     d_res: dict[str, Any] | None = None,
+    w_res: dict[str, Any] | None = None,
     driving_reports: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """便捷入口：定稿后处理（finalize 回填 + 确定性门控）。返回原地修改后的 plan。"""
@@ -632,7 +666,7 @@ async def run_finalize_stage(
         # 显式传入的 trace（可为空 list）必须原样透传，不能 `or []`
         # 否则 append 到新列表，调用方拿不到 step 内追加的 trace。
         trace=trace if trace is not None else [],
-        t_res=t_res or {}, d_res=d_res or {},
+        t_res=t_res or {}, d_res=d_res or {}, w_res=w_res or {},
         driving_reports=driving_reports or [],
     )
     return plan
