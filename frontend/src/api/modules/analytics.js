@@ -6,6 +6,7 @@
  * - fire-and-forget：失败静默，不弹错、不重试，不允许影响业务
  * - 完成率类事件（打卡/顺延/跳过/加站）不在此发——判定线走后端 TripEvent 事实流
  * - 只发意图与曝光：planning_tool_open / top_action_click / itinerary_first_view / itinerary_scroll_depth
+ *   （阶段二收口补了 workspace_tab_switch / workspace_all_toggle 两个收纳层信号）
  *
  * 实现约束：
  * - **不走 http（axios）实例**：埋点失败/401 必须静默，不能触发全局拦截器的
@@ -46,12 +47,16 @@ export function trackEvent(name, payload = {}) {
   }
 }
 
-// 事件名常量（与后端白名单保持一致）
+// 事件名常量（与后端 app/schemas/analytics.py 白名单保持一致）
 export const ANALYTICS_EVENTS = {
   planningToolOpen: 'planning_tool_open',
   topActionClick: 'top_action_click',
   itineraryFirstView: 'itinerary_first_view',
   itineraryScrollDepth: 'itinerary_scroll_depth',
+  // 收纳层信号（阶段二收口）：G1「工具因收纳而流失」的两种失败形态
+  // ①没进工具区 ②进了但 tab 迷路 / 频繁逃到「全部工具」——后者由这两个事件直接代理
+  workspaceTabSwitch: 'workspace_tab_switch',
+  workspaceAllToggle: 'workspace_all_toggle',
 }
 
 /** 由 trip 的起止日期推断当前时机阶段（planning / live / finished）。 */

@@ -24,6 +24,8 @@ _EVENT_LABELS = {
     "top_action_click": "顶栏主操作",
     "itinerary_first_view": "逐日行程首屏可见",
     "itinerary_scroll_depth": "滚动深度",
+    "workspace_tab_switch": "工作台 tab 切换",
+    "workspace_all_toggle": "全部工具开关",
 }
 
 
@@ -40,7 +42,8 @@ async def record_event(data: AnalyticsEventIn) -> Response:
     """
     p = data.payload
     logger.info(
-        "analytics_event name=%s label=%s trip_id=%s phase=%s viewport=%s touch=%s role=%s tool=%s action=%s visible=%s depth=%s",
+        "analytics_event name=%s label=%s trip_id=%s phase=%s viewport=%s touch=%s role=%s "
+        "tool=%s action=%s visible=%s depth=%s tab=%s from=%s on=%s",
         data.name,
         _EVENT_LABELS.get(data.name, ""),
         p.trip_id,
@@ -52,5 +55,8 @@ async def record_event(data: AnalyticsEventIn) -> Response:
         p.action,
         p.visible,
         p.depth,
+        p.tab,
+        p.from_tab,
+        p.on,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
