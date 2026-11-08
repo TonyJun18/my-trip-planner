@@ -149,3 +149,12 @@
 ## 2026-11-07 备忘追加（gallery-community-v3 外部佐证，来自 docs/nightly/competitive-analysis/2026-11-07.md）
 
 - [ ] （备注追加）task-gallery-community-v3 佐证：Airbnb AI search + social features、Hilton/Trip.com AI planner 均带 inspiration 内容位——「内容社区化」是巨头默认动作，与画廊 v2→v3 方向一致；正式排期仍以内容量前置为准（当前库内 1 条真实发布 + 8 张城市模板）。
+
+## 2026-11-08 竞品分析追加（行中/群体/后置整理新入场者 + 巨头共识「chat 不是规划界面」，来自 docs/nightly/competitive-analysis/2026-11-08.md）
+
+- [ ] task-ics-export: 行程导出补「落到日历」（补功能，backend）。Petrel Voyage（2026-11-01 发布，「TripIt 杀手」叙事）差异化项之一=**ICS 日历订阅**；我们 `export_service` 只有 JSON/打印，缺「导出行程 → 进自己日历」这一步，输出自由链条在最后一环断开。（验收：由 plan days/stops 生成合法 ICS——每站 VEVENT（DTSTART 全日 + SUMMARY + LOCATION=站点名/地址）+ VERSION/PRODID 头；owner JWT 与 share token 双路径复用既有信任语义；**绝不输出任何令牌/凭证字段**；与 JSON 导出共用预算/质检口径；测试覆盖：结构合法、双路径可用、越权 404、无令牌泄漏）
+- [ ] task-auto-optimize-cta: 「按最优顺序重排」一键入口（补功能，frontend，复用既有后端）。Itinerarly（2026-11-06）证明用户想让工具直接给顺序而不是自己拖；我们 `solver_service.rank_candidates` + `reorder_service.reorder_commit` 已在 main，前端只有 `api/modules/trips.js` 封装与 `composables/useDragEdit.js`（**未被任何 view 引用**），详情页仍只有单点上移/下移——10-29 遗留的「Story 1 交互切换」。（验收：日卡出现「优化顺序」按钮 → 调 reorder-commit → 成功刷新 + diff 摘要；自驾/时间硬约束 400 时内联提示且不破坏现有排程；不放宽任何 Gate；build 通过 + 后端既有 reorder/solver 测试回归）
+- [ ] （备注追加）task-gallery-community-v3 佐证（11-08 续）：WanderBuddy 把「群体」做成唯一场景（共享实时地图 + 站点点投票 + 费用分摊 + WhatsApp/Instagram 入口 + 签证检查 + 语音房实时翻译）——群体行中是 2026 新入场者的共同切口；我们已有投票/分摊/共享地图，缺 IM 入口（WhatsApp/IG 涉及第三方合规与凭证，不做）与签证规则库（纯规则但国籍×目的地覆盖面大，需用户立项），两项均不入队列。
+- [ ] （佐证）task-booking-neutrality-eval：11-08 新增三证——Airbnb 明确自建可视化 agent（自营库存）、Mindtrip 已 chat 内直接成交机票/酒店、Layla 被 Expedia 收购后转为「AI 规划 + 真人顾问成交」打包行程；「免费规划 + 中立跳转、不碰库存佣金」正从默认变成稀缺位（本日执行）。
+- [ ] （佐证）task-quota-governance-eval：Wanderlog 给出行业事实标准——**免费档 AI 5–10 条封顶、Pro $39.99/年无限，但行程数与协作人数永不限制**；Hilton CIO 公开谈 tokenomics；我们规则库优先已有压舱石，缺登录用户软提示（本日执行）。
+- [ ] （佐证）content-trust-gap-update：Airbnb「通用 agent（Meta Muse）带来的流量很少、成交更少」+ Allianz 调查 37% 美国旅客已用 AI 规划 + Cape Town Tourism 主打「本地专业度胜过 ChatGPT」= 13 文信任/渗透/供给真实度三条新证据（本日执行）。
