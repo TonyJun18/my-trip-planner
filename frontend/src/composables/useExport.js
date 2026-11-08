@@ -65,5 +65,25 @@ export function useExport({ exportEl, getTrip } = {}) {
     window.print()
   }
 
-  return { exporting, doExportImage, doExportPdf, doExportJson, doPrint }
+  /**
+   * 导出 ICS 日历（task-ics-export）：落成 .ics 文件后由系统日历接管。
+   * 与 JSON 导出一致：只导出当前行程，不携带任何令牌。
+   */
+  async function doExportIcs() {
+    await _guard(async () => {
+      const trip = getTrip()
+      const blob = await api.exportTripIcs(trip.id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${trip.destination}-${trip.start_date}.ics`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      ElMessage.success(t('tripDetail.icsExported'))
+    })
+  }
+
+  return { exporting, doExportImage, doExportPdf, doExportJson, doExportIcs, doPrint }
 }

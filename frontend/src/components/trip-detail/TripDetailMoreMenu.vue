@@ -1,7 +1,7 @@
 <script setup>
 import {
   MoreFilled, Star, StarFilled, Upload, Promotion, Setting, EditPen, Lock, Delete, MagicStick,
-  Document, Picture, Download, Printer,
+  Document, Picture, Download, Printer, Calendar,
 } from '@element-plus/icons-vue'
 
 // 详情页「更多」菜单：低频 / 管理 / 危险动作统一收口（顶栏最多 3 个主操作，其余都进这里）。
@@ -48,6 +48,7 @@ const emit = defineEmits(['command'])
           </el-dropdown-item>
           <el-dropdown-item command="export-image" :icon="Picture">{{ $t('tripDetail.exportImage') }}</el-dropdown-item>
           <el-dropdown-item command="export-json" :icon="Download">{{ $t('tripDetail.exportJson') }}</el-dropdown-item>
+          <el-dropdown-item command="export-ics" :icon="Calendar">{{ $t('tripDetail.exportIcs') }}</el-dropdown-item>
           <el-dropdown-item command="export-print" :icon="Printer">{{ $t('tripDetail.exportPrint') }}</el-dropdown-item>
         </template>
         <el-dropdown-item command="gallery" :icon="Star">{{ $t('tripDetail.galleryPublish') }}</el-dropdown-item>

@@ -15,3 +15,10 @@ export const exportTripJson = (tripId) =>
   http.get(`/trips/${tripId}/export`, { responseType: 'blob' }).then((r) => r.data)
 export const exportSharedTripJson = (token) =>
   http.get(`/trips/share/${token}/export`, { responseType: 'blob' }).then((r) => r.data)
+
+// ICS 日历导出（task-ics-export）：每个站点一个全天事件，可直接订阅进手机/桌面日历。
+// 后端契约：GET /trips/{id}/export/ics（owner）/ GET /trips/share/{token}/export/ics
+export const exportTripIcs = (tripId) =>
+  http.get(`/trips/${tripId}/export/ics`, { responseType: 'blob' }).then((r) => r.data)
+export const exportSharedTripIcs = (token) =>
+  http.get(`/trips/share/${token}/export/ics`, { responseType: 'blob' }).then((r) => r.data)

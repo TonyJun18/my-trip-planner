@@ -402,7 +402,9 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 | POST | `/api/v1/expenses` | 添加支出记录 |
 | DELETE | `/api/v1/expenses` | 删除支出记录 |
 | GET | `/api/v1/trips/{trip_id}/export` | 导出行程 JSON（owner，完整数据备份） |
+| GET | `/api/v1/trips/{trip_id}/export/ics` | 导出行程 ICS 日历（owner，每站一个全天事件） |
 | GET | `/api/v1/trips/share/{token}/export` | 导出行程 JSON（免登录，凭 share_token 只读） |
+| GET | `/api/v1/trips/share/{token}/export/ics` | 导出行程 ICS 日历（免登录，凭 share_token 只读） |
 | GET | `/api/v1/trips/share/{token}/live` | 行中「今日视图」快照（免登录只读，凭 share_token） |
 | GET | `/api/v1/trips/{trip_id}/live` | 行中「今日视图」快照（owner，归一化阶段/今日站点/打卡进度） |
 | POST | `/api/v1/trips/{trip_id}/live/stops/{stop_id}/check` | 打卡/取消打卡（owner 行中） |

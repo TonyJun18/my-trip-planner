@@ -143,7 +143,7 @@ const {
 // ── 导出（截图 / PDF / JSON / 打印） ─────────────────────
 const exportEl = ref(null)
 const exp = useExport({ exportEl, getTrip: () => trip.value })
-const { exporting, doExportImage, doExportPdf, doExportJson, doPrint } = exp
+const { exporting, doExportImage, doExportPdf, doExportJson, doExportIcs, doPrint } = exp
 
 // ── 三段式旅程工作台（task-trip-detail-triptych：主路径 + 工具分离） ──
 // 段1 头部：紧凑摘要条（hero-bar）
@@ -493,6 +493,9 @@ async function onMoreCommand(cmd) {
     case 'export-json':
       await doExportJson()
       break
+    case 'export-ics':
+      await doExportIcs()
+      break
     case 'export-print':
       doPrint()
       break
@@ -579,6 +582,7 @@ async function onExportCommand(cmd) {
   switch (cmd) {
     case 'image': await doExportImageAll(); break
     case 'json': await doExportJson(); break
+    case 'ics': await doExportIcs(); break
     case 'print': doPrint(); break
     default: break
   }
