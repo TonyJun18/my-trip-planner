@@ -248,6 +248,7 @@
 - **平台**：掘金 / 知乎 / 公众号
 - **首图建议**：「信任三属性」对照表（可验证/可修订/不套模板 × 工程实现 × 用户感知）。
 - **发布时机**：文章⑫之后立即发（与⑫构成问题-解法配对）。
+- **2026-11 更新（已并入正文 §八）**：补四条实证——Allianz 调查 37% 美国旅客已用 AI 规划 / Airbnb Q3 电话会「通用 agent（Meta Muse）流量与成交都少」+「聊天窗口是规划旅行的错误形态」/ Hilton AI planner「Customers Aren't So Sure Yet」/ Cape Town Tourism 免费 planner 主打本地专业度；新增「新证据 → 我们的工程对应」对照表，正文四组原始数据保留不动。
 
 ### 文章⑭ 巨头免费化之后：独立 AI 旅行规划工具还剩下什么（14-independent-planner-survival.md）
 
