@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { MapLocation, MoreFilled, ArrowDown, EditPen, Delete, Wallet, Clock } from '@element-plus/icons-vue'
+import { MapLocation, MoreFilled, ArrowDown, EditPen, Delete, Wallet, Clock, Sort } from '@element-plus/icons-vue'
 import { useTripTypes } from '@/composables/useTripTypes'
 
 // 逐日行程卡：Day 头（折叠开关 + 摘要 + 地图聚焦）+ 站点时间轴 + 站点操作
@@ -15,9 +15,15 @@ const props = defineProps({
   dayIndex: { type: Number, default: 0 },
   // 受控展开态（orchestrator 持有：默认只开当天/第一天，导出时全开）
   open: { type: Boolean, default: true },
+  // 「按最优顺序重排」进行中（task-auto-optimize-cta：按钮 loading + 防重复点击）
+  optimizing: { type: Boolean, default: false },
+  // 重排失败的内联提示（约束未通过时展示在卡片内，而不是全局 toast）
+  optimizeError: { type: String, default: '' },
 })
 
-const emit = defineEmits(['focus-day', 'toggle-open', 'add-stop', 'day-cmd', 'stop-cmd', 'stop-edit'])
+const emit = defineEmits([
+  'focus-day', 'toggle-open', 'add-stop', 'day-cmd', 'stop-cmd', 'stop-edit', 'optimize-order',
+])
 
 const { typeLabel, typeColor, typeEmoji } = useTripTypes()
 const { t } = useI18n()
@@ -90,6 +96,17 @@ function toggle() {
             @click="emit('focus-day', day.day_number)"
           ><el-icon><MapLocation /></el-icon></el-button>
         </el-tooltip>
+        <el-tooltip :content="$t('tripDetail.optimizeOrderHint')" placement="top" :show-after="400">
+          <el-button
+            v-if="hasStops && (day.stops || []).length >= 3"
+            size="small"
+            plain
+            :loading="optimizing"
+            @click="emit('optimize-order', day)"
+          >
+            <el-icon style="margin-right: 4px"><Sort /></el-icon>{{ $t('tripDetail.optimizeOrder') }}
+          </el-button>
+        </el-tooltip>
         <el-button size="small" type="primary" plain @click="emit('add-stop', day.id)">+ {{ $t('tripDetail.addStop') }}</el-button>
         <el-dropdown trigger="click" @command="(cmd) => emit('day-cmd', day, cmd)">
           <el-button size="small" plain circle :aria-label="$t('tripDetail.dayActions')">
@@ -103,6 +120,9 @@ function toggle() {
         </el-dropdown>
       </div>
     </div>
+
+    <!-- 重排失败内联提示（约束未通过时留在卡片内，不打断页面） -->
+    <p v-if="optimizeError" class="optimize-error">{{ optimizeError }}</p>
 
     <!-- 站点时间轴（折叠动画） -->
     <el-collapse-transition>
@@ -199,6 +219,18 @@ function toggle() {
 }
 /* 收起态：更紧凑的头部，视觉上像大纲条目而不是卡片 */
 .day-card.is-collapsed { padding: 8px 14px; }
+
+/* 重排失败内联提示（约束未通过）：留在卡片内，弱化但仍醒目 */
+.optimize-error {
+  margin: 2px 0 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius-md, 8px);
+}
 
 .day-head {
   display: flex;

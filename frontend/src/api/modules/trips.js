@@ -24,3 +24,8 @@ export const getTripPlan = (tripId) => http.get(`/trips/${tripId}/plan`).then((r
 // 拖拽重排提交（task-floattrip-borrow Story 1）：多日批量原子落库 + DrivingGate 前置 + 预算重算
 export const reorderCommit = (tripId, days) =>
   http.post(`/trips/${tripId}/reorder-commit`, { days }).then((r) => r.data)
+
+// 单日「按最优顺序重排」（task-auto-optimize-cta）：确定性最近邻 + DrivingGate 前置 + 预算重算。
+// silent：约束冲突由详情页内联展示，不弹全局错误提示。
+export const optimizeDayOrder = (tripId, dayId) =>
+  http.post(`/trips/${tripId}/days/${dayId}/optimize-order`, null, { silent: true }).then((r) => r.data)

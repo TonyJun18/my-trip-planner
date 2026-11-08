@@ -31,3 +31,26 @@ class ReorderCommitOut(BaseModel):
     summary: str
     plan: dict
     driving: dict = Field(default_factory=dict, description="重排后的自驾报告（DrivingGate 重算）")
+
+
+class OptimizeOrderOut(BaseModel):
+    """单日「按最优顺序重排」结果（task-auto-optimize-cta）。
+
+    ``changed=False`` 时没落库（``already_optimal`` / ``too_few_stops`` /
+    ``insufficient_coords``），前端只提示不刷新；``changed=True`` 时顺序已原子落库，
+    附带 summary/plan/driving 供前端刷新与提示。
+    """
+
+    changed: bool
+    reason: str = Field(description="reordered / already_optimal / too_few_stops / insufficient_coords")
+    day_id: str
+    day_number: int
+    order: list[str] = Field(description="该日站点新顺序（未变更时为当前顺序）")
+    names: list[str] = Field(default_factory=list, description="与新顺序对应的站点名（前端展示用）")
+    distance_before_km: float = 0.0
+    distance_after_km: float = 0.0
+    saved_km: float = 0.0
+    # 仅在 changed=True 时出现（复用 reorder_commit 的产出）
+    summary: str | None = None
+    plan: dict | None = None
+    driving: dict | None = None

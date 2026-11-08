@@ -577,6 +577,39 @@ function onDayCommand(day, cmd) {
   if (cmd === 'delete') removeDay(day)
 }
 
+// ── 单日「按最优顺序重排」（task-auto-optimize-cta） ──────────
+// 后端确定性最近邻（首站锚定）+ DrivingGate 前置 + 预算重算；约束未通过时内联提示，不放宽任何门。
+const optimizingDay = ref('')
+const optimizeErrors = ref({})
+function setOptimizeError(dayId, msg) {
+  optimizeErrors.value = { ...optimizeErrors.value, [dayId]: msg }
+}
+async function onOptimizeOrder(day) {
+  if (!day?.id || !trip.value?.id || optimizingDay.value) return
+  setOptimizeError(day.id, '')
+  optimizingDay.value = day.id
+  try {
+    const res = await api.optimizeDayOrder(trip.value.id, day.id)
+    if (!res.changed) {
+      const key = res.reason === 'insufficient_coords'
+        ? 'optimizeSkipCoords'
+        : res.reason === 'too_few_stops' ? 'optimizeSkipFew' : 'optimizeNoChange'
+      ElMessage.info(t(`tripDetail.${key}`))
+      return
+    }
+    await load()
+    ElMessage.success(t('tripDetail.optimizeDone', { km: res.saved_km }))
+  } catch (e) {
+    const err = e?.response?.data?.error || {}
+    const issues = (err.detail?.issues || []).join('；')
+    setOptimizeError(day.id, t('tripDetail.optimizeFail', {
+      msg: issues || err.message || e?.message || '',
+    }))
+  } finally {
+    optimizingDay.value = ''
+  }
+}
+
 // ── 导出 split（主按钮 PDF，其余收进下拉；Tab 化后均强制展开全部分区） ─
 async function onExportCommand(cmd) {
   switch (cmd) {
@@ -887,12 +920,15 @@ onBeforeUnmount(() => {
               :active-day="activeDay"
               :day-index="i"
               :open="isDayOpen(day)"
+              :optimizing="optimizingDay === day.id"
+              :optimize-error="optimizeErrors[day.id] || ''"
               @toggle-open="toggleDayOpen"
               @focus-day="focusDay"
               @add-stop="openAddStop"
               @day-cmd="onDayCommand"
               @stop-cmd="onStopCommand"
               @stop-edit="openEditStop"
+              @optimize-order="onOptimizeOrder"
             />
 
             <!-- 日程操作条已上提到大纲标题行（加天 / 批量生成），导出收进头部「更多」 -->

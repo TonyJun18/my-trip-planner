@@ -16,7 +16,8 @@ from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.core.exceptions import NotFoundError
 from app.models import User
-from app.schemas.reorder import ReorderCommitIn, ReorderCommitOut
+from app.schemas.reorder import OptimizeOrderOut, ReorderCommitIn, ReorderCommitOut
+from app.services.day_optimizer import optimize_day_order
 from app.services.reorder_service import commit_reorder
 
 router = APIRouter()
@@ -43,3 +44,23 @@ async def reorder_commit(
         owner=user.id,
     )
     return ReorderCommitOut(**result)
+
+
+@router.post(
+    "/trips/{trip_id}/days/{day_id}/optimize-order",
+    response_model=OptimizeOrderOut,
+    summary="单日按最优顺序重排（最近邻 + DrivingGate 前置 + 预算重算）",
+)
+async def optimize_day_order_endpoint(
+    trip_id: str,
+    day_id: str,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> OptimizeOrderOut:
+    """确定性重排某一天：首站锚定 + 最近邻，只有真变短才落库。
+
+    落库复用 ``commit_reorder``（DrivingGate 前置 + 预算重算 + 原子提交），
+    约束不通过时像拖拽保存一样返回 400，不做任何降级放行。
+    """
+    result = await optimize_day_order(db, trip_id, day_id, owner=user.id)
+    return OptimizeOrderOut(**result)
