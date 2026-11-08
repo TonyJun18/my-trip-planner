@@ -376,6 +376,7 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 | PUT | `/api/v1/trips/edit/{token}/days/{day_id}/stops/order` | 受邀者重排整日站点顺序 |
 | POST | `/api/v1/planner/plan` | **提交 AI 规划任务（异步，需登录；支持 questions 主动提问）** |
 | GET | `/api/v1/planner/tasks/{task_id}` | **轮询规划任务状态（含实时 trace，需登录）** |
+| GET | `/api/v1/planner/quota` | **我的规划额度快照（24h 次数 + 软阈值，只提示不拦截；需登录）** |
 | POST | `/api/v1/chat/sessions` | 创建 AI 助手会话 |
 | GET | `/api/v1/chat/sessions` | 列出我的会话 |
 | GET | `/api/v1/chat/sessions/{session_id}` | 会话详情 |

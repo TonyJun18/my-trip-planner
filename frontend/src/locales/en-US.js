@@ -319,6 +319,8 @@ export default {
     q4: 'Alternative destinations or special requests?',
     q4Placeholder: 'e.g. "stop by Wuzhen", "seafood allergy", "stay near metro"',
     startBtn: 'Start Planning',
+    quotaUsed: '{used} plan(s) in the last 24h · soft cap {limit}',
+    quotaSoftWarn: '{used} plan(s) in the last 24h, above the soft cap of {limit} — you can keep going, this instance charges nothing extra',
     planningTitle: 'AI team is planning {dest}…',
     planningDestFallback: 'your destination',
     planningSub: 'Five specialists at work: sights · weather · hotel · itinerary · quality check',

@@ -1,9 +1,10 @@
 <script setup>
-import { ref, reactive, computed, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import * as api from '@/api'
+import { useAuthStore } from '@/stores/auth'
 import HotelRecommend from '@/components/HotelRecommend.vue'
 import QualityCard from '@/components/QualityCard.vue'
 import TripServicing from '@/components/TripServicing.vue'
@@ -26,6 +27,27 @@ const result = ref(null)
 const activeStep = ref(0)
 const taskStatus = ref('pending')
 const errorMsg = ref('')
+// ── 规划额度提示（task-quota-governance-eval：只提示不拦截，未登录静默不显示） ──
+const quota = ref(null)
+const auth = useAuthStore()
+async function loadQuota() {
+  if (!auth.isLoggedIn) return // 未登录不发请求：避免 401 拦截器把访客踢去登录页
+  try {
+    quota.value = await api.getPlanQuota()
+  } catch {
+    quota.value = null // 接口异常：不打扰用户，也不阻断提交
+  }
+}
+function bumpQuotaAfterSubmit() {
+  if (!quota.value) return
+  const used = (quota.value.used || 0) + 1
+  quota.value = {
+    ...quota.value,
+    used,
+    remaining: Math.max(0, (quota.value.limit || 0) - used),
+    soft_limit_reached: used >= (quota.value.limit || Infinity),
+  }
+}
 let pollTimer = null
 let wsClose = null
 let wsFailed = false  // WS 连接失败/关闭 → 切轮询兜底
@@ -322,6 +344,7 @@ async function submit() {
       language: String(locale.value || '').replace('_', '-'),
     }
     const task = await api.planTrip(payload)
+    bumpQuotaAfterSubmit()
     startRealtime(task.task_id)
     // 兜底：无论 WS 是否可用，都启动轮询（WS 存活时轮询幂等、开销小）
     schedulePoll(task.task_id)
@@ -420,6 +443,10 @@ async function pollTask(taskId) {
     pollTimer = setTimeout(() => pollTask(taskId), 2000)
   }
 }
+
+onMounted(() => {
+  loadQuota()
+})
 
 onBeforeUnmount(() => {
   cleanupWs()
@@ -749,6 +776,18 @@ function goDetail() {
         <button class="btn-primary big" :disabled="submitting" @click.prevent="submit">
           <el-icon style="margin-right: 8px"><MagicStick /></el-icon>{{ $t('planWizard.startBtn') }}
         </button>
+        <!-- 额度软提示（task-quota-governance-eval）：只提示，不 disabled、不拦截提交 -->
+        <p
+          v-if="quota"
+          class="quota-hint"
+          :class="{ 'quota-hint-warn': quota.soft_limit_reached }"
+        >
+          {{
+            quota.soft_limit_reached
+              ? $t('planWizard.quotaSoftWarn', { used: quota.used, limit: quota.limit })
+              : $t('planWizard.quotaUsed', { used: quota.used, limit: quota.limit })
+          }}
+        </p>
       </el-form>
     </div>
 
@@ -1125,6 +1164,9 @@ function goDetail() {
 
 /* .btn-primary/.btn-ghost 全局唯一来源在 theme.css；此处仅保留 PlanWizard 的大按钮修饰符 */
 .btn-primary.big { width: 100%; margin-top: 6px; font-size: 16px; padding: 15px; letter-spacing: .02em; }
+/* 额度软提示：常态弱化，达阈值转琥珀色——只提示，不阻断 */
+.quota-hint { margin: 8px 0 0; font-size: 12px; line-height: 1.5; text-align: center; color: var(--muted); }
+.quota-hint-warn { color: #b45309; }
 
 /* ── 规划中 ── */
 .planning { text-align: center; }

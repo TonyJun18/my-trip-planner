@@ -17,10 +17,29 @@ from app.core.database import get_session
 from app.core.exceptions import NotFoundError
 from app.i18n import normalize_locale
 from app.models import User
-from app.schemas import PlanRequest, PlanTaskOut
-from app.services import planning_service
+from app.schemas import PlanQuotaOut, PlanRequest, PlanTaskOut
+from app.services import planning_service, quota_service
 
 router = APIRouter()
+
+
+@router.get(
+    "/quota",
+    response_model=PlanQuotaOut,
+    summary="查询我的规划额度快照（24h 软阈值，只提示不拦截）",
+)
+async def get_plan_quota(
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> PlanQuotaOut:
+    """最近 24h 规划次数 + 参考阈值。
+
+    本接口只返回数据，**不做拦截**：硬配额/限流需要产品决策（见
+    ``docs/nightly/evaluations/task-quota-governance-eval-2026-11-08.md``），
+    当前版本由前端据此给软提示，提交永远放行。
+    """
+    data = await quota_service.snapshot(db, user.id)
+    return PlanQuotaOut(**data)
 
 
 @router.post(

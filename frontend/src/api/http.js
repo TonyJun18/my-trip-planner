@@ -40,7 +40,8 @@ http.interceptors.response.use(
       }
     }
     const msg = err.response?.data?.error?.message || i18n.global.t('common.requestFailed')
-    if (msg !== 'canceled') ElMessage.error(msg)
+    // config.silent：调用方自己兜底（如额度快照这类「有则显示、无则静默」的旁路请求）
+    if (msg !== 'canceled' && err.config?.silent !== true) ElMessage.error(msg)
     return Promise.reject(err)
   },
 )

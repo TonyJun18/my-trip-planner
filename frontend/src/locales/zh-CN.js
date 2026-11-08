@@ -319,6 +319,8 @@ export default {
     q4: '有备选目的地或特殊要求吗？',
     q4Placeholder: '选填：如「想顺路去乌镇」「对海鲜过敏」「尽量住地铁口」',
     startBtn: '开始规划',
+    quotaUsed: '最近 24 小时已规划 {used} 次 · 参考上限 {limit} 次',
+    quotaSoftWarn: '最近 24 小时已规划 {used} 次，超过参考上限 {limit} 次——仍可继续，本实例不额外收费',
     planningTitle: 'AI 团队正在规划 {dest} 的行程…',
     planningDestFallback: '目的地',
     planningSub: '五位专家协作中：查景点 · 看天气 · 找酒店 · 排行程 · 验质量',

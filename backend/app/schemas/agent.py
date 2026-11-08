@@ -93,6 +93,19 @@ class PlanTaskOut(BaseModel):
     state: str | None = None
 
 
+# ── 规划额度快照（task-quota-governance-eval：只提示不拦截） ─────────
+class PlanQuotaOut(BaseModel):
+    """登录用户最近 24h 的规划次数快照（软阈值，不阻断提交）。"""
+
+    used: int
+    limit: int
+    window_hours: int
+    remaining: int
+    soft_limit_reached: bool
+    # 滚动窗口里最早一次规划滑出窗口的时间（无记录时 None）
+    resets_at: datetime | None = None
+
+
 # ── 行程修订（方案 B：对话改行程） ─────────────────────────────
 class ReviseRequest(BaseModel):
     """用户对已生成行程的自然语言修改请求。"""

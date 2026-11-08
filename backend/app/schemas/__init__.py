@@ -17,6 +17,7 @@ from __future__ import annotations
 from app.schemas.agent import (
     AgentTraceStep,
     PlanQuestion,
+    PlanQuotaOut,
     PlanRequest,
     PlanResponse,
     PlanTaskOut,
