@@ -8,10 +8,18 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ExpenseIn(BaseModel):
-    """新增一条费用记录（金额/类别/支付人/备注）。"""
+    """新增一条费用记录（金额/币种/类别/支付人/备注）。
+
+    - ``currency``：记账原币种（ISO 4217，默认 CNY）。CNY 时无需汇率；
+      非 CNY 时可用 ``rate_to_base`` 显式给「1 原币 = ? 基准币(CNY)」，否则查规则库兜底；
+      规则库无此币种且未给汇率 → 422 明确提示（诚实口径：不编造汇率）。
+    - ``rate_to_base``：可选。录入时锁定的折算汇率（append-only，锁后不可变）。
+    """
 
     category: Literal["food", "transport", "hotel", "attraction", "shopping", "other"] = "other"
-    amount: float = Field(gt=0, description="实际花费金额（元，>0）")
+    amount: float = Field(gt=0, description="实际花费原币金额（>0）")
+    currency: str = Field(default="CNY", min_length=3, max_length=10, description="记账原币种（ISO 4217，默认 CNY）")
+    rate_to_base: float | None = Field(default=None, gt=0, description="可选：1 原币 = ? 基准币（CNY）；锁后不可变")
     payer: str = Field(default="", max_length=50, description="支付人姓名（自由文本；空串=未指定）")
     note: str | None = Field(default=None, max_length=200, description="备注（≤200 字）")
 
@@ -25,6 +33,9 @@ class ExpenseOut(BaseModel):
     trip_id: str
     category: str
     amount: float
+    amount_base: float
+    currency: str
+    rate_to_base: float
     payer: str
     note: str | None = None
     created_at: datetime
@@ -46,3 +57,4 @@ class ExpenseBalanceOut(BaseModel):
     balances: dict[str, float] = Field(default_factory=dict)  # payer → 结余
     unassigned: float = 0.0
     count: int = 0
+    currencies: list[str] = Field(default_factory=list)  # 出现过的原币种（信息透出）

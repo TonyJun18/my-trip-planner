@@ -343,6 +343,12 @@ class TripExpense(Base):
     - ``category``：food / transport / hotel / attraction / shopping / other（默认 other）。
     - 删除为物理删除（最小版：owner 页面可撤销误记）；金额不允许原地修改，
       修改 = 删除旧记录 + 新增（保持 append-only 记账语义，见 service 注释）。
+    - 多币种（task-multi-currency-expense-eval）：
+      - ``currency``：记账原币种（ISO 4217，默认 CNY——与预算/费用整体基准币种一致）；
+      - ``rate_to_base``：记账时锁定的「1 原币 = ? 基准币」汇率（默认 1.0=CNY）；
+      - ``amount_base``：按锁定汇率折算出的基准金额（默认 = amount）。
+      汇率绝不由实时 API 注入（零凭证哲学），由用户填写或规则库兜底；
+      append-only 语义下锁定汇率不可变，保证结余可复算、历史不漂移。
     """
 
     __tablename__ = "trip_expenses"
@@ -351,6 +357,9 @@ class TripExpense(Base):
     trip_id: Mapped[str] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
     category: Mapped[str] = mapped_column(String(20), default="other", nullable=False)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount_base: Mapped[float] = mapped_column(Float, nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), default="CNY", nullable=False)
+    rate_to_base: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
     payer: Mapped[str] = mapped_column(String(50), default="", nullable=False)
     note: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
