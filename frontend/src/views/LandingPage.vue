@@ -53,6 +53,8 @@ const whyPoints = computed(() => [
   { icon: 'DataLine', title: t('landing.whyRealTitle'), desc: t('landing.whyRealDesc') },
   { icon: 'View', title: t('landing.whyTraceTitle'), desc: t('landing.whyTraceDesc') },
   { icon: 'Document', title: t('landing.whyExportTitle'), desc: t('landing.whyExportDesc') },
+  // 中立立场（task-booking-neutrality-eval）：预订只做公开跳转，不碰库存佣金——与自营 OTA 的物理分野
+  { icon: 'Compass', title: t('landing.whyNeutralTitle'), desc: t('landing.whyNeutralDesc') },
 ])
 
 const demoSteps = computed(() => [

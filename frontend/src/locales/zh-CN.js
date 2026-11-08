@@ -144,6 +144,8 @@ export default {
     whyTraceDesc: '每个 Agent 的思考-行动-观察轨迹全程可视，附四维质检评分——每个答案都可回溯。',
     whyExportTitle: '导出去，带走',
     whyExportDesc: '导出 PDF / 图片、一键生成小红书笔记、分享链接——行程不被锁在系统里。',
+    whyNeutralTitle: '规划不卖货，中立不掺水',
+    whyNeutralDesc: '不碰库存、不拿佣金、不加返佣参数——预订只给公开跳转（携程/12306 等），行程随时导出带走。',
     demoTitle: '它是怎么工作的',
     demoSub: '从想法到行程，只要三步。',
     demo1Title: '告诉 AI 你想要什么',

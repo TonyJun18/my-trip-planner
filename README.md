@@ -200,6 +200,17 @@ owner 一键把已分享行程发布到精选（目的地/天数/预算/一句�
 
 按行程隔离的本地打包清单（5 套预设模板 + 自定义 + 勾选进度 + 清除已完成，纯前端零凭证）。
 
+### 🤝 中立立场：规划不卖货
+
+2026 年，OTA 与巨头要么把独立规划工具收编（Expedia×Layla），要么自建 AI planner 把「规划入口」变成「自家货架入口」（Airbnb / Mindtrip / Booking / Trip.com / Hilton）。我们把预订做成**有意边界**，而不是待补的短板：
+
+- **只做公开跳转**：`booking_service._deeplink` 是纯函数拼携程 / 去哪儿 / 12306 / 飞猪 / 同程的检索链接——不自建库存、不代收资金、不伪造「已订」；`TripBooking` 状态机只允许带真实凭证（订单号 / 确认码）进入 `confirmed`。
+- **零返佣**：外链里没有任何联盟或返佣参数（`grep -rn "affiliate\|utm_\|allianceid" backend/app/services/booking_service.py` 无命中）。
+- **数据自由**：`GET /trips/{id}/export`（owner）与 `GET /trips/share/{token}/export`（免登录只读）随时导出完整 JSON，令牌字段绝不外泄。
+- **口径诚实**：预算 / 时间 / 距离由确定性代码计算并标注来源（`basis`），不是 LLM 估值。
+
+换句话说：**我们希望用户信任的是「有依据的行程」，而不是「这里正好有货」。**（评估与约束见 `docs/nightly/evaluations/task-booking-neutrality-eval-2026-11-08.md`）
+
 ### 💬 AI 助手（随行对话）
 
 侧边栏常驻 AI 助手，可全程自然语言对话：行程问答、一句话改行程、细化/调整建议，
@@ -650,7 +661,7 @@ uv run alembic downgrade -1                        # 回滚
 | 局限 | 影响 | 状态 / 可选改进 |
 |------|------|----------|
 | 高德免费 POI 不返回价格，`estimated_cost` 多为 0 | 预算明细中景点/餐厅按门票/人均类目估算，精度有限 | ✅ **已缓解（代码确定性估算）**：酒店用城市基准价 × 档位倍率 × 评分修正（`estimate_hotel_cost`），景点/餐饮用类目参考价——无外部依赖、可测试；接入真实价格源（付费 POI / 携程 / Booking 类）仍有成本与合规考量 |
-| 无预订/支付闭环 | 用户只能拿到"计划"，不能直接下单 | **方案 C（未做）**：接分销商 API，做成真正的转化产品 |
+| 无预订/支付闭环（**有意边界，不是短板**） | 用户需跳到外部 OTA 完成交易 | **立场**：预订只做公开跳转 + 零返佣 + 凭证回填（`booking_service`）；自建库存/分销 API 需资金、合规与客服，与「小而锋利的规划层」定位冲突（评估见 `docs/nightly/evaluations/task-booking-neutrality-eval-2026-11-08.md`） |
 | LLM 规划质量受模型能力上限约束 | 复杂定制（如"避开周一闭馆"）可能不完美 | ✅ **方案 A 缓解**：TravelCriticAgent 四维质检 + 反馈重生成，业务不合理问题可被拦截修正 |
 | 多 Agent 编排是"管道式"（pipeline），非"协商式" | Agent 间不互相质疑/讨论 | ✅ **方案 A 部分解决**：plan-then-review 闭环，Critic 会质疑 Planner 的产出 |
 | 行程是静态快照，旅游中不可交互 | 用户无法实时改路线 | ✅ **方案 B 缓解**：详情页"让 AI 调整行程"对话式修订（AI 出 diff，代码原子执行）+ 手动细粒度编辑（行内编辑/拖拽排序）+ 受邀编辑权 |

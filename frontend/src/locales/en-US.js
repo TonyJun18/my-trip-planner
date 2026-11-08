@@ -144,6 +144,8 @@ export default {
     whyTraceDesc: 'Watch every agent\'s thought-action-observation trace, with a four-dimension quality review — every answer is traceable.',
     whyExportTitle: 'Export & take it anywhere',
     whyExportDesc: 'Export PDF or image, generate a Xiaohongshu note, or open a share link — your plan isn\'t locked inside.',
+    whyNeutralTitle: 'Planning that does not sell',
+    whyNeutralDesc: 'No inventory, no commission, no affiliate tags — bookings are plain public links (Ctrip, 12306, …), and your trip exports any time.',
     demoTitle: 'How it works',
     demoSub: 'Three steps from idea to itinerary.',
     demo1Title: 'Tell AI what you want',
