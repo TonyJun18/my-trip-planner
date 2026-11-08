@@ -19,5 +19,7 @@
     "网络观察（继续有效）：10-17/10-21/10-23/10-30/11-07 web_search keyless 后端 SSL EOF；2026-11-08 与 2026-11-09 实测 web_search 可用，无需降级。",
     "stash 遗留（继续有效）：stash@{0} 为 10-31 白天 5 个前端改动（BookingPanel/i18n/ChatView/LandingPage），stash@{1} 为 floattrip-borrow WIP，待用户白天核验。"
   ],
-  "branches": []
+  "branches": [
+    "nightly/2026-11-09/1-competitive-analysis"
+  ]
 }
