@@ -26,7 +26,8 @@
     "路径偏差（继续有效）：手册第0节项目路径写 /Users/pengjun/Desktop/my-agent/my-trip-planner，实际仓库在 /Users/pengjun/Documents/my-agent/my-trip-planner，按实际路径执行。",
     "网络观察（继续有效）：10-17/10-21/10-23/10-30/11-07 web_search keyless 后端 SSL EOF；2026-11-08 实测 web_search 可用（firecrawl + exa 双后端均返回），无需降级；本日未使用 web_extract。",
     "stash 遗留（继续有效）：stash@{0} 为 10-31 白天 5 个前端改动（BookingPanel/i18n/ChatView/LandingPage），stash@{1} 为 floattrip-borrow WIP，待用户白天核验。",
-    "用户视角遗留（继续有效）：task-trip-detail-refactor 阶段二（信息架构/Tab/Flag）未做待 review；~~share-gate 前端 ShareView 密码 UI~~ → 2026-11-08 已接线（owner 分享设置「访问密码」行 + 访客 403→密码卡→verify→gate 免验；补 `/trips/edit/{token}/verify`、WS `?gate=`、修 WS 挂错 `/api/v1` 前缀导致全站握手 403、修 touch_token_usage 持锁挂死）；~~price-realism rating 前端候选卡展示~~ → 2026-11-08 已接线（HotelRecommend ★ 高德评分芯片 + 口径脚注）；~~trip-rating-signal 详情页评分控件~~ → 2026-11-08 已接线（TripDetailRatingCard）。三项均 build + check:i18n + 浏览器/HTTP/WS 实测通过。"
+    "2026-11-08 顺手修掉的缺陷（阶段二验收中发现，非本轮范围）：POST /trips/{id}/days/generate 必 500 —— DayOut.stops 懒加载在 bulk 创建路径缺 eager-load（add_day 早已修过同一处，属同类缺陷只修一处）。修法：flush 后按 ids 重查 + selectinload(stops)；tests/test_trip_days.py 3 例锁住（可用/幂等/边界 409）。commit e841dfb。",
+    "用户视角遗留（继续有效）：~~task-trip-detail-refactor 阶段二（信息架构/Tab/Flag）~~ → 2026-11-08 已收口（主体早在 1326efe；本轮 A 回滚口硬化 52e8c32 / B 收纳层埋点 8bb6862 / C finished「回顾」+ prep 双 tab b819963 + D 登记；798 passed、四时机真机、服务端 kill switch 与两条新埋点实测）；~~share-gate 前端 ShareView 密码 UI~~ → 2026-11-08 已接线（owner 分享设置「访问密码」行 + 访客 403→密码卡→verify→gate 免验；补 `/trips/edit/{token}/verify`、WS `?gate=`、修 WS 挂错 `/api/v1` 前缀导致全站握手 403、修 touch_token_usage 持锁挂死）；~~price-realism rating 前端候选卡展示~~ → 2026-11-08 已接线（HotelRecommend ★ 高德评分芯片 + 口径脚注）；~~trip-rating-signal 详情页评分控件~~ → 2026-11-08 已接线（TripDetailRatingCard）。三项均 build + check:i18n + 浏览器/HTTP/WS 实测通过。"
   ],
   "branches": []
 }

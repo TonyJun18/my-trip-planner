@@ -99,6 +99,7 @@
 ## 2026-10-29 白天收编（用户续做 task-trip-detail-refactor 阶段一）——TripDetailView 拆分 + 基线埋点
 
 - [x] task-trip-detail-refactor: TripDetailView 重构阶段一纯拆分 + 基线埋点（frontend+backend，设计 docs/plans/2026-10-29-trip-detail-refactor-solution.md §1/§4）。9 组件 + orchestrator 收敛（TripDetailView 1637 行 → 713 行，状态所有权留 orchestrator 不变）+ useTripTypes composable；埋点四事件（planning_tool_open / top_action_click / itinerary_first_view / itinerary_scroll_depth）+ POST /api/v1/analytics/events（schema 白名单校验 204 不落库、guest 也放行）+ exportAll→CollapsibleSection forceOpen 接线（修复 solution §0 指出的导出未展开折叠区问题）。验收：后端全套 693 测试通过（含 test_analytics.py 7 例）、前端 build 4.36s 通过、i18n 146 键 zh/en 双侧齐、四事件挂载点全接线（click 即发/首屏 IntersectionObserver/滚动深度一次性+节流）。分支 nightly/2026-10-29/7-task-trip-detail-refactor，3 commits（0522e83 组件拆分 / 02b216f 埋点+forceOpen / 5efafb9 worklog）。WIP 收编（被掐断 worker 遗留，核验通过提交登记，非重写）；阶段二（信息架构/Tab/Feature Flag）未做，待用户 review 阶段一后另立。
+  **2026-11-08 收口**：阶段二主体其实早在 1326efe 落地（时机四态/tab 收纳/全部工具/规划工具提升/逐日折叠/IA flag），原「未做」是文档债。本轮补齐真缺口：A 回滚口硬化（flag 分级 4 键 + 响应式 useFlag + `GET /api/v1/flags` 服务端 kill switch `FEATURE_FLAGS_JSON` + 对照组死 tab 修复，52e8c32）/ B 收纳层埋点（workspace_tab_switch、workspace_all_toggle，8bb6862）/ C finished 独立「回顾」tab + prep 双 tab（b819963）/ D 登记（PRD §4.1 偏差登记 + 实施记录 §11）。验证：798 passed、build 4.03s、i18n 963×2、四时机真机、kill switch 与两条埋点 payload 实测。剩余 = G1–G5 需 14 天真实流量取数。
 
 ## 2026-10-30 竞品分析追加（Passage AI 行中预订管理 + 步行体验微调，来自 docs/nightly/competitive-analysis/2026-10-30.md）
 

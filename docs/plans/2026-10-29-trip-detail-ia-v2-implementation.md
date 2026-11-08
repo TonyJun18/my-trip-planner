@@ -180,3 +180,67 @@ Header（合并 TopBar+Hero，一行体系，主操作 ≤3 按时机换血）
 - 全量 `pytest tests/` → **693 passed**（100.95s）
 - 真机：中文 Plan B 文案 + ¥ 单符号、移动端地图铺满、桌面地图 360px 不变
 
+---
+
+## 11. 阶段二收口（2026-11-08）
+
+**先纠正一条登记错误**：`docs/nightly/checkpoint.json` 长期写着「阶段二（信息架构/Tab/Flag）未做待 review」，
+但本文档 §1-§10 的动作（时机四态、Tab 收纳、全部工具开关、规划工具提升、逐日折叠、IA flag）早在
+`1326efe` 就已落地并真机验证。**那是文档债，不是功能债**。本轮不是重做，而是补齐三处真缺口 + 登记收口。
+
+### 11.1 三块交付
+
+| 块 | 内容 | 提交 |
+|---|---|---|
+| **A 回滚口硬化** | flag 分级 4 键 + 响应式 `useFlag()`；`GET /api/v1/flags` 服务端 kill switch（`FEATURE_FLAGS_JSON`）；对照组一致性修复（flag 关闭不再出现死 tab） | `52e8c32` |
+| **B 收纳层埋点** | `workspace_tab_switch`（tab + from，from 可为 `all`）/ `workspace_all_toggle`（on）；后端白名单 + 日志字段 | `8bb6862` |
+| **C 时机空白** | finished 独立「回顾」tab（+ 事件流）；prep 双 tab（行前 + 规划，默认停行前）；`openTrackTab` 不再写不存在的 key | `b819963` |
+| D 登记收口 | 本节 + PRD §4.1 偏差登记 + checkpoint/todo/技能更新 | 见 chore 提交 |
+
+顺带修掉一个真缺陷：**`POST /trips/{id}/days/generate` 必 500**（`DayOut.stops` 懒加载缺 eager-load，
+`add_day` 早有同一处注释，bulk 路径漏了）→ `e841dfb`，`tests/test_trip_days.py` 3 例锁住。
+
+### 11.2 flag 全表与依赖
+
+```
+tripDetail.ia.v2                  总闸：关 = 完整 v1（三组虚线平铺 + 无 tab 条 + 无 PlanTools）
+  tripDetail.ia.v2.tabs           时机 tab 收纳（关 = 12 面板平铺，PlanTools 保留）
+  tripDetail.ia.v2.hoist          AI 修订/备选提升主路径（关 = 回工具箱，G1 对照组）
+  tripDetail.ia.v2.collapseDays   逐日默认折叠（关 = 全展开 + 隐藏「展开/收起全部」）
+```
+子开关**仅在总闸开启时生效**。解析优先级：`?flag=` > 服务端显式下发 > localStorage > 内置默认。
+
+### 11.3 回滚四级（按生效时间）
+
+| 级 | 操作 | 范围 | 生效 |
+|---|---|---|---|
+| 1 | 链接加 `?flag=tripDetail.ia.v2=off` | 单会话 | 刷新即生效（flag 只在 setup 读一次） |
+| 2 | `localStorage['mtp.flag.tripDetail.ia.v2']='0'` | 单浏览器 | 刷新即生效 |
+| 3 | 后端 `FEATURE_FLAGS_JSON='{"tripDetail.ia.v2":false}'` + 重启 | **全站** | ~30s + 前端 60s 缓存；**不用重发前端** |
+| 4 | revert 对应提交 | 代码级 | 发布后 |
+
+> `?flag=` 不持久，且会随复制的链接传播 —— 仅限验收/排查，不做用户分流。
+
+### 11.4 验证证据（2026-11-08）
+
+- 后端：`.venv/bin/python -m pytest tests/ -q` → **798 passed**（154s）
+- 前端：`npm run build` → 4.03s；`npm run check:i18n` → 963 keys × 2 语言零差异
+- 服务端 kill switch 实测：env 设总闸 false → 重启 → `curl /api/v1/flags` 回
+  `{"flags":{"tripDetail.ia.v2":false,...},"revision":"eb903c32"}`（直连 8090 与 vite 代理 5173 一致）；
+  无痕打开详情页 → 0 个 `.ws-tab`、0 个 `.plan-tools`、工具箱 10 面板平铺（对照组成立）
+- 解析优先级实测（浏览器内 `import('/src/utils/flags.js')`）：URL 覆盖压过服务端；localStorage 让位于服务端显式值
+- 四时机真机（新建 4 个验收行程）：planning = 单 tab「规划」+ PlanTools；prep = `行前|规划` 双 tab 默认行前；
+  live = 单 tab「行中」；finished = 单 tab「回顾」（含事件流）
+- 埋点实测（拦截 fetch）：点击「全部工具」→ `{'name':'workspace_all_toggle','payload':{...,'on':false}}`；
+  行前切「规划」→ `{'name':'workspace_tab_switch','payload':{...,'tab':'plan','from':'prep'}}`
+- flag off 对照组交互实测：点「更多 → 调整行程」→ 滚到工具箱顶，**0 个死 tab**（这是修复前会出现的形态）
+
+### 11.5 未做 / 下一步
+
+- **G1–G5 判定线取数**：埋点齐了（含新增两个收纳层信号），需真实流量积累 14 天后聚合日志
+  （`analytics_event` 行已带 tab/from/on 三字段）
+- **百分比灰度**：明确降级为服务端 kill switch（PRD §4.1-7），不做 `percent` 分桶
+- Tab 条在 planning/live/finished 仍是单元素（渲染为带标题的容器头）——这是收纳设计的必然结果，
+  不为「让 tab 看起来像 tab」硬造分组
+
+
