@@ -168,6 +168,45 @@ export function useTripShareActions({ trip, afterChange } = {}) {
     { label: t('tripDetail.ttl30d'), value: 30 },
   ])
 
+  // ── 访问密码（task-share-gate-eval：密码锁，与 TTL/吊销正交） ──
+  // 密码只上送不回收：后端只回 has_password，前端不留存任何明文。
+  const passwordUpdating = ref('') // 正在设置的 kind（'share' / 'edit'）
+
+  async function setSharePassword(kind, password) {
+    const pwd = String(password || '')
+    if (pwd.length < 4) {
+      ElMessage.warning(t('tripDetail.sharePasswordMin'))
+      return false
+    }
+    passwordUpdating.value = kind
+    try {
+      await api.setSharePassword(trip.value.id, kind, pwd)
+      ElMessage.success(t('tripDetail.sharePasswordSet'))
+      await loadShareLifecycle()
+      return true
+    } catch {
+      ElMessage.error(t('tripDetail.sharePasswordFail'))
+      return false
+    } finally {
+      passwordUpdating.value = ''
+    }
+  }
+
+  async function clearSharePassword(kind) {
+    passwordUpdating.value = kind
+    try {
+      await api.setSharePassword(trip.value.id, kind, '')
+      ElMessage.success(t('tripDetail.sharePasswordCleared'))
+      await loadShareLifecycle()
+      return true
+    } catch {
+      ElMessage.error(t('tripDetail.sharePasswordFail'))
+      return false
+    } finally {
+      passwordUpdating.value = ''
+    }
+  }
+
   // ── 收藏（当前行程是否已收藏） ──
   const isFavorite = ref(false)
   const favoriting = ref(false)
@@ -207,6 +246,7 @@ export function useTripShareActions({ trip, afterChange } = {}) {
     editSharing, editRevoking, doShareEdit, doRevokeShareEdit,
     shareSettingsVisible, lifecycleItems, lifecycleLoading, ttlUpdating, revokingKind,
     openShareSettings, loadShareLifecycle, lifecycleStatus, copyShareUrl, setTtl, revokeShareLink, ttlOptions,
+    passwordUpdating, setSharePassword, clearSharePassword,
     isFavorite, favoriting, hasSharedToken, checkFavorite, toggleFavorite,
   }
 }

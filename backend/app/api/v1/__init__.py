@@ -31,7 +31,6 @@ from app.api.v1 import (
     trips_ratings,
     trips_share,
     trips_story,
-    ws,
 )
 
 api_router = APIRouter()
@@ -72,7 +71,10 @@ api_router.include_router(social_import.router, tags=["trips"])
 api_router.include_router(map_edit.router, tags=["trips"])
 api_router.include_router(plan_b.router, tags=["trips"])
 api_router.include_router(planner.router, prefix="/planner", tags=["planner"])
-api_router.include_router(ws.router, tags=["ws"])  # WebSocket 端点（prefix 在 ws.py 内）
+# ⚠️ ws.router 不在这里挂：WebSocket 契约是根路径 /ws/*（README / nginx `location /ws/` /
+# vite proxy / 前端 WS_BASE 全部按此假设）。并进 api_router 会让真实路径变成
+# /api/v1/ws/*，前端握手一律 403、实时推送静默退化为轮询（2026-11-08 实测发现）。
+# 现由 app/main.py 在根路径单独 include。
 api_router.include_router(profile.router, prefix="/profile", tags=["profile"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 # 对话式行程助手（B 期）：会话/消息 REST + WS 流式

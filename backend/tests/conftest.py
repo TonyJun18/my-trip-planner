@@ -109,6 +109,10 @@ async def client(test_engine) -> AsyncGenerator[AsyncClient]:
 
     async def _override_session():
         async with factory() as session:
+            # 与生产 get_session 对齐：挂上独立事务工厂（分享令牌审计写
+            # touch_token_usage 从 db.session_factory 起独立 session 提交，
+            # 否则测试里会静默跳过审计、last_used_at 断言失败）
+            session.session_factory = factory  # type: ignore[attr-defined]
             try:
                 yield session
                 await session.commit()

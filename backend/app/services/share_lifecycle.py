@@ -18,13 +18,16 @@ import hmac
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import GoneError, NotFoundError, PermissionDeniedError
+from app.core.logging import get_logger
 from app.core.security import _jwt_secret, hash_password, verify_password
 from app.models import ShareToken, Trip, TripFavorite, User
 from app.services import trip_service
+
+logger = get_logger(__name__)
 
 
 # ── 访问密码（task-share-gate-eval）─────────────────────────────
@@ -187,14 +190,39 @@ def raise_if_token_inactive(rec: ShareToken | None, *, now: datetime | None = No
 
 
 async def touch_token_usage(db: AsyncSession, rec: ShareToken | None) -> None:
-    """审计：最近一次成功访问。尽力而为，失败不阻断读取。"""
+    """审计：最近一次成功访问（独立短事务，尽力而为，失败不阻断读取）。
+
+    ⚠️ 为什么不用调用方的 session（2026-11-08 实测事故）：
+    本函数在「长连接」路径上被调用——WS 协程端点为整条连接持有一个请求级
+    session（/ws/trips/{id}/collab 鉴权后进入 `while True: queue.get()`）。
+    若把 `UPDATE share_tokens SET last_used_at` 挂在这个 session 里只 flush
+    不提交，事务会活到连接结束：行锁常驻 → 之后所有对该令牌的鉴权读
+    （含 `/trips/{share|edit}/{token}/verify`）全部排队等锁，表现为请求挂死。
+    因此这里另开一个 session，写完立即 commit，锁只存在毫秒级；任何失败都
+    只打 debug 日志（审计是附加值，绝不能拖垮读取主路径）。
+
+    独立 session 从 `db.session_factory` 起（`get_session` 与测试 fixture 都会挂上，
+    指向同一个库）：**不要**用 `db.get_bind()` —— AsyncSession 返回的是同步
+    Engine/Connection，建不出 async session（2026-11-08 第一版就栽在这里，
+    isinstance 检查静默跳过导致审计完全没写）。
+    """
     if rec is None:
         return
+    rec_id = rec.id
+    factory = getattr(db, "session_factory", None)
+    if factory is None:  # 无独立事务工厂 → 放弃审计，绝不退回调用方 session
+        logger.debug("touch_token_usage 跳过：当前 session 无 session_factory")
+        return
     try:
-        rec.last_used_at = datetime.now(UTC)
-        await db.flush()
-    except Exception:  # noqa: BLE001 — 审计写失败不影响主流程
-        await db.rollback()
+        async with factory() as session:
+            await session.execute(
+                update(ShareToken)
+                .where(ShareToken.id == rec_id)
+                .values(last_used_at=datetime.now(UTC))
+            )
+            await session.commit()
+    except Exception:  # noqa: BLE001 — 审计写失败不影响主流程（降级不阻断）
+        logger.debug("touch_token_usage 失败（已忽略）: rec=%s", rec_id, exc_info=True)
 
 
 # ── owner 管理 API ───────────────────────────────────────────

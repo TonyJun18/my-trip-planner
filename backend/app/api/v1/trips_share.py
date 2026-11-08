@@ -356,6 +356,30 @@ async def verify_share_password(
     )
 
 
+@router.post("/edit/{token}/verify", response_model=ShareVerifyOut, summary="受邀编辑链接验证访问密码（成功后签发免验凭证）")
+async def verify_edit_password(
+    token: str,
+    data: ShareVerifyIn,
+    db: AsyncSession = Depends(get_session),
+) -> ShareVerifyOut:
+    """受邀编辑令牌的密码验证 → 签发 kind='edit' 的 X-Share-Gate 免验凭证（默认 12h）。
+
+    补齐 share-gate 的编辑侧闭环：owner 可给 kind='edit' 单独设密码（
+    POST /{trip_id}/share/password），但读取侧（/trips/edit/{token} 全链路、
+    行中、拖拽编辑）都会 403——此前只有 share 侧的 verify 端点，受邀者拿到
+    加密编辑链接后无处解锁。语义与 share 侧完全一致：密码错误 → 403
+    share_password_required；通过 → gate_token（HMAC，绑定 token + kind=edit）。
+    """
+    from app.services import share_lifecycle
+
+    await trip_service.get_trip_by_edit_token(db, token, password=data.password)
+    return ShareVerifyOut(
+        ok=True,
+        gate_token=share_lifecycle.issue_gate_token(token, "edit"),
+        expires_in_seconds=share_lifecycle.GATE_TTL_SECONDS,
+    )
+
+
 @router.post("/{trip_id}/share", response_model=ShareOut, summary="生成行程分享链接")
 async def create_share(
     trip_id: str,

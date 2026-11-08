@@ -68,6 +68,18 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     app.include_router(api_router, prefix="/api/v1")
 
+    # ── WebSocket：契约是根路径 /ws/*，不能并进 /api/v1 ─────────────
+    # 前端 WS_BASE、vite proxy '/ws'、nginx `location /ws/`、README 契约都按 /ws/*
+    # 编写；若把 ws.router 并进 api_router，真实路径会变成 /api/v1/ws/*，
+    # 所有握手被 403 拒绝且**静默退化为轮询**（2026-11-08 实测定位）。
+    from app.api.v1.chat import ws_chat
+    from app.api.v1.ws import router as ws_router
+
+    app.include_router(ws_router)  # 自带 prefix="/ws" → /ws/planner/*, /ws/trips/*/collab
+    # 对话流式推送：chat.router 内的 WS 路径会带 /chat 前缀，前端用的是 /ws/chat/{id}，
+    # 故在同一 handler 上补一条根路径路由（避免为此重构 chat 路由表）。
+    app.add_api_websocket_route("/ws/chat/{session_id}", ws_chat)
+
     @app.get("/", include_in_schema=False)
     async def root() -> dict:
         return {"app": settings.APP_NAME, "docs": "/docs", "api": "/api/v1"}

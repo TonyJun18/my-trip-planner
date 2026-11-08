@@ -29,6 +29,8 @@ const props = defineProps({
   lifecycleItems: { type: Array, default: () => [] },
   lifecycleLoading: { type: Boolean, default: false },
   revokingKind: { type: String, default: '' },
+  // 访问密码：正在设置的 kind（'share' / 'edit'，用于按钮 loading）
+  passwordUpdating: { type: String, default: '' },
   ttlOptions: { type: Array, default: () => [] },
   windowOrigin: { type: String, default: '' },
   lifecycleStatus: { type: Function, default: () => () => 'active' },
@@ -42,6 +44,7 @@ const emit = defineEmits([
   'update:gen-days-visible', 'update:gen-range', 'gen-days',
   // 分享设置
   'update:share-settings-visible', 'load-share-lifecycle', 'copy-share-url', 'set-ttl', 'revoke-share-link',
+  'set-share-password', 'clear-share-password',
   // 导入
   'imported', 'update:import-visible',
   'update:xhs-visible',
@@ -49,6 +52,16 @@ const emit = defineEmits([
 
 // 分享设置生命周期状态机
 const lifecycleState = computed(() => (item) => props.lifecycleStatus(item))
+
+// 访问密码输入缓冲（按 kind 分开：share / edit 各一把锁）
+const pwdInputs = ref({})
+function submitPassword(kind) {
+  const pwd = pwdInputs.value[kind] || ''
+  if (!pwd) return
+  emit('set-share-password', kind, pwd)
+  // 明文只留在输入框到提交为止：发出即清空，避免对话框长开时明文驻留
+  pwdInputs.value = { ...pwdInputs.value, [kind]: '' }
+}
 
 // 表单本地副本：props → 本地（打开时同步），本地 → emit（每次变更同步回 orchestrator）
 // 这样 el-input v-model 绑定本地 ref 即可，避免嵌套 computed 不可写问题。
@@ -165,6 +178,43 @@ watch(localStopFormEl, (el) => {
           <span class="ss-value">{{ item.last_used_at ? new Date(item.last_used_at).toLocaleString() : $t('tripDetail.shareNeverUsed') }}</span>
         </div>
 
+        <!-- 访问密码（task-share-gate-eval）：持链接的人需密码才能打开；与有效期/吊销正交 -->
+        <div class="ss-row ss-pwd-row">
+          <span class="ss-label">{{ $t('tripDetail.sharePassword') }}</span>
+          <span class="ss-value">
+            <el-tag v-if="item.has_password" size="small" type="warning" round>{{ $t('tripDetail.sharePasswordOn') }}</el-tag>
+            <span v-else class="ss-pwd-off">{{ $t('tripDetail.sharePasswordOff') }}</span>
+          </span>
+          <div class="ss-pwd-ctrl">
+            <el-input
+              v-model="pwdInputs[item.kind]"
+              size="small"
+              type="password"
+              show-password
+              maxlength="64"
+              :placeholder="$t('tripDetail.sharePasswordPh')"
+              style="width: 150px"
+              @keyup.enter="submitPassword(item.kind)"
+            />
+            <el-button
+              size="small"
+              type="primary"
+              plain
+              :disabled="!pwdInputs[item.kind]"
+              :loading="passwordUpdating === item.kind"
+              @click="submitPassword(item.kind)"
+            >{{ $t('tripDetail.sharePasswordSetBtn') }}</el-button>
+            <el-button
+              v-if="item.has_password"
+              size="small"
+              type="danger"
+              plain
+              :loading="passwordUpdating === item.kind"
+              @click="emit('clear-share-password', item.kind)"
+            >{{ $t('tripDetail.sharePasswordClearBtn') }}</el-button>
+          </div>
+        </div>
+
         <div class="ss-actions" v-if="lifecycleState(item) === 'active'">
           <el-button type="danger" plain size="small" :loading="revokingKind === item.kind" @click="emit('revoke-share-link', item)">
             {{ $t('tripDetail.shareStatusRevoked') }}
@@ -262,6 +312,10 @@ watch(localStopFormEl, (el) => {
 .ss-value { flex: 1; min-width: 0; word-break: break-all; }
 .ss-url { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--brand); }
 .ss-actions { margin-top: 6px; display: flex; justify-content: flex-end; }
+/* 访问密码行：状态 + 输入 + 设置/清除（窄屏整行折下去） */
+.ss-pwd-row { align-items: flex-start; }
+.ss-pwd-ctrl { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ss-pwd-off { color: var(--faint); font-size: 12.5px; }
 
 @media (max-width: 640px) {
   .latlng { flex-direction: column; }

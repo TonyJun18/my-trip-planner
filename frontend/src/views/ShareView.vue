@@ -6,6 +6,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import * as api from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { readCachedJson, isOnline } from '@/utils/pwa'
+import { getGateToken, setGateToken, clearGateToken } from '@/utils/shareGate'
 import TripMap from '@/components/TripMap.vue'
 import JourneyTimeline from '@/components/JourneyTimeline.vue'
 
@@ -174,6 +175,42 @@ const budgetPercent = computed(() => {
   return Math.min(100, Math.round((budget.value.total_estimated / trip.value.budget) * 100))
 })
 
+// ── 访问密码门禁（task-share-gate-eval 前端接线）──────────────
+// 后端对设了密码的 share/edit 令牌返回 403 share_password_required。
+// 这里只负责「收密码 → verify 换 gate_token → 重试」；后续所有免登录请求
+// 由 http 拦截器自动带 X-Share-Gate（见 utils/shareGate.js）。
+const gateVisible = ref(false)
+const gatePassword = ref('')
+const gateError = ref('')
+const gateVerifying = ref(false)
+
+function isGateRequired(e) {
+  return e?.response?.status === 403 && e?.response?.data?.error?.code === 'share_password_required'
+}
+
+async function submitGate() {
+  if (!gatePassword.value || gateVerifying.value) return
+  gateVerifying.value = true
+  gateError.value = ''
+  try {
+    const r = await api.verifySharePassword(route.params.token, gatePassword.value, { edit: editMode.value })
+    setGateToken(route.params.token, r?.gate_token)
+    gateVisible.value = false
+    gatePassword.value = ''
+    await load()
+  } catch (e) {
+    if (e?.response?.status === 403) {
+      // 密码错误：清掉可能存在的旧凭证，避免下次请求带脏 gate
+      clearGateToken(route.params.token)
+      gateError.value = t('share.gateWrong')
+    } else {
+      gateError.value = e?.response?.data?.error?.message || t('share.gateFail')
+    }
+  } finally {
+    gateVerifying.value = false
+  }
+}
+
 async function load() {
   loading.value = true
   error.value = ''
@@ -184,6 +221,8 @@ async function load() {
         : await api.getSharedTrip(route.params.token)
       offlineFallback.value = false // 在线成功：清除离线标识
     } catch (e) {
+      // 密码门禁必须直接上抛：离线缓存里有旧快照，绝不能拿它绕过密码
+      if (isGateRequired(e)) throw e
       // 离线/网络失败：尝试从 Cache API 读分享缓存（SW 缓存 share/edit 读取），读不到再上抛
       const key = editMode.value ? `/api/v1/trips/edit/${route.params.token}` : `/api/v1/trips/share/${route.params.token}`
       const cached = await readCachedJson(key)
@@ -213,7 +252,14 @@ async function load() {
     }
     watchCollabFeed()
   } catch (e) {
-    error.value = editMode.value ? t('share.editLinkInvalid') : t('share.linkInvalid')
+    if (isGateRequired(e)) {
+      // 受密码保护：不显示「链接无效」，改为收密码
+      gateVisible.value = true
+      gateError.value = ''
+      error.value = ''
+    } else {
+      error.value = editMode.value ? t('share.editLinkInvalid') : t('share.linkInvalid')
+    }
   } finally {
     loading.value = false
   }
@@ -455,6 +501,8 @@ function watchCollabFeed() {
   collabClose = api.subscribeTripCollab(trip.value.id, {
     token: route.params.token,
     edit: true,
+    // 访问密码门禁：WS 无法带 header，用 verify 拿到的免验凭证以 query 透传
+    gate: getGateToken(route.params.token),
     onEvent: (evt) => {
       const type = evt?.type || ''
       if (type.startsWith('stop.') || type === 'trip.delayed') {
@@ -504,6 +552,27 @@ function watchCollabFeed() {
         </template>
         <template v-else>{{ $t('gallery.noRating') }}</template>
       </span>
+    </div>
+
+    <!-- 访问密码门禁：受密码保护的分享/受邀编辑链接先收密码（验证后 12h 免验） -->
+    <div v-if="gateVisible && !trip" class="share-gate">
+      <el-icon class="share-gate-icon"><Lock /></el-icon>
+      <h2 class="share-gate-title">{{ $t('share.gateTitle') }}</h2>
+      <p class="share-gate-hint">{{ $t('share.gateHint') }}</p>
+      <div class="share-gate-form">
+        <el-input
+          v-model="gatePassword"
+          type="password"
+          show-password
+          size="large"
+          :placeholder="$t('share.gatePlaceholder')"
+          @keyup.enter="submitGate"
+        />
+        <el-button type="primary" size="large" :loading="gateVerifying" @click="submitGate">
+          {{ $t('share.gateSubmit') }}
+        </el-button>
+      </div>
+      <div v-if="gateError" class="share-gate-err">{{ gateError }}</div>
     </div>
 
     <div v-if="error" class="share-error">
@@ -850,6 +919,28 @@ function watchCollabFeed() {
 
 .share-error { padding: 40px 0; }
 .share-error-hint { color: var(--faint); font-size: 13px; }
+
+/* 访问密码门禁卡片（task-share-gate-eval） */
+.share-gate {
+  max-width: 460px;
+  margin: 48px auto;
+  padding: 28px 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  text-align: center;
+}
+.share-gate-icon { font-size: 30px; color: var(--brand); }
+.share-gate-title { margin: 10px 0 6px; font-size: 17px; font-weight: 700; color: var(--ink); }
+.share-gate-hint { margin: 0 0 16px; font-size: 12.5px; line-height: 1.6; color: var(--muted); }
+.share-gate-form { display: flex; gap: 10px; }
+.share-gate-form .el-input { flex: 1; }
+.share-gate-err { margin-top: 10px; font-size: 12.5px; color: var(--danger, #dc2626); }
+@media (max-width: 640px) {
+  .share-gate { margin: 24px 12px; padding: 20px 16px; }
+  .share-gate-form { flex-direction: column; }
+}
 
 /* ── 头图 ── */
 .hero-card { margin-bottom: 20px; }

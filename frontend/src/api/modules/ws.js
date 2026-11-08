@@ -59,13 +59,16 @@ export function subscribePlanTask(taskId, { onEvent, onStatus, onClose }) {
  * 订阅行程协作/行中 feed（实时同步今日卡片）。
  * - 登录态：传 tripId（owner 详情页，JWT 鉴权）
  * - 免登录：传 { token, edit }（分享/受邀编辑页）
+ *   WS 无法带自定义 header，访问密码门禁靠 `gate`（verify 拿到的免验凭证）
+ *   以 query 透传——不带时受密码保护的令牌会被服务端拒连（前端退回轮询）。
  * 返回 close()；断线由调用方轮询兜底。
  */
-export function subscribeTripCollab(tripId, { token, edit = false, onEvent, onClose } = {}) {
+export function subscribeTripCollab(tripId, { token, edit = false, gate = '', onEvent, onClose } = {}) {
   const params = new URLSearchParams()
   if (token) {
     params.set('token', token)
     if (edit) params.set('edit', '1')
+    if (gate) params.set('gate', gate)
   } else {
     const jwt = localStorage.getItem('trip_planner_token') || ''
     params.set('token', jwt)

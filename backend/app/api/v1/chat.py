@@ -183,6 +183,9 @@ async def ws_chat(websocket: WebSocket, session_id: str, db: AsyncSession = Depe
     if not await _send_safe(websocket, {"type": "snapshot", "messages": history}):
         return
 
+    # 快照读取完成 → 结束只读事务（连接长存，不提交会一直挂 idle in transaction）
+    await db.commit()
+
     key = f"{chat_service.CHAT_BROADCAST_PREFIX}{session_id}"
     queue = hub.subscribe(key)
     try:

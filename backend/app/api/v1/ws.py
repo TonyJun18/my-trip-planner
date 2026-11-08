@@ -83,6 +83,10 @@ async def ws_planner_task(websocket: WebSocket, task_id: str, db: AsyncSession =
         await websocket.close(code=4404)
         return
 
+    # 鉴权/快照读取完成 → 结束只读事务：本连接会长时间存活，
+    # 不结束事务就会一直挂在 idle in transaction（钉住 MVCC 快照、占连接）。
+    await db.commit()
+
     key = f"planner:{task_id}"
     queue = hub.subscribe(key)
     await websocket.accept()
@@ -124,11 +128,16 @@ async def ws_trip_collab(websocket: WebSocket, trip_id: str, db: AsyncSession = 
     # 访问密码门禁（task-share-gate-eval）：WS 无法带自定义 header，
     # 访客先调 verify 拿 gate_token，连接时以 ?gate= 透传免验凭证
     gate = websocket.query_params.get("gate") or ""
+    logger.debug(
+        "ws collab 进入: trip=%s edit=%s token_present=%s gate_present=%s",
+        trip_id, edit, bool(token), bool(gate),
+    )
 
     # 路径 1：先尝试 JWT（owner 登录态）
     try:
         user = await _user_from_ws(websocket, db)
     except Exception:  # noqa: BLE001 — JWT 解析失败不阻断 token 路径
+        logger.debug("ws collab: JWT 解析失败，回退令牌路径", exc_info=True)
         user = None
     if user is not None:
         from app.services import trip_service
@@ -145,15 +154,28 @@ async def ws_trip_collab(websocket: WebSocket, trip_id: str, db: AsyncSession = 
                 if edit else await collab_service._get_trip_by_token(db, token, gate_token=gate)
             )
         except Exception:  # noqa: BLE001 — 令牌无效
+            # 不静默：令牌/密码/生命周期失败的根因要能在日志里查到
+            # （否则前端只看到握手 403，完全无法区分「密码没带对」和「令牌已吊销」）
+            logger.warning(
+                "ws collab: 令牌路径鉴权失败（edit=%s, gate_present=%s）",
+                edit, bool(gate), exc_info=True,
+            )
             await websocket.close(code=4404)
             return
         if trip is None or trip.id != trip_id:
+            logger.warning("ws collab: 行程不匹配 trip_id=%s 实际=%s", trip_id, getattr(trip, "id", None))
             await websocket.close(code=4404)
             return
+
+    # 鉴权完成 → 结束只读事务。本连接会长时间存活（下面进入 queue 等待循环），
+    # 不结束事务会一直挂在 idle in transaction；若期间还有审计写（last_used_at）
+    # 挂在这个 session 上，更会持锁卡死同令牌的后续鉴权读（2026-11-08 实测事故）。
+    await db.commit()
 
     key = f"collab:{trip_id}"
     queue = hub.subscribe(key)
     await websocket.accept()
+    logger.debug("ws collab: 已接受连接 trip=%s edit=%s", trip_id, edit)
     try:
         # 增量推送：等待广播队列消息，发送失败（连接关闭）即退出
         while True:

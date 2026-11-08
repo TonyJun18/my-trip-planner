@@ -104,6 +104,7 @@ const {
   doShareEdit, doRevokeShareEdit,
   shareSettingsVisible, lifecycleItems, lifecycleLoading, ttlUpdating, revokingKind,
   openShareSettings, loadShareLifecycle, lifecycleStatus, copyShareUrl, setTtl, revokeShareLink, ttlOptions,
+  passwordUpdating, setSharePassword, clearSharePassword,
   isFavorite, favoriting, hasSharedToken, toggleFavorite,
 } = share
 
@@ -1017,6 +1018,7 @@ onBeforeUnmount(() => {
       :lifecycle-items="lifecycleItems"
       :lifecycle-loading="lifecycleLoading"
       :revoking-kind="revokingKind"
+      :password-updating="passwordUpdating"
       :ttl-options="ttlOptions"
       :window-origin="windowOrigin"
       :lifecycle-status="lifecycleStatus"
@@ -1037,6 +1039,8 @@ onBeforeUnmount(() => {
       @copy-share-url="copyShareUrl"
       @set-ttl="setTtl"
       @revoke-share-link="revokeShareLink"
+      @set-share-password="setSharePassword"
+      @clear-share-password="clearSharePassword"
       @imported="load"
       @update:import-visible="(v) => (importVisible = v)"
       @update:xhs-visible="(v) => (xhsNoteVisible = v)"

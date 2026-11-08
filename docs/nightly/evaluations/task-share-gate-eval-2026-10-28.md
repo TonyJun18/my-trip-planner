@@ -57,6 +57,27 @@
 
 ## 7. 未覆盖 / 后续（记入 issues）
 
-- **前端**：分享管理面板（ShareView 邀请弹窗 / 设置页）尚未提供「设置密码」UI 与「输入密码」交互（前端仅在 API 层就绪）。夜间不铺开，交由白天/用户 review 后接线。
+- ~~**前端**：分享管理面板尚未提供「设置密码」UI 与「输入密码」交互~~ → **2026-11-08 已闭环**：
+  - owner 侧：分享设置弹窗每个令牌卡片新增「访问密码」行（状态标签 / 密码框 / 设置 / 清除），
+    改完立即刷新生命周期；明文不进任何持久化。
+  - 访客侧：`ShareView` 收到 `403 share_password_required` 时显示密码卡 →
+    `POST /trips/{share|edit}/{token}/verify` 换 `gate_token` → 自动重试加载；
+    密码错误就地提示；gate 存 `localStorage`（按 token），`http` 拦截器对
+    `/trips/share|edit/{token}*` 自动附带 `X-Share-Gate`，WS 用 `?gate=`。
+  - **安全细节**：密码门禁命中时**不走离线缓存降级**（缓存里是旧快照，会绕过密码）。
+- **受邀编辑侧 verify 缺失（本次补）**：原实现只有 share 侧 verify，`kind='edit'` 设密码后
+  受邀者无处解锁。新增 `POST /trips/edit/{token}/verify`（kind 绑定，凭证不可串用）+ 测试。
+- ~~**WS 通道**：share/edit 的 WebSocket 订阅未做密码门禁~~ → **2026-11-08 已闭环**，
+  并顺带修掉一个更底层的路由缺陷：
+  - `ws.router` 原先被并进 `api_router`，真实路径成了 `/api/v1/ws/*`，而前端 `WS_BASE`、
+    vite proxy、nginx `location /ws/`、README 契约全是 `/ws/*` → **所有 WS 握手 403、
+    实时推送静默退化为轮询**（planner / collab / chat 三处）。现改为在 `app/main.py`
+    根路径 include，并为 chat 补 `/ws/chat/{session_id}` 根路由。
+  - `?gate=` 免验凭证已接入前端 `subscribeTripCollab`；不带 gate 的受保护令牌仍被拒（实测）。
+- **审计写持锁事故（本次修）**：`share_lifecycle.touch_token_usage` 原先在调用方 session 里
+  `flush()` 不提交；WS 端点为整条连接持有请求 session → `share_tokens` 行锁常驻 →
+  同令牌的 `/verify` 与所有鉴权读永久排队（实测 `curl` 无响应、`pg_stat_activity` 出现
+  `idle in transaction` + `Lock:transactionid`）。改为 `db.session_factory` 起独立 session
+  写完立即 commit（失败仅 debug 日志），并在 WS 鉴权后 `db.commit()` 结束只读事务。
+  回归测试：`test_usage_audit_does_not_hold_row_lock`（NOWAIT 抢锁 + 审计已落库）。
 - **免验凭证吊销**：目前 gate_token 只能等 12h 自然过期；若需「改密码即吊销所有已发免验凭证」，可在 password_hash 变化时递增 salt 版本（本期未做，收益有限）。
-- **WS 通道**：share/edit 的 WebSocket 订阅未做密码门禁（`ws.py` 令牌直连）。与前端 UI 一并列入后续。

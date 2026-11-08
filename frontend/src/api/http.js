@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import i18n from '@/i18n'
+import { attachShareGate } from '@/utils/shareGate'
 
 // API 地址支持构建期注入（Capacitor/移动端打包时 WebView 无法用相对路径 /api/v1）：
 // - VITE_API_BASE_URL：完整后端地址（如 https://api.example.com/api/v1）
@@ -25,6 +26,9 @@ http.interceptors.request.use((config) => {
   if (appLocale) {
     config.headers['Accept-Language'] = appLocale
   }
+  // 分享/受邀编辑的访问密码免验凭证（task-share-gate-eval）：
+  // 命中 /trips/share|edit/{token} 时自动带 X-Share-Gate，访客只需输一次密码
+  attachShareGate(config)
   return config
 })
 
