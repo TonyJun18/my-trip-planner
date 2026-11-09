@@ -221,6 +221,10 @@ export default {
     emailPlaceholder: 'Paste a booking confirmation email (airline / hotel / activity) to extract bookings and stop candidates',
     socialPlaceholder: 'Paste a social share caption + link (Xiaohongshu / Douyin / IG / TikTok) to extract place candidates; links are only recognized by platform, never fetched',
     linkPlaceholder: 'Paste a public share link (Xiaohongshu / Mafengwo / Ctrip, etc.)',
+    // Xiaohongshu "copy the homework" guide (anti-scraping is not bypassed — paste the body instead)
+    xhsGuideTitle: 'Pasting the note text works better',
+    xhsGuideBody: 'A Xiaohongshu link only yields the title (the body needs login / is blocked by anti-scraping). Open the note → select all → copy → paste it in "Social share" — places are extracted the same way.',
+    xhsGuideAction: 'Paste the note text instead',
     chooseImage: 'Choose screenshots',
     screenshotHint: 'PNG / JPEG, up to 20MB each; select several at once (max {n}) — each is OCR\'d on-device and merged with duplicates removed',
     screenshotLimit: 'Up to {n} screenshots at a time',

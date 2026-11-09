@@ -58,6 +58,25 @@ const targetTripDays = computed(() => {
   return (tr?.days || []).slice().sort((a, b) => a.day_number - b.day_number)
 })
 
+// 小红书「抄作业」引导：平台反爬拿不到正文（link_import 的 _DEEP_EXTRACT_PLATFORMS 不含 xiaohongshu），
+// 与其让用户以为解析成功，不如直接把「粘贴正文」这条路指出来（零凭证，不破反爬）。
+const XHS_RE = /xiaohongshu\.com|xhslink\.com/i
+const isXhsPlatform = computed(
+  () => linkResult.value?.platform === 'xiaohongshu' || XHS_RE.test(linkInput.value),
+)
+const showXhsGuide = computed(
+  () =>
+    tab.value === 'link' &&
+    isXhsPlatform.value &&
+    (!linkResult.value || !linkResult.value.extracted || !(linkResult.value.candidates || []).length),
+)
+
+function usePasteBody() {
+  const url = linkResult.value?.url || linkInput.value.trim()
+  tab.value = 'social'
+  textInput.value = url ? `${url}\n` : ''
+}
+
 watch(visible, (v) => {
   if (v) {
     reset()
@@ -321,9 +340,23 @@ async function commit() {
       </div>
     </div>
 
+    <!-- 小红书：链接读不到正文 → 直接引导粘贴（零凭证，不破反爬） -->
+    <el-alert
+      v-if="showXhsGuide"
+      type="warning"
+      :closable="false"
+      class="result-block"
+      :title="t('importDialog.xhsGuideTitle')"
+    >
+      <p class="xhs-guide-body">{{ t('importDialog.xhsGuideBody') }}</p>
+      <el-button size="small" type="primary" plain @click="usePasteBody">
+        {{ t('importDialog.xhsGuideAction') }}
+      </el-button>
+    </el-alert>
+
     <!-- 链接提取失败：静默降级为链接收藏 -->
     <el-alert
-      v-if="linkResult && !linkResult.extracted"
+      v-if="linkResult && !linkResult.extracted && !showXhsGuide"
       type="info"
       :closable="false"
       class="result-block"
@@ -388,6 +421,7 @@ async function commit() {
 .input-area { margin-bottom: 12px; }
 .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
 .file-name { font-size: 12px; color: var(--brand); margin: 4px 0 0; }
+.xhs-guide-body { margin: 4px 0 8px; font-size: 12.5px; line-height: 1.5; }
 /* 批量截图：已选文件 chips（可单个移除，最多 12 张） */
 .shot-list { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .shot-count { font-size: 12px; color: var(--muted); }

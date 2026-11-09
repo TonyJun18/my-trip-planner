@@ -221,6 +221,10 @@ export default {
     emailPlaceholder: '粘贴预订确认邮件原文（航司 / 酒店 / 活动），自动提取预订条目与站点候选',
     socialPlaceholder: '粘贴社交分享文案（小红书 / 抖音 / IG / TikTok 的 caption + 分享链接），自动提取地点候选；链接仅识别来源平台，不会访问',
     linkPlaceholder: '粘贴公开分享链接（小红书 / 马蜂窝 / 携程等）',
+    // 小红书「抄作业」引导（task：圆周旅迹招牌动作，反爬不可破 → 引导粘贴正文）
+    xhsGuideTitle: '小红书正文读不到，直接粘贴更快',
+    xhsGuideBody: '小红书链接只能拿到标题（正文需登录 / 平台反爬限制）。打开笔记 → 全选复制正文 → 粘贴到「社交分享」里，同样能提取地点候选。',
+    xhsGuideAction: '改用粘贴正文',
     chooseImage: '选择攻略截图',
     screenshotHint: '支持 PNG / JPEG，单张最大 20MB；可一次多选（最多 {n} 张），逐张离线 OCR 后合并去重（图片仅本机处理）',
     screenshotLimit: '一次最多 {n} 张截图',
