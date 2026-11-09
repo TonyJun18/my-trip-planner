@@ -16,23 +16,43 @@
   const isVisible = (el) => !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
 
   function collect(desc) {
+    // ⚠️ 必须穿透 shadow root：小红书的图片上传 input 在 shadow DOM 里，
+    //    普通 querySelectorAll 找不到（Playwright 会自动穿透，所以这个坑在
+    //    rpa 通道里不会暴露，只有浏览器扩展会踩）。
+    const all = deepElements();
+    let nodes = [];
     if (desc.css) {
-      let nodes = [];
       try {
-        nodes = Array.from(document.querySelectorAll(desc.css));
+        nodes = all.filter((el) => el.matches && el.matches(desc.css));
       } catch {
         return [];
       }
-      // css + text 组合：先按结构定位容器，再按文案筛（tab 容器里有多份同名副本）
       if (desc.text) nodes = nodes.filter((el) => (el.textContent || '').includes(desc.text));
       return nodes;
     }
     if (desc.text) {
-      return Array.from(document.querySelectorAll('*')).filter(
+      return all.filter(
         (el) => el.children.length === 0 && (el.textContent || '').trim() === desc.text,
       );
     }
     return [];
+  }
+
+  let _deepCache = { at: 0, nodes: [] };
+  function deepElements() {
+    // 200ms 内复用同一份遍历结果（轮询时避免反复全树遍历）
+    if (Date.now() - _deepCache.at < 200) return _deepCache.nodes;
+    const acc = [];
+    const walk = (root) => {
+      if (!root || !root.querySelectorAll) return;
+      for (const el of root.querySelectorAll('*')) {
+        acc.push(el);
+        if (el.shadowRoot) walk(el.shadowRoot);
+      }
+    };
+    walk(document);
+    _deepCache = { at: Date.now(), nodes: acc };
+    return acc;
   }
 
   async function findFirst(descs, { visible = true, timeout = 8000 } = {}) {

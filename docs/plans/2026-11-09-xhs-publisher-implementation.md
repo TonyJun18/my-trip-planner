@@ -296,3 +296,12 @@ backend:
 - 只支持桌面 Chrome / Edge（移动端装不了扩展，是方案 B 的固有代价）；
 - 扩展代码不能自动更新，但**选择器由服务端下发**，小红书改版无需重发扩展；
 - 用户必须已在该浏览器登录小红书创作服务平台。
+
+### 10.7 扩展侧真机验证（2026-11-09）
+
+| 项 | 结论 |
+|---|---|
+| 图片上传 input 在 **shadow DOM（open）** 里 | 普通 `querySelectorAll` 命中 0；Playwright 会自动穿透，所以 **rpa 通道不会暴露这个坑**。`content.js` 必须用 `deepElements()` 递归 shadowRoot 再匹配 |
+| 切到图文 tab 时 | 只有图片上传控件存在；**标题/正文/底部动作栏要等图片上传后才挂载** |
+| 深度查询 + 真实上传一张 1080×1440 后 | `file_input` / `title` / `editor` / `submit_bar` 全部命中（验证脚本：按 content.js 同样逻辑执行） |
+| 底部「发布」在 `<xhs-publish-btn>`（**closed** shadow root） | 扩展读不到内部按钮 → 因此扩展**不代点发布**，由用户自己点（正好符合安全边界） |
