@@ -11,15 +11,17 @@
   "completed": [
     "competitive-analysis",
     "task-favorites-to-route",
-    "task-social-favorites-flow-eval"
+    "task-social-favorites-flow-eval",
+    "task-import-recall-benchmark"
   ],
-  "current_index": 3,
+  "current_index": 4,
   "claims": {},
   "issues": [
     "2026-11-10 night-start 重建：上一轮 night=2026-11-09 status=in_progress（二次触发版，todo=[task-photo-batch-screenshot, task-weather-probability-eval]，completed=[]）跨夜作废。重建依据 = 手册铁律2「每夜第一个任务固定是竞品分析」+ todo 文件现存 [ ] 项。核验：task-photo-batch-screenshot 已由 11-09 白天 commit 1872930 完成并入 main（frontend/src/api/modules/discovery.js + ImportDialog.vue 多选 ≤12 张 + locales zh/en，git branch --contains 含 main），todo 文件漏勾 → 本夜补勾登记，不入队列。本夜队列 = [competitive-analysis, task-weather-probability-eval]。",
     "2026-11-10 worker-1 竞品分析完成登记：文档 docs/nightly/competitive-analysis/2026-11-10.md（Expedia Fall 2026 / Wanderlog Import from anywhere / Plotline collect-first / Roameo / 问旅 / Mindtrip DMO 白标）+ todo 追加 4 个新行动项（task-favorites-to-route / task-social-favorites-flow-eval / task-import-recall-benchmark / task-property-qa-eval）+ photo-batch-screenshot 补勾；web_extract 对 getplotline.app 仍被 SSRF 误判 Blocked（与 11-09 同款），改用搜索索引快照交叉核对。",
     "2026-11-10 worker-3 完成 task-favorites-to-route（接管 worker-2 被掐断遗留）：后端 commit 542dd25（GET /trips/favorites/stops 聚合 + POST /trips/favorites/{trip_id}/route 复制草稿，含 9 例 test_favorites_route.py）已完成于本分支；前端 WIP（FavoritesView.vue + 导航 + api 封装 + favorites.* i18n）未提交，本 worker 核验 build/i18n/后端全套后收编提交 c00bb8a；另把竞品分析分支 docs 基线（todo 11-10 段 + 权威 checkpoint）cherry-pick 归拢（783a52c+cf714d8），todo 勾选完成。全套 933 passed、前端 build 4.12s、check:i18n 1113×2 通过。分支 nightly/2026-11-10/1-task-favorites-to-route 4 commits 待用户 review。",
-    "2026-11-10 worker-5 完成 task-social-favorites-flow-eval（接管 worker-4 被掐断遗留）：评估通过落地 collect-first 底座，后端 commit 09c5764（FavoriteSpot 模型 user+name_key 唯一 + POST /trips/favorite-spots/batch 幂等批量收藏 + GET/DELETE 收集箱 + alembic d4e6f8a0b2c4 防御式幂等）；评估记录 docs/nightly/evaluations/task-social-favorites-flow-eval-2026-11-10.md（Plotline collect-first vs Wanderlog trip-only 实证 + 方案 A/B/C 决策 + 验收）。专项 16 passed、全套 940 passed。Web Share Target PWA 增量登记不排期（manifest 无 share_target）。遗留：迁移 d4e6f8a0b2c4 未在 dev 库执行（白天 upgrade，与 a4b5c6d7e8f9 同例）、前端收集箱接线未做（可立项 task-favorite-spots-frontend）。分支 nightly/2026-11-10/2-task-social-favorites-flow-eval 3 commits 待用户 review。",
+    "2026-11-10 worker-5 完成 task-social-favorites-flow-eval（接管 worker-4 被掐断遗留）：评估通过落地 collect-first 底座，后端 commit 09c5764（FavoriteSpot 模型 user+name_key 唯一 + POST /trips/favorite-spots/batch 幂等批量收藏 + GET/DELETE 收集箱 + alembic d4e6f8a0b2c4 防御式幂等）；评估记录 docs/nightly/evaluations/task-social-favorites-flow-eval-2026-11-10.md（Plotline collect-first vs Wanderlog trip-only 实证 + 方案 A/B/C 决策 + 验收）。专项 16 passed、全套 940 passed。Web Share Target PWA 增量登记不排期。遗留：迁移 d4e6f8a0b2c4 未在 dev 库执行（白天 upgrade，与 a4b5c6d7e8f9 同例）、前端收集箱接线未做（可立项 task-favorite-spots-frontend）。分支 nightly/2026-11-10/2-task-social-favorites-flow-eval 3 commits 待用户 review。",
+    "2026-11-10 worker-6 完成 task-import-recall-benchmark：导入召回率评测基准确立（基准 tests/import_recall_samples.py + 回归 tests/test_import_recall.py 7 passed + 评估记录 docs/nightly/evaluations/task-import-recall-benchmark-2026-11-10.md）。基线：中文三通道召回全 1.0（攻略 10/10、社交 6/6、邮件 3/3），英文攻略 0/10 为已知差距（规则引擎仅中文地名收尾词）→ 中文下限 ≥0.9 防回归、英文上限 ≤0.3 防候选爆炸式虚假召回。全套 947 passed（940+7）。遗留：①英文/多语种导入规则可立项（与国际化 7 语种联动，本基准即验收门）；②EMAIL 条目级误判——_ROUTE_RE 把 XX9988 式订单号当航班（候选不受影响）；③link/screenshot 通道解析段被 NOTE_ZH 覆盖，真实 OCR 沿用 smoke test 策略。分支 nightly/2026-11-10/3-task-import-recall-benchmark 待用户 review。",
     "路径偏差（继续有效）：手册第0节项目路径写 /Users/pengjun/Desktop/my-agent/my-trip-planner，实际仓库在 /Users/pengjun/Documents/my-agent/my-trip-planner，按实际路径执行。",
     "网络观察（继续有效）：10-17/10-21/10-23/10-30/11-07 web_search keyless 后端 SSL EOF；2026-11-08 与 2026-11-09 实测 web_search 可用，无需降级。",
     "stash 遗留（继续有效）：stash@{0} 为 10-31 白天 5 个前端改动（BookingPanel/i18n/ChatView/LandingPage），stash@{1} 为 floattrip-borrow WIP，待用户白天核验。",
@@ -33,6 +35,7 @@
     "nightly/2026-11-09/3-task-photo-import-eval",
     "nightly/2026-11-10/0-competitive-analysis",
     "nightly/2026-11-10/1-task-favorites-to-route",
-    "nightly/2026-11-10/2-task-social-favorites-flow-eval"
+    "nightly/2026-11-10/2-task-social-favorites-flow-eval",
+    "nightly/2026-11-10/3-task-import-recall-benchmark"
   ]
 }
