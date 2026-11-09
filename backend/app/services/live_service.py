@@ -97,6 +97,19 @@ def live_snapshot(trip: Trip, *, today: date | None = None) -> dict[str, Any]:
                 "lng": s.lng,
             })
 
+    # 今日天气卡（task-weather-gate-eval）：从最新 AI 方案快照读取 weather，
+    # 按今日日期匹配预报条目；无数据/非 live → None（绝不伪造）。
+    weather_card: dict[str, Any] | None = None
+    if day is not None:
+        try:
+            latest = (trip.plans or [None])[0]
+            if latest is not None:
+                from app.services.weather_validation import weather_card as _wc
+
+                weather_card = _wc(latest.plan_data or {}, day_date=day.date)
+        except Exception:  # noqa: BLE001 — 天气卡失败降级为无（读路径绝不可阻断）
+            weather_card = None
+
     return {
         "phase": phase,
         "today": today.isoformat(),
@@ -106,6 +119,7 @@ def live_snapshot(trip: Trip, *, today: date | None = None) -> dict[str, Any]:
         "stops": stops_out,
         "completed": sum(1 for s in stops_out if s["checked"]),
         "total": len(stops_out),
+        "weather": weather_card,
     }
 
 

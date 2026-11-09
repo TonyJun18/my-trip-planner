@@ -588,6 +588,23 @@ async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
 
     dyn_facts = check_plan_dynamic_facts({"days": new_days})
 
+    # 天气校验（WeatherGate）随修订重算：雨天/酷暑提示同步刷新
+    # （plan.weather 快照在修订时不重取——预报时效短，修订只是站点级调整，
+    #   沿用原快照；缺失则 WeatherGate 自然沉默）
+    from app.services.weather_validation import check_plan_weather_gate
+
+    # 从最新 AI 方案快照取原 weather 预报（若有），随修订保留；
+    # 无快照/无 weather 字段 → 传入空 dict，WeatherGate 沉默（绝不编造）。
+    _latest_plan = (trip.plans or [None])[0]
+    _weather_snapshot: dict[str, Any] = {}
+    if _latest_plan is not None and isinstance(_latest_plan.plan_data, dict):
+        _w = _latest_plan.plan_data.get("weather")
+        if isinstance(_w, dict) and _w:
+            _weather_snapshot = _w
+    weather_gate = check_plan_weather_gate(
+        {"days": new_days, "weather": _weather_snapshot}
+    )
+
     # 更新最新 TripPlan 快照（若无则跳过；前端详情页主数据来自 trip 本身）。
     # 版本保留（task-floattrip-borrow Story 3：修订产生新版本，保留原版本）：
     # 更新前把当前快照复制为 archived 历史版本（沿用原 created_at），原行升级为
@@ -625,5 +642,10 @@ async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
                 **{k: v for k, v in dyn_facts.items() if k != "issues"},
                 "issues": dyn_facts.get("issues") or [],
                 "basis": "rule_based",
+            },
+            "weather_gate": {
+                **{k: v for k, v in weather_gate.items() if k != "issues"},
+                "issues": weather_gate.get("issues") or [],
+                "basis": "weather_forecast",
             },
         }
