@@ -11,13 +11,16 @@ import PackingList from '@/components/PackingList.vue'
 import TripServicing from '@/components/TripServicing.vue'
 import HotelRecommend from '@/components/HotelRecommend.vue'
 import TripEventFeed from '@/components/TripEventFeed.vue'
+import ExpensePanel from '@/components/ExpensePanel.vue'
 
-// 内部子面板 ref（JourneyTimeline / PassportPanel），暴露给 orchestrator 刷新投影
+// 内部子面板 ref（JourneyTimeline / PassportPanel / ExpensePanel），暴露给 orchestrator 刷新投影
 const journeyInner = ref(null)
 const passportInner = ref(null)
+const expenseInner = ref(null)
 defineExpose({
   loadJourney: () => journeyInner.value?.load(),
   loadPassport: () => passportInner.value?.load(),
+  loadExpense: () => expenseInner.value?.load(),
 })
 
 // 工具箱：3 组 CollapsibleSection 编排容器（规划修订 / 旅程执行 / 装备素材）。
@@ -254,7 +257,7 @@ function isHoisted(key) {
   </div>
 
   <!-- ═══ 工具箱：旅程执行 ═══ -->
-  <div v-if="['booking', 'journey', 'passport', 'story'].some((k) => has(k))" class="toolbox-group">
+  <div v-if="['booking', 'journey', 'expense', 'passport', 'story'].some((k) => has(k))" class="toolbox-group">
     <div v-if="!flat" class="toolbox-label"><el-icon style="margin-right: 5px"><DataLine /></el-icon>{{ $t('tripDetail.toolboxOps') }}</div>
     <div class="aux-area">
       <CollapsibleSection
@@ -283,6 +286,17 @@ function isHoisted(key) {
           <span v-if="journeyBadge" class="cs-badge">{{ journeyBadge }}</span>
         </template>
         <JourneyTimeline ref="journeyInner" :trip-id="trip.id" @changed="emit('changed')" />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        v-if="has('expense')"
+        plain
+        :default-open="false"
+        :force-open="exportAll"
+        :storage-key="`tripDetail.aux.v2.expense.${trip.id}`"
+      >
+        <template #title>{{ $t('expense.panelTitle') }}</template>
+        <ExpensePanel ref="expenseInner" :trip-id="trip.id" @changed="emit('changed')" />
       </CollapsibleSection>
 
       <CollapsibleSection

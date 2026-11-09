@@ -18,6 +18,7 @@ import TripDetailWorkspace from '@/components/trip-detail/TripDetailWorkspace.vu
 import TripDetailSidebar from '@/components/trip-detail/TripDetailSidebar.vue'
 import TripDetailRatingCard from '@/components/trip-detail/TripDetailRatingCard.vue'
 import TripDetailDialogs from '@/components/trip-detail/TripDetailDialogs.vue'
+import AddExpenseDialog from '@/components/AddExpenseDialog.vue'
 import { useTripDetailLoad } from '@/composables/useTripDetailLoad'
 import { useRevise } from '@/composables/useRevise'
 import { useEditDialog } from '@/composables/useEditDialog'
@@ -81,12 +82,16 @@ const passportBadge = computed(() => {
 })
 
 function refreshJourney() {
-  // 子组件内部面板刷新（Toolbox 内 JourneyTimeline/PassportPanel + Sidebar 内 TripDashboard）
+  // 子组件内部面板刷新（Toolbox 内 JourneyTimeline/PassportPanel/ExpensePanel + Sidebar 内 TripDashboard）
   toolboxRef.value?.loadJourney()
   toolboxRef.value?.loadPassport()
+  toolboxRef.value?.loadExpense()
   sidebarRef.value?.load()
   loadSummaries()
 }
+
+// ── 行中「记一笔」对话框（今日卡片入口；工具箱内也有独立面板，同一 API） ──
+const expenseDialogVisible = ref(false)
 
 const core = useTripDetailLoad({ onJourneyChange: refreshJourney })
 const {
@@ -182,10 +187,10 @@ const collapseDaysV2 = useFlag('tripDetail.ia.v2.collapseDays')
 // ── 次级工作台：按时机收纳面板（tab + 全部工具开关）──────────
 const WS_PLAN_KEYS = ['revise', 'planb', 'timegate', 'quality', 'hotel']
 const WS_PREP_KEYS = ['booking', 'hotel', 'servicing', 'packing', 'events']
-const WS_LIVE_KEYS = ['journey', 'passport', 'story']
+const WS_LIVE_KEYS = ['journey', 'expense', 'passport', 'story']
 // 已结束：行程走完了，「追踪进度」仍有意义（回顾走到了哪），但事件流重新有价值（消费/打卡记录），
 // 而「行中」这个标签已经不成立 —— 单独一组，标签用「回顾」。
-const WS_FINISHED_KEYS = ['journey', 'passport', 'story', 'events']
+const WS_FINISHED_KEYS = ['journey', 'expense', 'passport', 'story', 'events']
 
 const wsTab = ref('')
 const wsShowAll = ref(false)
@@ -916,6 +921,17 @@ onBeforeUnmount(() => {
           @check="doCheckStop"
           @skip="doSkipStop"
           @delay="doDelayTrip"
+          @add-expense="expenseDialogVisible = true"
+        />
+
+        <!-- 行中「记一笔」：预算口径用于记账后的超预算提示（超了才提示，不做常驻预警） -->
+        <AddExpenseDialog
+          v-if="trip"
+          v-model="expenseDialogVisible"
+          :trip-id="trip.id"
+          :budget-total="Number(trip.budget) || 0"
+          :spent-total="Number(tripSummaries?.journey?.expense_total) || 0"
+          @added="refreshJourney"
         />
 
         <!-- 主路径：地图 + 逐日大纲（永不进 tab）+ 侧栏仪表盘 -->
