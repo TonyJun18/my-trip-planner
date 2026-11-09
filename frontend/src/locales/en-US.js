@@ -990,6 +990,25 @@ export default {
     },
     amountText: '~{amount} {currency}',
   },
+  // ── Persistent budget bar + basis (Mindtrip / DVGO) ──
+  budgetBar: {
+    planned: 'Budget',
+    estimated: 'Estimated',
+    spent: 'Spent',
+    perPerson: '¥{amount} / person',
+    over: 'Over by ¥{amount}',
+    showBasis: 'Breakdown',
+    hideBasis: 'Hide breakdown',
+    included: 'Includes (estimated)',
+    excluded: 'Excludes',
+    excludedList: 'Shopping, tips, visa, insurance, change fees',
+    noBreakdown: 'No category breakdown yet',
+    basisLabel: 'Source',
+    tickets: 'Tickets',
+    food: 'Food',
+    hotel: 'Hotel',
+    transport: 'Round trip',
+  },
   // ── Expense tracking (task-multi-currency-expense-eval frontend) ──
   expense: {
     panelTitle: 'Expenses',

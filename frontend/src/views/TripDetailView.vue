@@ -10,6 +10,7 @@ import * as api from '@/api'
 // 组件树见 docs/plans/2026-10-29-trip-detail-refactor-solution.md §1.1 / §2.1
 import TripDetailHeader from '@/components/trip-detail/TripDetailHeader.vue'
 import TripDetailLiveToday from '@/components/trip-detail/TripDetailLiveToday.vue'
+import TripDetailBudgetBar from '@/components/trip-detail/TripDetailBudgetBar.vue'
 import TripDetailMapCard from '@/components/trip-detail/TripDetailMapCard.vue'
 import TripDetailPlanTools from '@/components/trip-detail/TripDetailPlanTools.vue'
 import TripDetailDayCard from '@/components/trip-detail/TripDetailDayCard.vue'
@@ -937,6 +938,16 @@ onBeforeUnmount(() => {
         <!-- 主路径：地图 + 逐日大纲（永不进 tab）+ 侧栏仪表盘 -->
         <div class="detail-layout">
           <div class="main-col">
+            <!-- 常驻预算条（Mindtrip 持久预算条 / DVGO 含·不含口径）：与今日卡片同屏，随时可见 -->
+            <TripDetailBudgetBar
+              :budget-planned="Number(trip?.budget) || 0"
+              :estimated="Number(budget?.total_estimated) || 0"
+              :spent="Number(tripSummaries?.journey?.expense_total) || 0"
+              :by-type="budget?.by_type || {}"
+              :basis="budget?.estimate_basis || {}"
+              :travelers="Number(trip?.travelers) || 1"
+            />
+
             <!-- 地图 -->
             <TripDetailMapCard
               :markers="markers"

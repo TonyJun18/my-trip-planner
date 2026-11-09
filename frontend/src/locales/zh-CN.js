@@ -990,6 +990,25 @@ export default {
     },
     amountText: '约 {amount} {currency}',
   },
+  // ── 常驻预算条 + 预算口径（task：Mindtrip 持久预算条 / DVGO 含·不含清单） ──
+  budgetBar: {
+    planned: '预算',
+    estimated: '预计',
+    spent: '已花',
+    perPerson: '人均 ¥{amount}',
+    over: '超预算 ¥{amount}',
+    showBasis: '预算口径',
+    hideBasis: '收起口径',
+    included: '含（估算）',
+    excluded: '不含',
+    excludedList: '购物、小费、签证、保险、临时改签',
+    noBreakdown: '暂无分类明细',
+    basisLabel: '数据来源',
+    tickets: '门票',
+    food: '餐饮',
+    hotel: '住宿',
+    transport: '往返交通',
+  },
   // ── 费用记账（task-multi-currency-expense-eval 前端接线） ──
   expense: {
     panelTitle: '费用记账',
