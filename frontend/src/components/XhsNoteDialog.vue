@@ -7,7 +7,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Picture, CopyDocument, Refresh, Promotion } from '@element-plus/icons-vue'
 import * as api from '@/api'
-import { exportImage } from '@/utils/export'
+import { exportImage, renderToDataUrl } from '@/utils/export'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -138,9 +138,126 @@ function coverEmoji(type) {
   return { attraction: '🏞️', food: '🍜', hotel: '🏨' }[type] || '📍'
 }
 
-// 打开对话框时若尚无文案则自动生成一次
+// ── 发布通道（方案 C：策略 + 工厂；后端默认 manual） ──────────
+// channel.mode: manual（复制文案）/ rpa（自动填创作服务平台表单）
+const channel = ref({ mode: 'manual', requires_images: false, supports_auto_submit: false })
+const publishState = ref('') // queued / running / ready / published / unknown / failed / manual
+const publishMessage = ref('')
+const publishUrl = ref('')
+const publishAutoSubmit = ref(false)
+const publishing = ref(false)
+
+const canAutoPublish = computed(() => channel.value?.mode === 'rpa')
+const publishBusy = computed(() => publishing.value || ['queued', 'running'].includes(publishState.value))
+const publishStateType = computed(
+  () =>
+    ({
+      ready: 'warning',
+      published: 'success',
+      unknown: 'warning',
+      failed: 'danger',
+      manual: 'info',
+    })[publishState.value] || 'info',
+)
+const publishStateLabel = computed(() => {
+  const key = `xhsNote.publishState.${publishState.value}`
+  return publishState.value ? t(key) : ''
+})
+
+async function loadChannel() {
+  try {
+    channel.value = await api.getXhsChannels(props.tripId)
+  } catch {
+    // 通道能力是旁路信息：拿不到就按手动模式渲染，绝不阻断对话框
+    channel.value = { mode: 'manual', requires_images: false, supports_auto_submit: false }
+  }
+}
+
+function topicsList() {
+  return topicsText.value
+    .split(/[#\s,，]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function publishReasonText(job) {
+  const map = {
+    login_required: t('xhsNote.publishReasonLogin'),
+    driver_not_ready: t('xhsNote.publishReasonDriver'),
+    no_images: t('xhsNote.publishReasonNoImage'),
+    asset_missing: t('xhsNote.publishReasonNoImage'),
+    asset_path_not_ascii: t('xhsNote.publishReasonNoImage'),
+    title_too_long: t('xhsNote.publishReasonTitle'),
+    body_too_long: t('xhsNote.publishReasonBody'),
+    submit_failed: t('xhsNote.publishReasonStructure'),
+    selector_miss: t('xhsNote.publishReasonStructure'),
+  }
+  return map[job?.reason] || job?.message || ''
+}
+
+async function pollJob(jobId) {
+  for (let i = 0; i < 80; i += 1) {
+    await new Promise((r) => setTimeout(r, 1500))
+    if (!visible.value) return
+    try {
+      const job = await api.getXhsPublishJob(props.tripId, jobId)
+      publishState.value = job.state
+      publishMessage.value = publishReasonText(job)
+      if (job.note_url) publishUrl.value = job.note_url
+      if (!['queued', 'running'].includes(job.state)) return
+    } catch (e) {
+      publishState.value = 'failed'
+      publishMessage.value = e?.response?.data?.error?.message || e.message
+      return
+    }
+  }
+  publishState.value = 'unknown'
+  publishMessage.value = t('xhsNote.publishReasonTimeout')
+}
+
+async function publishToXhs() {
+  if (publishBusy.value) return
+  if (!title.value.trim() || !body.value.trim()) {
+    ElMessage.warning(t('xhsNote.publishNeedContent'))
+    return
+  }
+  publishing.value = true
+  publishState.value = 'queued'
+  publishMessage.value = ''
+  publishUrl.value = ''
+  try {
+    let assetIds = []
+    if (channel.value?.requires_images) {
+      // 发布通道要"服务端能读到的文件"：把封面卡 canvas 转 PNG 上传
+      if (!coverRef.value) throw new Error(t('xhsNote.publishReasonNoImage'))
+      const dataUrl = await renderToDataUrl(coverRef.value)
+      const asset = await api.uploadXhsAsset(props.tripId, dataUrl)
+      assetIds = [asset.asset_id]
+    }
+    const job = await api.publishXhsNote(props.tripId, {
+      title: title.value,
+      body: body.value,
+      topics: topicsList(),
+      asset_ids: assetIds,
+      auto_submit: canAutoPublish.value && publishAutoSubmit.value,
+    })
+    publishState.value = job.state
+    await pollJob(job.job_id)
+  } catch (e) {
+    publishState.value = 'failed'
+    publishMessage.value =
+      e?.response?.data?.error?.message || e?.message || t('xhsNote.publishFailed')
+  } finally {
+    publishing.value = false
+  }
+}
+
+// 打开对话框时若尚无文案则自动生成一次；同时拉取发布通道能力
 watch(visible, (v) => {
-  if (v && !note.value && !loading.value) generate()
+  if (v) {
+    loadChannel()
+    if (!note.value && !loading.value) generate()
+  }
 })
 </script>
 
@@ -235,6 +352,45 @@ watch(visible, (v) => {
           </div>
         </div>
         <div class="xhs-cover-spec">{{ t('xhsNote.coverSpec') }}</div>
+      </div>
+
+      <!-- 发布通道（方案 C：自动填表 / 手动复制；能力由后端工厂下发） -->
+      <div class="xhs-publish">
+        <div class="xhs-publish-head">
+          <span class="xhs-publish-name">{{ t('xhsNote.publishTitle') }}</span>
+          <el-tag size="small" :type="canAutoPublish ? 'success' : 'info'" round>
+            {{ canAutoPublish ? t('xhsNote.publishModeRpa') : t('xhsNote.publishModeManual') }}
+          </el-tag>
+        </div>
+        <div class="xhs-publish-hint">
+          {{ canAutoPublish ? t('xhsNote.publishRpaHint') : t('xhsNote.publishManualHint') }}
+        </div>
+        <div class="xhs-publish-actions">
+          <el-button
+            v-if="canAutoPublish"
+            type="primary"
+            size="small"
+            :loading="publishBusy"
+            @click="publishToXhs"
+          >
+            <el-icon><Promotion /></el-icon>&nbsp;{{ t('xhsNote.publishAction') }}
+          </el-button>
+          <el-checkbox v-if="canAutoPublish" v-model="publishAutoSubmit" :disabled="publishBusy">
+            {{ t('xhsNote.publishAutoSubmit') }}
+          </el-checkbox>
+          <el-tag v-if="publishState" size="small" :type="publishStateType">
+            {{ publishStateLabel }}
+          </el-tag>
+        </div>
+        <div v-if="publishMessage" class="xhs-publish-msg">{{ publishMessage }}</div>
+        <a
+          v-if="publishUrl"
+          :href="publishUrl"
+          target="_blank"
+          rel="noopener"
+          class="xhs-publish-link"
+          >{{ publishUrl }}</a
+        >
       </div>
     </div>
 
@@ -380,5 +536,41 @@ watch(visible, (v) => {
 .xhs-cover-spec {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+/* ── 发布通道 ─────────────────────────────── */
+.xhs-publish {
+  border-top: 1px dashed var(--el-border-color);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.xhs-publish-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.xhs-publish-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.xhs-publish-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.xhs-publish-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.xhs-publish-msg {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  word-break: break-word;
+}
+.xhs-publish-link {
+  font-size: 12px;
+  word-break: break-all;
 }
 </style>

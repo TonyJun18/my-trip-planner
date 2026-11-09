@@ -72,7 +72,15 @@ from app.schemas.trip import (
     TripOut,
     TripUpdate,
 )
-from app.schemas.xhs import XhsNoteOut, XhsNoteRequest
+from app.schemas.xhs import (
+    XhsAssetOut,
+    XhsAssetRequest,
+    XhsChannelOut,
+    XhsNoteOut,
+    XhsNoteRequest,
+    XhsPublishJobOut,
+    XhsPublishRequest,
+)
 from app.schemas.booking import (
     BookingIn,
     BookingListOut,

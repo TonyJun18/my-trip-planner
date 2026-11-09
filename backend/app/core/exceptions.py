@@ -31,6 +31,13 @@ class ConflictError(AppError):
     code = "conflict"
 
 
+class PublishRejectedError(AppError):
+    """发布前置校验失败（400）：``code`` 是稳定 reason（no_images / title_too_long …）。"""
+
+    status_code = 400
+    code = "publish_rejected"
+
+
 class LLMError(AppError):
     status_code = 502
     code = "llm_error"

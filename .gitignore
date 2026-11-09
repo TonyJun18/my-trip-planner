@@ -28,5 +28,7 @@ dist/
 *.db
 *.sqlite3
 logs/
+# 小红书发布：登录态 / 图片资产 / 失败截图（含账号凭证，绝不入库）
+backend/var/
 # Hermes agent 本地工作区（方案文档/临时脚本，不入库）
 .hermes/

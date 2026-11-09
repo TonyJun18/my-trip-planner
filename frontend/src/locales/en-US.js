@@ -796,6 +796,34 @@ export default {
     coverSpec: 'XHS cover is recommended at 3:4 (1080×1440); upload it on the publish page',
     daysUnit: 'd',
     coverShareTag: 'My travel plan',
+    // ── Publish channel (strategy + factory; backend defaults to manual) ──
+    publishTitle: 'Publish channel',
+    publishModeManual: 'Manual (copy text)',
+    publishModeRpa: 'Auto-fill form',
+    publishManualHint:
+      'Manual channel: copy the text, export the cover, then paste it in the Xiaohongshu app.',
+    publishRpaHint:
+      'Opens the Xiaohongshu creator studio, fills title/body/topics/cover, then you confirm and press Publish in that window.',
+    publishAction: 'Publish to Xiaohongshu',
+    publishAutoSubmit: 'Click Publish automatically (not recommended: risk on you)',
+    publishNeedContent: 'Title and body cannot be empty',
+    publishFailed: 'Publish failed, please retry',
+    publishReasonLogin: 'Creator studio not logged in — scan the QR code once, then publish',
+    publishReasonDriver: 'Driver unavailable: playwright is not installed on the backend',
+    publishReasonNoImage: 'Cover image missing: this channel requires an uploaded cover',
+    publishReasonTitle: 'Title exceeds 20 characters — please shorten it',
+    publishReasonBody: 'Body exceeds 1000 characters — please shorten it',
+    publishReasonStructure: 'Creator studio layout changed, auto-fill failed (screenshot kept)',
+    publishReasonTimeout: 'Publish job timed out — please check the creator studio',
+    publishState: {
+      queued: 'Queued',
+      running: 'Running…',
+      ready: 'Filled — press Publish in the browser',
+      published: 'Published',
+      unknown: 'Submitted, result unconfirmed',
+      failed: 'Failed',
+      manual: 'Manual channel',
+    },
   },
   // ── Hotel recommendation ────────────────────────────────
   hotel: {

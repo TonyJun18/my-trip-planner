@@ -9,11 +9,12 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.database import get_session
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import AppError, NotFoundError, PublishRejectedError
 from app.i18n import normalize_locale
 from app.models import User
 from app.schemas import (
@@ -33,10 +34,16 @@ from app.schemas import (
     TripListOut,
     TripOut,
     TripUpdate,
+    XhsAssetOut,
+    XhsAssetRequest,
+    XhsChannelOut,
     XhsNoteOut,
     XhsNoteRequest,
+    XhsPublishJobOut,
+    XhsPublishRequest,
 )
-from app.services import budget_service, trip_service, xhs_service
+from app.services import budget_service, trip_service, xhs_assets, xhs_publish_service, xhs_service
+from app.services.publishers import PublishError
 
 router = APIRouter()
 
@@ -97,6 +104,143 @@ async def generate_xhs_note(
         source=source,
         image_spec={"width": spec.width, "height": spec.height, "ratio": spec.ratio},
     )
+
+
+# ── 小红书发布通道（策略 + 工厂：manual / rpa / 未来 openapi） ──────
+def _publish_http_error(exc: PublishError) -> AppError:
+    """把 PublishError 映射成结构化 400（code = reason，前端据此给不同引导）。"""
+    return PublishRejectedError(
+        exc.message, code=exc.reason, detail={"reason": exc.reason, "message": exc.message}
+    )
+
+
+@router.post(
+    "/{trip_id}/xhs-assets",
+    response_model=XhsAssetOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="上传发布用图片（canvas dataURL → 服务端落盘）",
+)
+async def upload_xhs_asset(
+    trip_id: str,
+    data: XhsAssetRequest,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> XhsAssetOut:
+    """前端把封面卡 canvas 转成 PNG dataURL 上传，供发布通道引用。
+
+    发布通道要的是"服务端能读到的文件"：RPA 喂给 file input，未来官方 API
+    也要公网图片地址。校验（mime/magic/大小）全在 `xhs_assets`。
+    """
+    await trip_service.get_trip(db, trip_id, owner=user.id)
+    try:
+        ref = xhs_assets.save_image(trip_id, data.data_url)
+    except PublishError as exc:
+        raise _publish_http_error(exc) from exc
+    return XhsAssetOut(
+        asset_id=ref.asset_id,
+        mime=ref.mime,
+        bytes=ref.bytes,
+        width=ref.width,
+        height=ref.height,
+        url=xhs_assets.asset_url(trip_id, ref.asset_id),
+    )
+
+
+@router.get("/{trip_id}/xhs-assets/{asset_id}", summary="读取已上传的发布图片")
+async def get_xhs_asset(
+    trip_id: str,
+    asset_id: str,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> FileResponse:
+    await trip_service.get_trip(db, trip_id, owner=user.id)
+    try:
+        path = xhs_assets.resolve_asset(trip_id, asset_id)
+    except PublishError as exc:
+        raise _publish_http_error(exc) from exc
+    return FileResponse(path)
+
+
+@router.get("/{trip_id}/xhs-channels", response_model=XhsChannelOut, summary="发布通道能力")
+async def get_xhs_channels(
+    trip_id: str,
+    mode: str | None = Query(None, description="manual / rpa；不传则用配置"),
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> XhsChannelOut:
+    """前端据此决定显示「发布到小红书」还是「复制文案」引导。"""
+    await trip_service.get_trip(db, trip_id, owner=user.id)
+    publisher = xhs_service.factory.create(mode)
+    described = await publisher.describe()
+    driver = "playwright" if described["mode"] == "rpa" else None
+    return XhsChannelOut(
+        **described,
+        available_modes=xhs_service.factory.modes(),
+        driver=driver,
+    )
+
+
+@router.post(
+    "/{trip_id}/xhs-publish",
+    response_model=XhsPublishJobOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="发布到小红书（异步任务，立刻返回 job_id）",
+)
+async def publish_xhs_note(
+    trip_id: str,
+    data: XhsPublishRequest,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> XhsPublishJobOut:
+    """建发布任务并后台执行。
+
+    同步阶段只做**快速失败**：行程归属、图片是否存在、文案长度、
+    通道是否支持自动点发布——这些错误立刻 400，不用等 job 跑完。
+    真正的投递（起浏览器 / 填表 / 点发布）在后台，前端轮询 job 状态。
+    """
+    await trip_service.get_trip(db, trip_id, owner=user.id)
+
+    asset_paths: list[str] = []
+    for asset_id in data.asset_ids:
+        try:
+            asset_paths.append(str(xhs_assets.resolve_asset(trip_id, asset_id)))
+        except PublishError as exc:
+            raise _publish_http_error(exc) from exc
+
+    note = xhs_service.XhsNote(title=data.title, body=data.body, topics=data.topics)
+    publisher = xhs_service.factory.create(data.mode)
+    try:
+        publisher.validate(note, asset_paths, auto_submit=data.auto_submit)
+    except PublishError as exc:
+        raise _publish_http_error(exc) from exc
+
+    job = await xhs_publish_service.create_and_dispatch(
+        trip_id=trip_id,
+        note=note,
+        asset_ids=list(data.asset_ids),
+        asset_paths=asset_paths,
+        mode=data.mode,
+        auto_submit=data.auto_submit,
+    )
+    return XhsPublishJobOut(**job.to_dict())
+
+
+@router.get(
+    "/{trip_id}/xhs-publish/{job_id}",
+    response_model=XhsPublishJobOut,
+    summary="查询小红书发布任务状态",
+)
+async def get_xhs_publish_job(
+    trip_id: str,
+    job_id: str,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> XhsPublishJobOut:
+    await trip_service.get_trip(db, trip_id, owner=user.id)
+    job = xhs_publish_service.get_job(job_id)
+    if job is None or job.trip_id != trip_id:
+        raise NotFoundError(f"发布任务不存在: {job_id}")
+    return XhsPublishJobOut(**job.to_dict())
 
 
 @router.patch("/{trip_id}", response_model=TripOut, summary="更新行程")

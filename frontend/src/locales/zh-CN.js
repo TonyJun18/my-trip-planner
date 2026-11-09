@@ -796,6 +796,33 @@ export default {
     coverSpec: '小红书图文笔记首图推荐 3:4（1080×1440），导出后可在发布页上传',
     daysUnit: '天',
     coverShareTag: '我的旅行计划',
+    // ── 发布通道（策略 + 工厂；后端默认 manual） ──
+    publishTitle: '发布通道',
+    publishModeManual: '手动（复制文案）',
+    publishModeRpa: '自动填表',
+    publishManualHint: '当前为手动通道：复制文案 + 导出封面图，在小红书 App 内粘贴发布。',
+    publishRpaHint:
+      '会自动打开小红书创作服务平台，把标题/正文/话题/封面填好；你在窗口里确认后再点「发布」。',
+    publishAction: '发布到小红书',
+    publishAutoSubmit: '填好后自动点发布（不推荐：风控与内容责任自负）',
+    publishNeedContent: '标题和正文都不能为空',
+    publishFailed: '发布失败，请稍后重试',
+    publishReasonLogin: '创作服务平台未登录：请先扫码登录一次，再点发布',
+    publishReasonDriver: '发布驱动不可用：后端未安装 playwright（pip install playwright）',
+    publishReasonNoImage: '缺少封面图：本通道需要先渲染并上传封面',
+    publishReasonTitle: '标题超过 20 字，请精简后重试',
+    publishReasonBody: '正文超过 1000 字，请精简后重试',
+    publishReasonStructure: '创作服务平台页面结构变化，自动填表失败（已保留现场截图）',
+    publishReasonTimeout: '发布任务超时未返回结果，请到创作服务平台确认',
+    publishState: {
+      queued: '已排队',
+      running: '正在执行…',
+      ready: '已填好，请在浏览器点「发布」',
+      published: '已发布',
+      unknown: '已提交，结果未确认',
+      failed: '发布失败',
+      manual: '手动通道',
+    },
   },
   // ── 酒店推荐（HotelRecommend） ──────────────────────────
   hotel: {

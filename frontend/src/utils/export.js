@@ -14,6 +14,16 @@ export async function exportImage(el, filename) {
   link.click()
 }
 
+/** 将指定 DOM 节点渲染成 PNG dataURL（不下载；用于上传给发布通道） */
+export async function renderToDataUrl(el) {
+  const canvas = await html2canvas(el, {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: '#ffffff',
+  })
+  return canvas.toDataURL('image/png')
+}
+
 /** 将指定 DOM 节点导出为多页 PDF */
 export async function exportPdf(el, filename) {
   const canvas = await html2canvas(el, {

@@ -142,6 +142,46 @@ class Settings(BaseSettings):
     LLM_BREAKER_RECOVERY_TIMEOUT: float = 30.0
     """LLM 熔断冷却期（秒），之后进入 HALF-OPEN 试探。"""
 
+    # ── 小红书发布通道（方案 C：自动化驱动创作服务平台） ──────
+    XHS_PUBLISH_MODE: str = "manual"
+    """发布通道策略：``manual``（默认，复制粘贴，零依赖零风控）/ ``rpa``（自动填表）。
+
+    切换通道只改这一个配置（或发布请求里显式传 mode），代码零改动。
+    未安装 playwright 或未登录时，``rpa`` 会以 ``driver_not_ready`` /
+    ``login_required`` 明确失败，不会静默假成功。
+    """
+
+    XHS_RPA_HEADLESS: bool = False
+    """是否无头运行。半自动模式必须 False（要让人看见窗口并点发布）。"""
+
+    XHS_RPA_CDP_URL: str | None = None
+    """已登录 Chrome 的调试地址（如 ``http://127.0.0.1:9333``）。
+
+    配置后驱动直接接管这个浏览器，复用登录态、**不需要再扫码**；
+    配合 chrome-cdp-automation 的「克隆 profile 启动调试端口」流程。
+    """
+
+    XHS_RPA_STATE_PATH: str | None = None
+    """Playwright storage_state 文件路径（扫码登录一次的备选方案）。"""
+
+    XHS_RPA_CHROME_PATH: str | None = None
+    """自定义浏览器可执行文件（系统 Chrome / 已下载的 Chrome for Testing）。
+
+    典型用途：不想重新下 playwright 的 chromium，直接复用本机已有浏览器。
+    """
+
+    XHS_RPA_KEEP_OPEN: bool = True
+    """半自动模式填完表后是否保留浏览器窗口（等人点发布）。"""
+
+    XHS_RPA_TIMEOUT: float = 60.0
+    """单个发布动作的等待上限（秒）。"""
+
+    XHS_ASSET_DIR: str | None = None
+    """发布用图片的落盘目录，默认 ``backend/var/xhs-assets``。"""
+
+    XHS_ASSET_MAX_BYTES: int = 8 * 1024 * 1024
+    """单张图片大小上限（解码后），默认 8MB。"""
+
     # ── CORS ────────────────────────────────────────────────
     # 使用 Union 类型使 pydantic-settings 的 JSON 解析失败时允许降级到 validator
     CORS_ORIGINS: list[str] | str = ["*"]

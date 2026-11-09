@@ -1,90 +1,31 @@
-"""社交平台发布适配器（可插拔）。
+"""小红书「内容工厂」：文案生成（LLM 主路径 + 规则模板兜底）。
 
-当前实现：方案 A —— 小红书笔记「内容工厂」：为行程生成适配小红书的
-标题/正文/话题/封面卡数据，由用户复制文案 → 打开小红书 App → 粘贴发布。
+发布通道已拆到 ``app/services/publishers/``（策略 + 工厂 + 模板方法）：
 
-架构上为「方案 B：官方开放平台 API 自动发布」预留了插槽：
+- ``manual``：复制文案 → 小红书 App 粘贴（默认，零依赖零风控）
+- ``rpa``：驱动创作服务平台自动填表（半自动，人点发布）
+- 未来 ``openapi``：官方 API 放量后新增一个策略类即可，业务零改动
 
-- ``BasePublisher`` 定义统一的发布契约（publish_note / list_channels / health）
-- ``XhsNoteFactory`` 负责把行程数据 + LLM 生成的内容组装成小红书笔记产物
-- 未来接入官方 API 时，新增 ``XhsOpenApiPublisher(BasePublisher)``，
-  并在 ``get_publisher("xhs")`` 的工厂里按配置返回即可，接口层零改动
-
-LLM 生成文案失败时降级为基于行程数据的规则模板（照常出稿，绝不无声失败）。
+本模块只负责**生成**，并保留旧符号的再导出（``BasePublisher`` /
+``XhsManualPublisher`` / ``get_publisher`` 等），历史调用方不用改。
 """
 from __future__ import annotations
 
 import logging
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any
 
 from app.agent.providers import get_provider, invoke_with_resilience
+from app.services.publishers import (  # noqa: F401 — 兼容再导出
+    BasePublisher,
+    NoteImageSpec,
+    PublisherFactory,
+    PublishError,
+    XhsNote,
+    factory,
+    get_publisher,
+    register_publisher,
+)
 
 logger = logging.getLogger(__name__)
-
-
-# ── 数据契约 ────────────────────────────────────────────────
-@dataclass
-class XhsNote:
-    """小红书笔记产物（方案 A：供用户复制 + 封面图导出）。"""
-
-    title: str
-    body: str
-    topics: list[str] = field(default_factory=list)
-
-    @property
-    def full_text(self) -> str:
-        """复制到剪贴板的完整文案 = 正文 + 话题标签。"""
-        topics_text = " ".join(f"#{t}" for t in self.topics) if self.topics else ""
-        if topics_text:
-            return f"{self.body}\n\n{topics_text}"
-        return self.body
-
-
-@dataclass
-class NoteImageSpec:
-    """封面图规格（小红书图文笔记首图 3:4，1080×1440）。"""
-
-    width: int = 1080
-    height: int = 1440
-    ratio: str = "3:4"
-
-
-class PublishError(Exception):
-    """发布失败（未来官方 API 通道用；当前方案 A 不含自动发布）。"""
-
-
-# ── 发布契约（方案 B 预留） ─────────────────────────────────
-class BasePublisher(ABC):
-    """社交平台发布器统一契约。
-
-    方案 A 阶段不实现自动发布：``publish_note`` 先抛 ``PublishError``，
-    由 UI 走「复制文案 → 去 App 粘贴」路径。接入官方 API 后实现本接口。
-    """
-
-    channel: str = "xhs"
-
-    @abstractmethod
-    async def publish_note(self, note: XhsNote, images: list[str] | None = None) -> dict:
-        """发布笔记。images 为图片 URL 列表（未来官方 API 上传用）。"""
-
-    async def list_channels(self) -> list[dict]:
-        """返回可用发布渠道（供前端展示接入状态）。"""
-        return [{"channel": self.channel, "connected": False, "mode": "manual"}]
-
-    async def health(self) -> dict:
-        return {"channel": self.channel, "ok": True, "mode": "manual"}
-
-
-class XhsManualPublisher(BasePublisher):
-    """方案 A：手动发布通道（用户复制文案后自行去小红书发布）。"""
-
-    async def publish_note(self, note: XhsNote, images: list[str] | None = None) -> dict:
-        raise PublishError(
-            "当前为手动发布模式：请复制文案后在小红书 App 内粘贴发布。"
-            "接入官方开放平台 API 后可实现自动发布。"
-        )
 
 
 # ── 文案生成（LLM 主路径 + 规则兜底） ──────────────────────
@@ -102,7 +43,7 @@ JSON 结构（字段名固定）：
 """
 
 
-def _trip_context(trip: Any) -> str:
+def _trip_context(trip) -> str:
     """把行程模型转成 LLM 可读的紧凑上下文（仅角色所需字段，不传多余数据）。"""
     lines = [
         f"目的地：{trip.destination}",
@@ -123,7 +64,7 @@ def _trip_context(trip: Any) -> str:
     return "\n".join(lines)
 
 
-async def _generate_with_llm(trip: Any, provider_name: str = "auto") -> XhsNote:
+async def _generate_with_llm(trip, provider_name: str = "auto") -> XhsNote:
     """LLM 主路径：生成小红书文案。失败抛异常，由调用方降级。"""
     from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -137,8 +78,7 @@ async def _generate_with_llm(trip: Any, provider_name: str = "auto") -> XhsNote:
     # 去除可能的 ```json 围栏
     if content.startswith("```"):
         content = content.strip("`")
-        if content.startswith("json"):
-            content = content[4:]
+        content = content.removeprefix("json")
     content = content.strip()
     try:
         import json
@@ -150,16 +90,15 @@ async def _generate_with_llm(trip: Any, provider_name: str = "auto") -> XhsNote:
         if not title or not body:
             raise ValueError("LLM 输出缺少 title/body")
         return XhsNote(title=title, body=body, topics=topics[:8])
-    except Exception as exc:  # noqa: BLE001 — 解析失败走兜底
+    except Exception as exc:  # 解析失败走兜底
         logger.warning("XHS 文案 LLM 输出解析失败，走规则兜底: %s", exc)
         raise ValueError(f"LLM 输出不是合法 JSON: {exc}") from exc
 
 
-def _generate_with_template(trip: Any) -> XhsNote:
+def _generate_with_template(trip) -> XhsNote:
     """规则兜底：基于行程数据的模板文案（LLM 不可用/失败时照常出稿）。"""
     dest = trip.destination
     days = trip.days or []
-    stop_count = sum(len(d.stops or []) for d in days)
     highlights = []
     for day in days[:3]:
         stops = day.stops or []
@@ -183,7 +122,7 @@ def _generate_with_template(trip: Any) -> XhsNote:
     return XhsNote(title=f"{dest} {day_count}天{travelers}人 保姆级攻略", body=body, topics=topics)
 
 
-async def generate_xhs_note(trip: Any, provider: str = "auto") -> tuple[XhsNote, str]:
+async def generate_xhs_note(trip, provider: str = "auto") -> tuple[XhsNote, str]:
     """生成小红书笔记（LLM 主路径 → 规则兜底），返回 (note, source)。
 
     source ∈ {"llm", "template"}，供前端标注「AI 生成 / 模板生成」。
@@ -194,14 +133,6 @@ async def generate_xhs_note(trip: Any, provider: str = "auto") -> tuple[XhsNote,
     except Exception as exc:  # noqa: BLE001 — LLM 全链失败不阻断出稿
         logger.warning("XHS 文案 LLM 生成失败，降级模板: %s", exc)
         return _generate_with_template(trip), "template"
-
-
-# ── 工厂 ────────────────────────────────────────────────────
-def get_publisher(channel: str = "xhs") -> BasePublisher:
-    """按渠道返回发布器实例（可插拔：未来注册 XhsOpenApiPublisher 即可无缝切换）。"""
-    if channel == "xhs":
-        return XhsManualPublisher()
-    raise PublishError(f"不支持的渠道: {channel}")
 
 
 def note_image_spec() -> NoteImageSpec:
