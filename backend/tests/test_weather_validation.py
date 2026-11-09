@@ -25,6 +25,7 @@ from app.agent.pipeline import run_finalize_stage
 from app.services.weather_validation import (
     HOT_TEMP_THRESHOLD,
     check_plan_weather_gate,
+    weather_advice_codes,
     weather_card,
 )
 
@@ -201,6 +202,45 @@ def test_weather_card_no_data_none():
     assert weather_card(_plan(weather=[]), day_date="2026-11-10") is None
 
 
+# ── 行动建议代码（前端按 locale 渲染文案；后端只给代码） ──────────
+def test_advice_codes_rain():
+    plan = _plan(weather=_weather([
+        {"date": "2026-11-10", "text_day": "小雨", "temp_max": "18"},
+    ]))
+    assert weather_advice_codes(plan, day_date="2026-11-10") == ["rain"]
+
+
+def test_advice_codes_hot():
+    plan = _plan(weather=_weather([
+        {"date": "2026-07-15", "text_day": "晴", "temp_max": str(HOT_TEMP_THRESHOLD + 1)},
+    ]))
+    assert weather_advice_codes(plan, day_date="2026-07-15") == ["hot"]
+
+
+def test_advice_codes_rain_and_hot():
+    plan = _plan(weather=_weather([
+        {"date": "2026-07-15", "text_day": "雷阵雨", "temp_max": str(HOT_TEMP_THRESHOLD + 2)},
+    ]))
+    assert weather_advice_codes(plan, day_date="2026-07-15") == ["rain", "hot"]
+
+
+def test_advice_codes_silent_without_data():
+    """无天气数据 / 无匹配日期 → 空列表（保持沉默，绝不编造）。"""
+    assert weather_advice_codes(_plan(), day_date="2026-11-10") == []
+    assert weather_advice_codes(_plan(weather=[]), day_date="2026-11-10") == []
+    plan = _plan(weather=_weather([
+        {"date": "2026-11-10", "text_day": "小雨", "temp_max": "18"},
+    ]))
+    assert weather_advice_codes(plan, day_date="2026-11-11") == []
+
+
+def test_advice_codes_normal_day_empty():
+    plan = _plan(weather=_weather([
+        {"date": "2026-11-10", "text_day": "晴", "temp_max": "24"},
+    ]))
+    assert weather_advice_codes(plan, day_date="2026-11-10") == []
+
+
 # ── live_snapshot 天气卡集成（ORM 冒烟；纯逻辑已在上面覆盖）──
 async def test_live_snapshot_weather_card(db_session):
     """行程在 live 且 plan 快照含 weather → live_snapshot.weather 非 None。"""
@@ -229,6 +269,8 @@ async def test_live_snapshot_weather_card(db_session):
     assert snap["weather"] is not None
     assert snap["weather"]["text_day"] == "小雨"
     assert "降水" in snap["weather"]["summary"]
+    # 行动建议以代码形式透出（文案由前端 i18n 渲染）
+    assert snap["weather"]["advice"] == ["rain"]
 
 
 async def test_live_snapshot_no_plan_weather_none(db_session):

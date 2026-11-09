@@ -104,9 +104,16 @@ def live_snapshot(trip: Trip, *, today: date | None = None) -> dict[str, Any]:
         try:
             latest = (trip.plans or [None])[0]
             if latest is not None:
+                from app.services.weather_validation import (
+                    weather_advice_codes as _wac,
+                )
                 from app.services.weather_validation import weather_card as _wc
 
-                weather_card = _wc(latest.plan_data or {}, day_date=day.date)
+                plan_data = latest.plan_data or {}
+                weather_card = _wc(plan_data, day_date=day.date)
+                if weather_card is not None:
+                    # 行动建议只给代码，文案由前端按界面语言渲染（避免后端 locale 漂移）
+                    weather_card["advice"] = _wac(plan_data, day_date=day.date)
         except Exception:  # noqa: BLE001 — 天气卡失败降级为无（读路径绝不可阻断）
             weather_card = None
 

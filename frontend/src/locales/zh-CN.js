@@ -583,6 +583,13 @@ export default {
     liveSkipConfirmMsg: '确定跳过「{name}」吗？将从行程中移除。',
     liveDelayConfirmTitle: '迟到顺延',
     liveDelayConfirmMsg: '将今天及之后的行程整体顺延一天（结束日期同步 +1）。确定？',
+    // ── 行中天气卡（task-weather-card-frontend）──
+    weatherForecastBadge: '预报',
+    weatherAdvice: {
+      rain: '备雨具，优先室内行程',
+      hot: '防暑补水，避开正午暴晒',
+    },
+    weatherNoData: '暂无天气数据',
     // ── 分享令牌生命周期（TTL / 吊销 / 审计） ──
     shareSettings: '分享设置',
     galleryPublish: '发布到画廊',

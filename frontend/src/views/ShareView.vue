@@ -430,6 +430,33 @@ onBeforeUnmount(() => {
 const live = ref(null)
 const liveLoading = ref(false)
 const liveOp = ref('') // 正在执行的行中操作，防重复点击
+
+// 天气卡（task-weather-card-frontend）：与 TripDetailLiveToday 同一数据源
+// （LiveSnapshotOut.weather），文案复用 tripDetail.weather* 键，两端口径一致。
+const liveWeather = computed(() => live.value?.weather || null)
+const liveWeatherEmoji = computed(() => {
+  const advice = liveWeather.value?.advice || []
+  if (advice.includes('rain')) return '🌧'
+  if (advice.includes('hot')) return '🔥'
+  const text = liveWeather.value?.text_day || ''
+  if (text.includes('雪')) return '❄️'
+  if (text.includes('云') || text.includes('阴')) return '⛅'
+  return '☀️'
+})
+const liveWeatherTemp = computed(() => {
+  const w = liveWeather.value
+  if (!w) return ''
+  const { temp_min: lo, temp_max: hi } = w
+  if (lo != null && hi != null) return `${lo}~${hi}°C`
+  if (hi != null) return `${hi}°C`
+  return ''
+})
+const liveWeatherAdvice = computed(() =>
+  (liveWeather.value?.advice || [])
+    .map((code) => t(`tripDetail.weatherAdvice.${code}`))
+    .filter(Boolean)
+    .join(' · '),
+)
 let collabClose = null
 
 async function loadLive() {
@@ -684,6 +711,16 @@ function watchCollabFeed() {
             <el-progress :percentage="live.total ? Math.round(live.completed / live.total * 100) : 0"
                          :stroke-width="6" :show-text="false" style="width: 90px" />
           </div>
+        </div>
+
+        <div v-if="liveWeather" class="live-weather" :class="{ wet: (liveWeather.advice || []).includes('rain'), hot: (liveWeather.advice || []).includes('hot') }">
+          <span class="live-weather-emoji">{{ liveWeatherEmoji }}</span>
+          <span class="live-weather-text">
+            {{ liveWeather.text_day || $t('tripDetail.weatherNoData') }}
+            <template v-if="liveWeatherTemp"> · {{ liveWeatherTemp }}</template>
+          </span>
+          <span class="live-weather-badge">{{ $t('tripDetail.weatherForecastBadge') }}</span>
+          <span v-if="liveWeatherAdvice" class="live-weather-advice">{{ liveWeatherAdvice }}</span>
         </div>
 
         <div class="live-stops">
@@ -1029,6 +1066,14 @@ function watchCollabFeed() {
 .live-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 .live-progress { display: flex; align-items: center; gap: 10px; }
 .live-progress-num { font-size: 14px; font-weight: 700; color: var(--brand); }
+/* 天气卡（task-weather-card-frontend）：与详情页同一套口径 */
+.live-weather { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; padding: 8px 12px; border: 1px dashed var(--line); border-radius: var(--radius-md); background: var(--card); font-size: 13px; color: var(--ink); }
+.live-weather.wet { border-color: #7bb0d6; background: rgba(123, 176, 214, 0.08); }
+.live-weather.hot { border-color: #e0a458; background: rgba(224, 164, 88, 0.1); }
+.live-weather-emoji { font-size: 15px; line-height: 1; }
+.live-weather-text { font-weight: 600; }
+.live-weather-badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; }
+.live-weather-advice { font-size: 12.5px; color: var(--muted); }
 .live-stops { display: flex; flex-direction: column; gap: 8px; }
 .live-stop {
   display: flex; align-items: center; gap: 12px;

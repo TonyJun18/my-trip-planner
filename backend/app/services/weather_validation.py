@@ -198,6 +198,37 @@ def check_plan_weather_gate(plan: dict[str, Any], locale: str = "zh-CN") -> dict
     }
 
 
+def weather_advice_codes(plan: dict[str, Any], *, day_date: Any = None) -> list[str]:
+    """当日天气的行动建议代码（供前端按 locale 渲染文案）。
+
+    与 ``weather_card`` 同源（同一条预报条目），但只输出**代码**不输出文案，
+    这样前端可以用自己的 i18n 键渲染，避免后端 locale 与界面语言不一致。
+
+    返回：
+    - ``["rain"]``  当天预报有降水 → 备雨具 / 优先室内行程
+    - ``["hot"]``   当天酷暑 → 防暑补水 / 避开正午
+    - ``["rain", "hot"]`` 两者兼有
+    - ``[]``        无天气数据 / 无匹配日期 → 保持沉默（绝不编造）
+    """
+    weather = plan.get("weather") or {}
+    if not isinstance(weather, dict):
+        return []
+    if day_date is not None:
+        item = _day_weather(plan, day_date)
+    else:
+        item = (weather.get("days") or [{}])[0] if weather.get("days") else None
+    if not isinstance(item, dict):
+        return []
+
+    codes: list[str] = []
+    if _is_rainy(item.get("text_day")):
+        codes.append("rain")
+    tmax = _temp_max(item)
+    if tmax is not None and tmax >= HOT_TEMP_THRESHOLD:
+        codes.append("hot")
+    return codes
+
+
 def weather_card(plan: dict[str, Any], *, day_date: Any = None, locale: str = "zh-CN") -> dict[str, Any] | None:
     """行中「今日天气卡」摘要：消费 plan 的 weather 快照，供前端行中卡片展示。
 

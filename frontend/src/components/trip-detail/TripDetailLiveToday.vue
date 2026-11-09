@@ -1,6 +1,12 @@
 <script setup>
 // 行中「今日视图」（live 期间；打卡/跳过/迟到顺延）—— 全宽置顶，随时可操作
-defineProps({
+// 天气卡（task-weather-card-frontend）：后端 LiveSnapshotOut.weather 早已透出
+// （{date, text_day, temp_min, temp_max, source, advice}），本组件负责渲染；
+// 无数据 → 整行不渲染（预报非事实，绝不伪造；对齐 Kiara/Journelyx「诚实沉默」）。
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const props = defineProps({
   live: { type: Object, required: true },
   liveOp: { type: String, default: '' },
   typeEmoji: { type: Object, required: true },
@@ -8,6 +14,32 @@ defineProps({
 })
 
 const emit = defineEmits(['check', 'skip', 'delay'])
+const { t } = useI18n()
+
+const weather = computed(() => props.live?.weather || null)
+const weatherEmoji = computed(() => {
+  const advice = weather.value?.advice || []
+  if (advice.includes('rain')) return '🌧'
+  if (advice.includes('hot')) return '🔥'
+  const text = weather.value?.text_day || ''
+  if (text.includes('雪')) return '❄️'
+  if (text.includes('云') || text.includes('阴')) return '⛅'
+  return '☀️'
+})
+const weatherTemp = computed(() => {
+  const w = weather.value
+  if (!w) return ''
+  const { temp_min: lo, temp_max: hi } = w
+  if (lo != null && hi != null) return `${lo}~${hi}°C`
+  if (hi != null) return `${hi}°C`
+  return ''
+})
+const weatherAdviceText = computed(() =>
+  (weather.value?.advice || [])
+    .map((code) => t(`tripDetail.weatherAdvice.${code}`))
+    .filter(Boolean)
+    .join(' · '),
+)
 </script>
 
 <template>
@@ -26,6 +58,16 @@ const emit = defineEmits(['check', 'skip', 'delay'])
           style="width: 90px"
         />
       </div>
+    </div>
+
+    <div v-if="weather" class="live-weather" :class="{ wet: (weather.advice || []).includes('rain'), hot: (weather.advice || []).includes('hot') }">
+      <span class="live-weather-emoji">{{ weatherEmoji }}</span>
+      <span class="live-weather-text">
+        {{ weather.text_day || $t('tripDetail.weatherNoData') }}
+        <template v-if="weatherTemp"> · {{ weatherTemp }}</template>
+      </span>
+      <span class="live-weather-badge">{{ $t('tripDetail.weatherForecastBadge') }}</span>
+      <span v-if="weatherAdviceText" class="live-weather-advice">{{ weatherAdviceText }}</span>
     </div>
 
     <div class="live-stops">
@@ -90,6 +132,46 @@ const emit = defineEmits(['check', 'skip', 'delay'])
   font-size: 14px;
   font-weight: 700;
   color: var(--brand);
+}
+/* 天气卡（task-weather-card-frontend）：预报徽标 + 行动建议；无数据整行不渲染 */
+.live-weather {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  font-size: 13px;
+  color: var(--ink);
+}
+.live-weather.wet {
+  border-color: #7bb0d6;
+  background: rgba(123, 176, 214, 0.08);
+}
+.live-weather.hot {
+  border-color: #e0a458;
+  background: rgba(224, 164, 88, 0.1);
+}
+.live-weather-emoji {
+  font-size: 15px;
+  line-height: 1;
+}
+.live-weather-text {
+  font-weight: 600;
+}
+.live-weather-badge {
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+.live-weather-advice {
+  font-size: 12.5px;
+  color: var(--muted);
 }
 .live-stops {
   display: flex;

@@ -583,6 +583,13 @@ export default {
     liveSkipConfirmMsg: 'Remove "{name}" from the itinerary?',
     liveDelayConfirmTitle: 'Delay trip',
     liveDelayConfirmMsg: 'Shift today and all remaining days back by one day (end date +1). Continue?',
+    // ── Live weather card (task-weather-card-frontend) ──
+    weatherForecastBadge: 'Forecast',
+    weatherAdvice: {
+      rain: 'Pack rain gear, prefer indoor stops',
+      hot: 'Hydrate and avoid midday sun',
+    },
+    weatherNoData: 'No weather data yet',
     // ── Share token lifecycle (TTL / revoke / audit) ──
     shareSettings: 'Share Settings',
     galleryPublish: 'Publish to gallery',
