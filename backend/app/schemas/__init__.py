@@ -51,6 +51,7 @@ from app.schemas.escalation import EscalationListOut, EscalationOut, EscalationQ
 from app.schemas.events import TripEventListOut, TripEventOut
 from app.schemas.expense import ExpenseBalanceOut, ExpenseIn, ExpenseOut
 from app.schemas.favorite import FavoriteListOut, FavoriteOut
+from app.schemas.favorites_route import FavoriteStopsOut, favorite_stops_out
 from app.schemas.health import HealthOut
 from app.schemas.journey import (
     DayJourneyOut,
