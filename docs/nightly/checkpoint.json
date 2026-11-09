@@ -1,35 +1,32 @@
 {
-  "night": "2026-11-09",
-  "status": "completed",
+  "night": "2026-11-10",
+  "status": "in_progress",
   "todo": [
-    "competitive-analysis",
-    "task-weather-gate-eval",
-    "task-multi-currency-expense-eval",
-    "task-photo-import-eval"
+    "task-weather-probability-eval",
+    "task-favorites-to-route",
+    "task-social-favorites-flow-eval",
+    "task-import-recall-benchmark",
+    "task-property-qa-eval"
   ],
   "completed": [
-    "competitive-analysis",
-    "task-weather-gate-eval",
-    "task-multi-currency-expense-eval",
-    "task-photo-import-eval"
+    "competitive-analysis"
   ],
-  "current_index": 4,
+  "current_index": 1,
   "claims": {},
   "issues": [
-    "2026-11-09 night-start 重建：上一周期 checkpoint night=2026-11-08 status=in_progress（4 项全部完成入 main：competitive-analysis / booking-neutrality / quota-governance / trust-gap-update），跨夜按当前日期重建。todo 文件现存 [ ] 项：gallery-community-v3 佐证（备注追加不入队列）+ 11-09 竞品分析新增 3 项（weather-gate / multi-currency-expense / photo-import 候选评估）→ todo=[competitive-analysis, weather-gate-eval, multi-currency-expense-eval, photo-import-eval]。本夜 worker-1 已执行 competitive-analysis（文档 2026-11-09.md + todo 追加 3 行动项），completed 移入、current_index=1。",
-    "web_extract 被服务端 Blocked（bestaifortravelplanning.com / gowithcarmen.com 均返回 'URL targets a private or internal network address'）：SSRF 防护误判（两站为海外正常站点），非本地网络问题。已改用 web_search 索引快照交叉核对（两横评页面标题/摘要/正文片段，检查日期 2026-11-06/11-07），数据点可查证；竞品分析文档 §4 已注明。后续 worker 若需 web_extract 优先选未被误判的源。",
+    "2026-11-10 night-start 重建：上一轮 night=2026-11-09 status=in_progress（二次触发版，todo=[task-photo-batch-screenshot, task-weather-probability-eval]，completed=[]）跨夜作废。重建依据 = 手册铁律2「每夜第一个任务固定是竞品分析」+ todo 文件现存 [ ] 项。核验：task-photo-batch-screenshot 已由 11-09 白天 commit 1872930 完成并入 main（frontend/src/api/modules/discovery.js + ImportDialog.vue 多选 ≤12 张 + locales zh/en，git branch --contains 含 main），todo 文件漏勾 → 本夜补勾登记，不入队列。本夜队列 = [competitive-analysis, task-weather-probability-eval]。",
+    "2026-11-10 worker-1 竞品分析完成登记：文档 docs/nightly/competitive-analysis/2026-11-10.md（Expedia Fall 2026 / Wanderlog Import from anywhere / Plotline collect-first / Roameo / 问旅 / Mindtrip DMO 白标）+ todo 追加 4 个新行动项（task-favorites-to-route / task-social-favorites-flow-eval / task-import-recall-benchmark / task-property-qa-eval）+ photo-batch-screenshot 补勾；web_extract 对 getplotline.app 仍被 SSRF 误判 Blocked（与 11-09 同款），改用搜索索引快照交叉核对。",
     "路径偏差（继续有效）：手册第0节项目路径写 /Users/pengjun/Desktop/my-agent/my-trip-planner，实际仓库在 /Users/pengjun/Documents/my-agent/my-trip-planner，按实际路径执行。",
     "网络观察（继续有效）：10-17/10-21/10-23/10-30/11-07 web_search keyless 后端 SSL EOF；2026-11-08 与 2026-11-09 实测 web_search 可用，无需降级。",
     "stash 遗留（继续有效）：stash@{0} 为 10-31 白天 5 个前端改动（BookingPanel/i18n/ChatView/LandingPage），stash@{1} 为 floattrip-borrow WIP，待用户白天核验。",
-    "2026-11-09 worker-4 接管收尾 task-weather-gate-eval：worker-3 已完成实现（commit 7c6e4d5，分支 nightly/2026-11-09/0-task-weather-gate-eval）但被掐断未登记 checkpoint。核验：后端全套 814 passed、weather_validation.py 实现完整（雨天/酷暑规则 + 室内替代 + weather_card + revise 重算 + live 快照）、评估记录 docs/nightly/evaluations/task-weather-gate-eval-2026-11-09.md 存在、todo 已标 [x]——按重试协议补登记 completed / current_index 1→2 / branches 追加，并将遗留 docs（todo + checkpoint + 竞品分析文档 + eval 记录）提交到该分支。",
-    "2026-11-09 worker-5 完成 task-multi-currency-expense-eval（评估通过落地 A 方案「录入时锁定汇率」）：trip_expenses 增 currency/rate_to_base/amount_base（alembic a4b5c6d7e8f9）+ _RULE_RATES 规则库 + resolve_rate_to_base 纯函数（显式>规则库>未知 400 不编造）+ compute_balance 按 amount_base 聚合 + 透出 currencies；专项 30 passed、全套 826 passed；评估记录 docs/nightly/evaluations/task-multi-currency-expense-eval-2026-11-09.md；todo 已标 [x]。遗留：前端记账弹窗币种选择 UI 未接线（API 已就绪）。",
-    "迁移待执行提醒：task-multi-currency-expense-eval 新迁移 a4b5c6d7e8f9 尚未在 dev 库执行（本夜 worker 不做实际迁移，仅提交迁移文件；dev 库 alembic upgrade 由白天/部署时执行，与既有 a1b2c3d4e5f6 同例）。",
-    "2026-11-09 worker-6 完成 task-photo-import-eval（评估不过降级关单，纯 docs 无代码改动）：Web 权限模型拿不到可靠 GPS——Android 浏览器上传照片强制剥离 ACCESS_MEDIA_LOCATION（PhotoPrism 文档实证）、iOS 视隐私设置不可靠（Troven/Myre 注明 desktop 保留、手机丢）；零凭证反向地理编码（Nominatim）限速 1 req/s + 联网依赖；降级「仅时间+用户填地点」与既有文字导入重叠、价值被掏空。结论：相册照片→地点候补需原生壳形态（Capacitor 等可申请系统媒体权限）再立项。可借鉴行动项已登记 todo：task-photo-batch-screenshot（多选截图批量导入，零凭证可落地，frontend 候选）+ 原生壳/EXIF 匹配站点（素材不排期）。评估记录 docs/nightly/evaluations/task-photo-import-eval-2026-11-09.md；分支 nightly/2026-11-09/3-task-photo-import-eval 待用户 review。"
+    "迁移待执行提醒（继续有效）：task-multi-currency-expense-eval 新迁移 a4b5c6d7e8f9 尚未在 dev 库执行（白天/部署时 alembic upgrade，与 a1b2c3d4e5f6 同例）。",
+    "未提交改动（本夜核验，白天产物不碰）：docs/code-map/ 与 openspec/ 为白天新增目录（untracked），不属于夜间任务，不提交不入分支。"
   ],
   "branches": [
     "nightly/2026-11-09/1-competitive-analysis",
     "nightly/2026-11-09/0-task-weather-gate-eval",
     "nightly/2026-11-09/2-task-multi-currency-expense-eval",
-    "nightly/2026-11-09/3-task-photo-import-eval"
+    "nightly/2026-11-09/3-task-photo-import-eval",
+    "nightly/2026-11-10/0-competitive-analysis"
   ]
 }
