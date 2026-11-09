@@ -191,6 +191,9 @@ class Settings(BaseSettings):
     XHS_MAX_CONCURRENT_SESSIONS: int = 1
     """同时打开的发布浏览器上限。每个会话约 300–500MB 内存，按机器规格调。"""
 
+    XHS_AGENT_TASK_TTL_MINUTES: int = 30
+    """本机发布器任务的有效期（分钟）。过期自动作废，避免用户收到几天前的旧任务。"""
+
     XHS_ALLOW_SEMI_AUTO_HEADLESS: bool = False
     """是否允许在无头环境走"填好等人点发布"的半自动模式。
 

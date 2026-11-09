@@ -799,8 +799,15 @@ export default {
     // ── 发布通道（策略 + 工厂；后端默认 manual） ──
     publishTitle: '发布通道',
     publishModeManual: '手动（复制文案）',
+    publishModeAgent: '本机发布助手',
     publishModeRpa: '自动填表',
     publishManualHint: '当前为手动通道：复制文案 + 导出封面图，在小红书 App 内粘贴发布。',
+    publishAgentHint:
+      '任务会下发给浏览器里的「随行发布助手」，由它在你自己的浏览器里填好笔记；服务器不接触你的小红书账号。',
+    publishAgentDispatched: '任务已下发，请在浏览器的发布助手里确认并点「发布」',
+    publishReasonSemiAuto: '服务器无头环境无法"填好等人点发布"，请改用本机发布助手或自动发布',
+    publishReasonAgentExpired: '任务已过期，请重新发起发布',
+    publishReasonSuperseded: '已有更新的一次发布请求，这条已作废',
     publishRpaHint:
       '会自动打开小红书创作服务平台，把标题/正文/话题/封面填好；你在窗口里确认后再点「发布」。',
     publishAction: '发布到小红书',
@@ -815,6 +822,7 @@ export default {
     publishReasonStructure: '创作服务平台页面结构变化，自动填表失败（已保留现场截图）',
     publishReasonTimeout: '发布任务超时未返回结果，请到创作服务平台确认',
     publishState: {
+      pending_agent: '等待发布助手',
       queued: '已排队',
       running: '正在执行…',
       ready: '已填好，请在浏览器点「发布」',

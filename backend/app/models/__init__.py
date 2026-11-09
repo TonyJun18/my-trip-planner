@@ -16,6 +16,7 @@ from app.models.trip import (
     TripPassport,
     TripPlan,
     TripRating,
+    XhsPublishTask,
 )
 from app.models.user import User
 
@@ -37,4 +38,5 @@ __all__ = [
     "TripRating",
     "User",
     "UserProfile",
+    "XhsPublishTask",
 ]

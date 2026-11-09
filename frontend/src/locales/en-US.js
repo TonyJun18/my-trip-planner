@@ -799,9 +799,17 @@ export default {
     // ── Publish channel (strategy + factory; backend defaults to manual) ──
     publishTitle: 'Publish channel',
     publishModeManual: 'Manual (copy text)',
+    publishModeAgent: 'Local publish helper',
     publishModeRpa: 'Auto-fill form',
     publishManualHint:
       'Manual channel: copy the text, export the cover, then paste it in the Xiaohongshu app.',
+    publishAgentHint:
+      'The task is handed to the "Suixing publish helper" in your own browser; the server never touches your Xiaohongshu account.',
+    publishAgentDispatched: 'Task dispatched — confirm and press Publish in the helper',
+    publishReasonSemiAuto:
+      'Headless server cannot wait for a human click — use the local helper or auto publish',
+    publishReasonAgentExpired: 'Task expired, please publish again',
+    publishReasonSuperseded: 'A newer publish request superseded this one',
     publishRpaHint:
       'Opens the Xiaohongshu creator studio, fills title/body/topics/cover, then you confirm and press Publish in that window.',
     publishAction: 'Publish to Xiaohongshu',
@@ -816,6 +824,7 @@ export default {
     publishReasonStructure: 'Creator studio layout changed, auto-fill failed (screenshot kept)',
     publishReasonTimeout: 'Publish job timed out — please check the creator studio',
     publishState: {
+      pending_agent: 'Waiting for helper',
       queued: 'Queued',
       running: 'Running…',
       ready: 'Filled — press Publish in the browser',

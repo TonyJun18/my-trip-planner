@@ -29,6 +29,16 @@ from app.schemas.agent import (
 )
 from app.schemas.analytics import AnalyticsEventIn, AnalyticsEventPayload
 from app.schemas.auth import GoogleLoginIn, LoginIn, RegisterIn, TokenOut, UserCreateOut, UserMeOut
+from app.schemas.booking import (
+    BookingIn,
+    BookingListOut,
+    BookingOut,
+    BookingScanItemOut,
+    BookingScanOut,
+    BookingStatusIn,
+    BookingSuggestedOut,
+    StopLinkIn,
+)
 from app.schemas.chat import (
     ChatMessageListOut,
     ChatMessageOut,
@@ -42,12 +52,19 @@ from app.schemas.events import TripEventListOut, TripEventOut
 from app.schemas.expense import ExpenseBalanceOut, ExpenseIn, ExpenseOut
 from app.schemas.favorite import FavoriteListOut, FavoriteOut
 from app.schemas.health import HealthOut
+from app.schemas.journey import (
+    DayJourneyOut,
+    HighlightOut,
+    JourneyOut,
+)
+from app.schemas.passport import BadgeOut, PassportOut
 from app.schemas.plan_b import PlanBOut, PlanBVariantOut
 from app.schemas.rating import RatingIn, RatingListOut, RatingOut, RatingSummaryOut
 from app.schemas.share import (
     LiveCheckIn,
     LiveSnapshotOut,
     LiveStopOut,
+    SharedTripOut,
     ShareOut,
     SharePasswordIn,
     SharePasswordOut,
@@ -56,9 +73,9 @@ from app.schemas.share import (
     ShareTtlIn,
     ShareVerifyIn,
     ShareVerifyOut,
-    SharedTripOut,
     TripBudgetOut,
 )
+from app.schemas.story import StoryOut, StoryRequest, StoryStatsOut
 from app.schemas.trip import (
     DayIn,
     DayOut,
@@ -73,6 +90,8 @@ from app.schemas.trip import (
     TripUpdate,
 )
 from app.schemas.xhs import (
+    XhsAgentClaimIn,
+    XhsAgentResultIn,
     XhsAssetOut,
     XhsAssetRequest,
     XhsChannelOut,
@@ -81,20 +100,3 @@ from app.schemas.xhs import (
     XhsPublishJobOut,
     XhsPublishRequest,
 )
-from app.schemas.booking import (
-    BookingIn,
-    BookingListOut,
-    BookingOut,
-    BookingScanItemOut,
-    BookingScanOut,
-    BookingStatusIn,
-    BookingSuggestedOut,
-    StopLinkIn,
-)
-from app.schemas.journey import (
-    DayJourneyOut,
-    HighlightOut,
-    JourneyOut,
-)
-from app.schemas.passport import BadgeOut, PassportOut
-from app.schemas.story import StoryOut, StoryRequest, StoryStatsOut

@@ -42,7 +42,14 @@ from app.schemas import (
     XhsPublishJobOut,
     XhsPublishRequest,
 )
-from app.services import budget_service, trip_service, xhs_assets, xhs_publish_service, xhs_service
+from app.services import (
+    budget_service,
+    trip_service,
+    xhs_agent_service,
+    xhs_assets,
+    xhs_publish_service,
+    xhs_service,
+)
 from app.services.publishers import PublishError
 
 router = APIRouter()
@@ -214,6 +221,17 @@ async def publish_xhs_note(
     except PublishError as exc:
         raise _publish_http_error(exc) from exc
 
+    # 本机发布器通道：服务端只建任务，账号凭证不出用户浏览器
+    if getattr(publisher, "external_agent", False):
+        task = await xhs_agent_service.create_task(
+            db,
+            user_id=user.id,
+            trip_id=trip_id,
+            note=note,
+            asset_ids=list(data.asset_ids),
+        )
+        return XhsPublishJobOut(**xhs_agent_service.to_public(task))
+
     job = await xhs_publish_service.create_and_dispatch(
         trip_id=trip_id,
         note=note,
@@ -239,9 +257,16 @@ async def get_xhs_publish_job(
 ) -> XhsPublishJobOut:
     await trip_service.get_trip(db, trip_id, owner=user.id)
     job = xhs_publish_service.get_job(job_id)
-    if job is None or job.trip_id != trip_id:
+    if job is not None and job.trip_id == trip_id:
+        return XhsPublishJobOut(**job.to_dict())
+    # 本机发布器通道的任务不在内存 job 表里 → 回落到数据库任务
+    try:
+        task = await xhs_agent_service.get_task(db, user_id=user.id, task_id=job_id)
+    except PublishError as exc:
+        raise NotFoundError(f"发布任务不存在: {job_id}") from exc
+    if task.trip_id != trip_id:
         raise NotFoundError(f"发布任务不存在: {job_id}")
-    return XhsPublishJobOut(**job.to_dict())
+    return XhsPublishJobOut(**xhs_agent_service.to_public(task))
 
 
 @router.patch("/{trip_id}", response_model=TripOut, summary="更新行程")

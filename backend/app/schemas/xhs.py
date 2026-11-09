@@ -48,7 +48,7 @@ class XhsPublishRequest(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
     topics: list[str] = Field(default_factory=list, max_length=20)
     asset_ids: list[str] = Field(default_factory=list, max_length=9)
-    mode: Literal["manual", "rpa"] | None = None
+    mode: Literal["manual", "rpa", "agent"] | None = None
     auto_submit: bool = False
 
 
@@ -80,6 +80,22 @@ class XhsChannelOut(BaseModel):
     connected: bool = False
     requires_images: bool = False
     supports_auto_submit: bool = False
+    external_agent: bool = False
     hint: str = ""
     available_modes: list[str] = Field(default_factory=list)
     driver: str | None = None
+
+
+class XhsAgentClaimIn(BaseModel):
+    """扩展领取任务（agent 标识用于排查是谁拿走的）。"""
+
+    agent: str | None = Field(default=None, max_length=128)
+
+
+class XhsAgentResultIn(BaseModel):
+    """扩展回写结果。只允许 filled / published / failed 三个终态语义。"""
+
+    state: Literal["filled", "published", "failed"]
+    note_url: str | None = Field(default=None, max_length=512)
+    reason: str | None = Field(default=None, max_length=64)
+    message: str | None = Field(default=None, max_length=2000)

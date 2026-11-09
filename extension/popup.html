@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        width: 320px;
+        margin: 0;
+        padding: 14px;
+        font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+      h1 { font-size: 14px; margin: 0 0 4px; }
+      p.sub { margin: 0 0 12px; opacity: 0.65; font-size: 12px; }
+      label { display: block; margin: 8px 0 2px; font-size: 12px; opacity: 0.8; }
+      input[type="text"], input[type="password"] {
+        width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px;
+        border: 1px solid rgba(128, 128, 128, 0.45); background: transparent; color: inherit;
+      }
+      .row { display: flex; gap: 8px; margin-top: 10px; }
+      button {
+        flex: 1; padding: 7px 10px; border-radius: 6px; cursor: pointer;
+        border: 1px solid rgba(128, 128, 128, 0.45); background: transparent; color: inherit;
+      }
+      button.primary { background: #ff2442; border-color: #ff2442; color: #fff; font-weight: 600; }
+      #status { margin-top: 10px; font-size: 12px; min-height: 18px; }
+      #status.err { color: #d03050; }
+      #status.ok { color: #18a058; }
+      .hint { margin-top: 10px; font-size: 11px; opacity: 0.6; line-height: 1.5; }
+    </style>
+  </head>
+  <body>
+    <h1>随行 · 小红书发布助手</h1>
+    <p class="sub">在你自己的浏览器里填好笔记；账号登录态不离开本机。</p>
+
+    <label for="apiBase">服务地址（含 /api/v1）</label>
+    <input id="apiBase" type="text" placeholder="http://localhost:8090/api/v1" />
+
+    <label for="token">访问令牌</label>
+    <input id="token" type="password" placeholder="登录随行后从浏览器本地存储取 trip_planner_token" />
+
+    <label for="autoOpen">自动打开发布页</label>
+    <input id="autoOpen" type="checkbox" />
+
+    <div class="row">
+      <button class="primary" id="save">保存</button>
+      <button id="check">立即检查任务</button>
+    </div>
+
+    <div id="status"></div>
+    <div class="hint">
+      取令牌：在随行网页按 F12 → Application → Local Storage → <code>trip_planner_token</code>。
+      这个令牌只用于领任务/回写状态，不包含小红书账号信息。
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

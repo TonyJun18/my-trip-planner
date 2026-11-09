@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
+from app.services.publishers.agent import AgentPublisher
 from app.services.publishers.base import BasePublisher, PublishError
 from app.services.publishers.manual import ManualPublisher
 from app.services.publishers.rpa import RpaPublisher
@@ -36,6 +37,7 @@ def register_publisher(mode: str) -> Callable[[PublisherCtor], PublisherCtor]:
 
 
 register_publisher("manual")(ManualPublisher)
+register_publisher("agent")(AgentPublisher)
 register_publisher("rpa")(RpaPublisher)
 
 

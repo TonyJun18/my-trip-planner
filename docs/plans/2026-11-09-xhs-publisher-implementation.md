@@ -219,28 +219,80 @@ backend:
   （noVNC 之类，同时设 `XHS_ALLOW_SEMI_AUTO_HEADLESS=true`）；
 - 或者改走"发布在用户自己的浏览器里完成"的本地发布器（见 9.3 方案 B）。
 
-### 9.3 前台用户场景：两种架构（**需要选型后再实现**）
+### 9.3 前台用户场景：已选 **B. 本地发布器 / 浏览器扩展**
 
-当前代码的登录态入口已经拆开（驱动支持 `storage_state` 直接传 dict、并发按用户串行、
-`XHS_MAX_CONCURRENT_SESSIONS` 限流），但**多用户绑定/授权还没有实现**。
-
-| | A. 服务端代发（每用户扫码绑定） | B. 本地发布器 / 浏览器扩展 |
+| | A. 服务端代发（未采用） | **B. 本地发布器（已实现）** |
 |---|---|---|
-| 用户操作 | 扫码绑定一次，之后「点一下就发」 | 装扩展/助手，在浏览器里完成发布 |
-| 凭证在谁手里 | **服务器加密持有用户 cookie** | 只在用户浏览器，服务器零凭证 |
+| 用户操作 | 扫码绑定一次，之后「点一下就发」 | 装扩展一次，之后「点发布 → 在自己浏览器确认」 |
+| 凭证在谁手里 | 服务器加密持有用户 cookie | **只在用户浏览器，服务器零凭证** |
 | 服务器成本 | 每并发一个 headless Chromium（300–500MB） | 几乎为零 |
-| 合规与风控 | 代持账号凭证 + 自动化发布，风险最高；必须加密、可解绑、限频、明示 | 风险最低，等同于用户自己操作 |
-| 移动端用户 | 可用（服务端跑） | 不可用（需桌面浏览器） |
-| 工程量 | 中（绑定表 + 加密 + 二维码登录 + 状态机 + 轮换） | 中（扩展开发 + 分发 + 与平台任务对接） |
+| 合规与风控 | 代持账号凭证 + 自动化发布，风险最高 | 等同于用户自己操作 |
+| 移动端用户 | 可用（服务端跑） | 不可用（需桌面 Chrome/Edge） |
 
-**A 的关键实现要点**（若选 A）：
+实现见 §10。不选 A 的原因：代持用户账号凭证属高敏感数据处理，且服务器侧
+「填好等人点发布」在无头环境根本无处可点（见 §9.2）。
 
-1. 表 `xhs_bindings`：`user_id` 唯一、`state_ciphertext`、`status`、`bound_at`、`last_used_at`、`last_error`；
-2. 二维码登录：`POST /xhs/bindings/login-session` → 返回二维码 PNG（base64）+ session id，
-   `GET .../{id}` 轮询；用户在**自己手机**上扫码，服务端 `export_state()` 后加密入库；
-3. 加密：Fernet（key 走 KMS/env `XHS_COOKIE_KEY`），**绝不明文落库/落盘**，日志与响应里不出现 cookie；
-4. 解绑：`DELETE /xhs/bindings` 删除密文 + 失效会话；过期/被踢自动置 `expired` 并要求重绑；
-5. 发布时：按 `user_id` 取密文解密 → `PlaywrightCreatorDriver(storage_state=state)` → 发布 → 更新 `last_used_at`；
-6. 频控：单用户串行（已实现）+ 每日上限；异常时降级到 manual 通道。
+---
 
-> 提醒：A 方案代持用户账号凭证，属于高敏感数据处理，上线前需要法务看平台协议与个人信息保护口径。
+## 10. 本机发布器（agent 通道，方案 B）
+
+### 10.1 数据流
+
+```
+随行前端               随行后端（零凭证）             用户浏览器（扩展）
+   │  点「发布到小红书」      │                              │
+   ├───────────────────────▶│ 建任务（标题/正文/话题/图片 id）
+   │ ◀── state=pending_agent│ 存 xhs_publish_tasks 表        │
+   │                        │ ◀── 轮询 /xhs/agent/tasks ─────┤（每分钟）
+   │                        │ ── 任务 + 选择器 ─────────────▶│
+   │                        │                              │ 打开发布页、填表、传图
+   │                        │ ◀── result: filled ───────────┤
+   │ ◀── state=ready ───────│                              │ 用户在页面上点「发布」
+   │                        │ ◀── result: published ────────┤ 监听成功信号
+   │ ◀── state=published ───│                              │
+```
+
+- 服务端**不启动任何浏览器**，也不存任何小红书 cookie；
+- 扩展用的是同一套 JWT（`Authorization: Bearer`），只用于领任务/回写状态；
+- 图片经 owner 鉴权接口取回，`background` 代取以绕开页面 CORS。
+
+### 10.2 接口
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET | `/api/v1/xhs/agent/selectors` | 下发选择器包（Playwright 版 + 浏览器 DOM 版 + 版本号） |
+| GET | `/api/v1/xhs/agent/tasks?state=pending` | 待办任务（含图片鉴权 URL） |
+| POST | `/api/v1/xhs/agent/tasks/{id}/claim` | 领取（幂等），返回任务载荷 + 选择器 |
+| POST | `/api/v1/xhs/agent/tasks/{id}/result` | 回写 `filled` / `published` / `failed` |
+| GET | `/api/v1/xhs/agent/tasks/{id}` | 任务详情（前端也可走 `/trips/{id}/xhs-publish/{job}`，会回落到这里） |
+
+发布入口仍是 `POST /api/v1/trips/{id}/xhs-publish`；`mode=agent` 时返回 `state=pending_agent`。
+
+### 10.3 状态映射
+
+| 任务状态 | 前端 state | 含义 |
+|---|---|---|
+| `pending` | `pending_agent` | 已下发，等扩展领取 |
+| `claimed` | `running` | 扩展在填表 |
+| `filled` | `ready` | 填好了，等用户点发布 |
+| `published` | `published` | 用户已发布（扩展监听到成功信号） |
+| `failed` / `expired` / `superseded` | `failed` | 失败（reason 区分） |
+
+### 10.4 安全边界（可核查）
+
+- 扩展**不申请** `cookies` 权限 → 读不到小红书登录态；
+- 扩展**不代点发布** → 发布动作永远是账号所有人；
+- 服务端任务 TTL 30 分钟（`XHS_AGENT_TASK_TTL_MINUTES`），过期自动作废；
+- 同一行程重复发起 → 旧任务 `superseded`，只留最新一条；
+- 任务按 `user_id` 隔离，别人领取/查看一律 `task_not_found`（不泄露存在性）。
+
+### 10.5 安装与使用
+
+`extension/README.md`：`chrome://extensions/` → 开发者模式 → 加载 `extension/` 目录 →
+弹窗填「服务地址 + JWT」→ 在随行里点发布。
+
+### 10.6 已知边界
+
+- 只支持桌面 Chrome / Edge（移动端装不了扩展，是方案 B 的固有代价）；
+- 扩展代码不能自动更新，但**选择器由服务端下发**，小红书改版无需重发扩展；
+- 用户必须已在该浏览器登录小红书创作服务平台。

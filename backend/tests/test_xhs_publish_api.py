@@ -92,7 +92,9 @@ async def test_channels_default_to_manual(client, auth_user, monkeypatch):
     data = resp.json()
     assert data["mode"] == "manual"
     assert data["connected"] is False
-    assert data["available_modes"] == ["manual", "rpa"]
+    # 通道注册表：manual（默认）/ agent（本机发布助手）/ rpa（服务端自动填表）
+    assert set(data["available_modes"]) == {"manual", "agent", "rpa"}
+    assert data["external_agent"] is False
     assert data["driver"] is None
 
 

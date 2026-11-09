@@ -138,20 +138,25 @@ function coverEmoji(type) {
   return { attraction: '🏞️', food: '🍜', hotel: '🏨' }[type] || '📍'
 }
 
-// ── 发布通道（方案 C：策略 + 工厂；后端默认 manual） ──────────
-// channel.mode: manual（复制文案）/ rpa（自动填创作服务平台表单）
+// ── 发布通道（策略 + 工厂；后端默认 manual） ──────────
+// channel.mode: manual（复制文案）/ agent（本机发布助手）/ rpa（服务端自动填表）
 const channel = ref({ mode: 'manual', requires_images: false, supports_auto_submit: false })
-const publishState = ref('') // queued / running / ready / published / unknown / failed / manual
+const publishState = ref('') // pending_agent / queued / running / ready / published / unknown / failed / manual
 const publishMessage = ref('')
 const publishUrl = ref('')
 const publishAutoSubmit = ref(false)
 const publishing = ref(false)
 
-const canAutoPublish = computed(() => channel.value?.mode === 'rpa')
-const publishBusy = computed(() => publishing.value || ['queued', 'running'].includes(publishState.value))
+// 非手动通道都显示「发布」按钮：agent 下发任务到本地助手，rpa 由服务端填表
+const canAutoPublish = computed(() => ['rpa', 'agent'].includes(channel.value?.mode))
+const isAgent = computed(() => channel.value?.mode === 'agent')
+const publishBusy = computed(
+  () => publishing.value || ['pending_agent', 'queued', 'running'].includes(publishState.value),
+)
 const publishStateType = computed(
   () =>
     ({
+      pending_agent: 'info',
       ready: 'warning',
       published: 'success',
       unknown: 'warning',
@@ -163,6 +168,20 @@ const publishStateLabel = computed(() => {
   const key = `xhsNote.publishState.${publishState.value}`
   return publishState.value ? t(key) : ''
 })
+const channelLabel = computed(() =>
+  isAgent.value
+    ? t('xhsNote.publishModeAgent')
+    : channel.value?.mode === 'rpa'
+      ? t('xhsNote.publishModeRpa')
+      : t('xhsNote.publishModeManual'),
+)
+const channelHint = computed(() =>
+  isAgent.value
+    ? t('xhsNote.publishAgentHint')
+    : channel.value?.mode === 'rpa'
+      ? t('xhsNote.publishRpaHint')
+      : t('xhsNote.publishManualHint'),
+)
 
 async function loadChannel() {
   try {
@@ -184,13 +203,17 @@ function publishReasonText(job) {
   const map = {
     login_required: t('xhsNote.publishReasonLogin'),
     driver_not_ready: t('xhsNote.publishReasonDriver'),
+    semi_auto_requires_visible_browser: t('xhsNote.publishReasonSemiAuto'),
     no_images: t('xhsNote.publishReasonNoImage'),
     asset_missing: t('xhsNote.publishReasonNoImage'),
     asset_path_not_ascii: t('xhsNote.publishReasonNoImage'),
     title_too_long: t('xhsNote.publishReasonTitle'),
     body_too_long: t('xhsNote.publishReasonBody'),
     submit_failed: t('xhsNote.publishReasonStructure'),
+    submit_disabled: t('xhsNote.publishReasonStructure'),
     selector_miss: t('xhsNote.publishReasonStructure'),
+    expired: t('xhsNote.publishReasonAgentExpired'),
+    superseded: t('xhsNote.publishReasonSuperseded'),
   }
   return map[job?.reason] || job?.message || ''
 }
@@ -239,9 +262,13 @@ async function publishToXhs() {
       body: body.value,
       topics: topicsList(),
       asset_ids: assetIds,
-      auto_submit: canAutoPublish.value && publishAutoSubmit.value,
+      // agent 通道由本地助手发布，auto_submit 无意义
+      auto_submit: !isAgent.value && canAutoPublish.value && publishAutoSubmit.value,
     })
     publishState.value = job.state
+    if (isAgent.value && job.state === 'pending_agent') {
+      publishMessage.value = t('xhsNote.publishAgentDispatched')
+    }
     await pollJob(job.job_id)
   } catch (e) {
     publishState.value = 'failed'
@@ -359,11 +386,11 @@ watch(visible, (v) => {
         <div class="xhs-publish-head">
           <span class="xhs-publish-name">{{ t('xhsNote.publishTitle') }}</span>
           <el-tag size="small" :type="canAutoPublish ? 'success' : 'info'" round>
-            {{ canAutoPublish ? t('xhsNote.publishModeRpa') : t('xhsNote.publishModeManual') }}
+            {{ channelLabel }}
           </el-tag>
         </div>
         <div class="xhs-publish-hint">
-          {{ canAutoPublish ? t('xhsNote.publishRpaHint') : t('xhsNote.publishManualHint') }}
+          {{ channelHint }}
         </div>
         <div class="xhs-publish-actions">
           <el-button
@@ -375,7 +402,11 @@ watch(visible, (v) => {
           >
             <el-icon><Promotion /></el-icon>&nbsp;{{ t('xhsNote.publishAction') }}
           </el-button>
-          <el-checkbox v-if="canAutoPublish" v-model="publishAutoSubmit" :disabled="publishBusy">
+          <el-checkbox
+            v-if="canAutoPublish && !isAgent"
+            v-model="publishAutoSubmit"
+            :disabled="publishBusy"
+          >
             {{ t('xhsNote.publishAutoSubmit') }}
           </el-checkbox>
           <el-tag v-if="publishState" size="small" :type="publishStateType">

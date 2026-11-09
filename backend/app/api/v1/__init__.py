@@ -4,8 +4,8 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.v1 import (
-    auth,
     analytics,
+    auth,
     chat,
     email_import,
     expenses,
@@ -32,6 +32,7 @@ from app.api.v1 import (
     trips_ratings,
     trips_share,
     trips_story,
+    xhs_agent,
 )
 
 api_router = APIRouter()
@@ -79,6 +80,8 @@ api_router.include_router(planner.router, prefix="/planner", tags=["planner"])
 # /api/v1/ws/*，前端握手一律 403、实时推送静默退化为轮询（2026-11-08 实测发现）。
 # 现由 app/main.py 在根路径单独 include。
 api_router.include_router(profile.router, prefix="/profile", tags=["profile"])
+# 小红书本机发布器（浏览器扩展）：服务端只下发任务与选择器，零账号凭证
+api_router.include_router(xhs_agent.router, prefix="/xhs/agent", tags=["xhs-agent"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 # 对话式行程助手（B 期）：会话/消息 REST + WS 流式
 # chat.router 内部已带 prefix="/chat"（含 WS 端点 /ws/chat/...），这里不再重复前缀

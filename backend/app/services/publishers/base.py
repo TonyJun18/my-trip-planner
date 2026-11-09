@@ -125,6 +125,8 @@ class BasePublisher(ABC):
     mode: str = "manual"
     requires_images: bool = False
     supports_auto_submit: bool = False
+    external_agent: bool = False
+    """True = 本通道由外部客户端（浏览器扩展/本地助手）执行，服务端只下发任务。"""
     hint: str = ""
 
     # ── 模板方法：固定顺序，子类不得覆写 ────────────────────
@@ -253,6 +255,7 @@ class BasePublisher(ABC):
             "connected": self.mode != "manual",
             "requires_images": self.requires_images,
             "supports_auto_submit": self.supports_auto_submit,
+            "external_agent": self.external_agent,
             "hint": self.hint,
         }
 

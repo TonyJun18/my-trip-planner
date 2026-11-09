@@ -13,6 +13,7 @@ from app.services.publishers.base import (
     PublishResult,
     XhsNote,
 )
+from app.services.publishers.agent import AgentPublisher
 from app.services.publishers.manual import ManualPublisher
 from app.services.publishers.registry import (
     PublisherFactory,
@@ -23,6 +24,7 @@ from app.services.publishers.registry import (
 from app.services.publishers.rpa import RpaPublisher
 
 __all__ = [
+    "AgentPublisher",
     "BasePublisher",
     "ManualPublisher",
     "NoteImageSpec",

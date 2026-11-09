@@ -387,3 +387,35 @@ class TripPassport(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+class XhsPublishTask(Base):
+    """小红书发布任务（本机发布器模式）。
+
+    **服务端不碰账号凭证**：这里只存"要发什么"，由用户自己浏览器里的
+    扩展/助手去小红书创作平台填表并发布，再把结果回写。
+
+    状态机：pending → claimed → filled → published
+                                 ↘ failed / expired / cancelled
+    """
+
+    __tablename__ = "xhs_publish_tasks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    topics: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    asset_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    state: Mapped[str] = mapped_column(String(20), default="pending", index=True, nullable=False)
+    note_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    agent: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    """领取任务的客户端标识（扩展实例），便于排查"是谁拿走的"。"""
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "随行 · 小红书发布助手",
+  "version": "0.1.0",
+  "description": "领取随行下发的发布任务，在你自己的浏览器里填好小红书笔记并发布。账号数据不出本机。",
+  "permissions": ["storage", "alarms", "tabs"],
+  "host_permissions": ["https://creator.xiaohongshu.com/*", "http://*/*", "https://*/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "随行 · 发布助手" },
+  "content_scripts": [
+    {
+      "matches": ["https://creator.xiaohongshu.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
