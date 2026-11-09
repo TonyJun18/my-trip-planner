@@ -31,6 +31,29 @@ from app.services.publishers.drivers.playwright_creator import (
 DEFAULT_STATE = Path(__file__).resolve().parent.parent / "var" / "xhs-state.json"
 
 
+async def _diagnose(driver: PlaywrightCreatorDriver) -> None:
+    """登录轮询期间打点：URL + cookie 名（不含值），便于排查"扫了但没识别"。
+
+    2026-11-09 踩过的坑：登录成功后停在创作平台首页，首页既没有标题框也没有
+    发布按钮，早期只看元素的判定会误判成未登录 → 加了 cookie 判定与这段诊断。
+    """
+    try:
+        page = driver._require_page()  # 运维脚本，直接用受保护方法
+        context = driver._context  # 运维脚本，直接用受保护属性
+        names: list[str] = []
+        if context is not None:
+            names = sorted(
+                {
+                    str(c.get("name"))
+                    for c in await context.cookies("https://creator.xiaohongshu.com")
+                }
+            )
+        print(f"   · 诊断 url={page.url}")
+        print(f"   · 诊断 cookies={names}")
+    except Exception as exc:  # noqa: BLE001 — 诊断失败不影响登录流程
+        print(f"   · 诊断失败：{exc}")
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser(description="小红书创作服务平台扫码登录")
     parser.add_argument("--state", default=str(DEFAULT_STATE), help="登录态保存路径")
@@ -61,12 +84,14 @@ async def main() -> int:
         print(f"   登录页：{CREATOR_HOME_URL}")
         page = driver._require_page()  # 一次性运维脚本，直接用受保护方法
         await page.goto(CREATOR_HOME_URL, wait_until="domcontentloaded")
-        for _ in range(args.timeout):
+        for i in range(args.timeout):
             await asyncio.sleep(1)
             if await driver.is_logged_in():
                 saved = await driver.save_state(args.state)
                 print(f"✅ 登录成功，登录态已保存：{saved}")
                 return 0
+            if i % 15 == 14:
+                await _diagnose(driver)
         print("⌛ 等待超时：未检测到登录成功")
         return 2
     except PublishError as exc:

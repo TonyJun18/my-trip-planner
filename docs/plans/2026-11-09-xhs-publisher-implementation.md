@@ -124,32 +124,39 @@ cd backend
 
 ---
 
-## 6. 首次真机校准（唯一未完成项）
+## 6. 选择器校准（2026-11-09 真机完成）
 
-选择器集中在 `playwright_creator.py` 的 `SELECTORS`（多候选 + 文本兜底），
-`SELECTOR_SET_VERSION="2026-11-09.unverified"` 明确标注未校准。
+选择器集中在 `playwright_creator.py` 的 `SELECTORS`，`SELECTOR_SET_VERSION="2026-11-09.calibrated(publish-click-unverified)"`。
+校准工具：`backend/scripts/xhs_calibrate.py`（dump 结构 + 试命中 + 可选填表验证）。
 
-校准步骤：
+### 实测得到的关键事实
 
-1. `XHS_RPA_HEADLESS=false` 起后端，前端点「发布到小红书」；
-2. 若 job 变 `failed/selector_miss`，看 `backend/var/xhs-screenshots/` 最新截图；
-3. 用开发者工具确认新的选择器，补进 `SELECTORS` 对应候选**列表头部**；
-4. 改 `SELECTOR_SET_VERSION` 为当天日期 + `calibrated`；
-5. 重跑 `pytest tests/test_xhs_publishers.py`（选择器不影响单测，只影响真机）。
+| 环节 | 真机结论 |
+|---|---|
+| 未登录访问发布页 | 302 → `/login?source=official&redirectReason=401`（URL 判定可靠） |
+| 登录页 | 「短信登录」（手机号 + 验证码），卡片右上角可切二维码 |
+| 登录态判定 | **必须看 `web_session` cookie**：登录后停在首页，首页既无标题框也无发布按钮，只看元素会误判未登录（已踩） |
+| 发布页默认 tab | **「上传视频」**；图文 tab 容器 = `div.creator-tab`，同名 `<span class="title">` 是视口外副本（点它会超时→已内置遍历可见项点击） |
+| 图片上传 | `input[type=file][accept*='png']`（accept=`.jpg,.jpeg,.png,.webp`）；file input 是隐藏元素，**不能用 is_visible 过滤** |
+| 标题 | `input[placeholder*='标题']`（实际 placeholder：填写标题会有更多赞哦） |
+| 正文 | `div.tiptap.ProseMirror`（**不再是 quill `.ql-editor`**） |
+| 底部动作栏 | `<xhs-publish-btn>` 自定义元素，**closed shadow root**：CSS/文本选择器都穿不进去（`button:has-text('发布')` 命中 0、`text=发布` 只能匹配到「发布笔记/定时发布」）。但暴露属性 `submit-text="发布"` / `submit-disabled` / `save-text="暂存离开"` |
+| 点发布 | 用属性判可用性 + 在栏宽 ~61% 处做**真实鼠标坐标点击**（真实点击能命中 shadow 内部节点）。**此步未真机验证**——不会为了验证而往你的账号发测试笔记 |
+| 正文写入方式 | **必须一次性 `editor.fill(正文 + 话题)`**：先 `insert_text(body)` 再 Enter + `insert_text(topics)` 会与 ProseMirror 渲染竞态，出现「正文尾部被挤到话题之后」的错位（实测过） |
+| 话题输入 | 输入 `#话题` 会弹联想浮层盖住页面 → `Esc` 关闭（文本保留）；否则半自动留下的现场被浮层遮住 |
+| 引导气泡 | 上传图片后弹「图片可以编辑啦/我知道了」，会盖住编辑区 → `_dismiss_overlays()` 在上传后与填完后各扫一次 |
+
+### 复校步骤（平台改版时）
+
+```bash
+cd backend
+.venv/bin/python scripts/xhs_calibrate.py --state var/xhs-state.json --headless --tab image --fill /tmp/cover.png
+```
+
+看输出里 `selector_probe` 的命中数：哪一组变 0 就改哪一组；截图在 `backend/var/xhs-screenshots/`。
+改完把 `SELECTOR_SET_VERSION` 更新成当天日期。
 
 失败排查顺序（与 `xiaohongshu-mcp` 的 Q&A 一致）：截图 → 是否被风控限制网页端发布 → 图片大小/命名（必须 ASCII）→ 登录态 → 页面改版。
-
-### 已实测确认（2026-11-09，headless Chromium 真机）
-
-| 观察 | 结论 |
-|---|---|
-| 未登录访问 `creator.xiaohongshu.com/publish/publish?source=official` | 302 到 `/login?source=official&redirectReason=401&lastUrl=...` → `is_logged_in()` 走 URL 判定即可靠 |
-| 登录页形态 | 「短信登录」：手机号 + 验证码 + 登录按钮；卡片右上角有二维码图标可切换扫码 |
-| 驱动 → 策略 → 服务 链路 | `RpaPublisher` 真实调用 → `PublishError(login_required)`，**未登录不会假装填表成功** |
-| 截图 | 首屏是 SPA，只等 `domcontentloaded` 会截到白屏 → 已改为等 `networkidle`（超时忽略） |
-| 发布页表单选择器 | **仍需登录后校准**（当前 `SELECTOR_SET_VERSION=2026-11-09.login-calibrated:publish-unverified`） |
-
-登录页截图留证：`backend/var/xhs-screenshots/`（gitignore）。
 
 ---
 
@@ -170,4 +177,5 @@ cd backend
 | ruff（本次改动文件） | All checks passed |
 | 前端 `npm run build` | ✓ built |
 | i18n 自检 | 1058 keys × 2 语言，无缺失/重复 |
-| 真实浏览器链路 | 驱动启动/登录态判定/截图 已真机验证；`RpaPublisher` 真实调用得到 `login_required`；发布页表单选择器待登录后校准（默认 manual，不影响线上） |
+| 真实浏览器链路 | **已真机全流程验证**：未登录 → `login_required`；扫码登录后 `RpaPublisher` 真实填表 → `state=ready`（标题/正文/话题/图片全部正确落地，未点发布）；截图留证 `backend/var/xhs-screenshots/` |
+| 未验证项 | `auto_submit=true` 的「点发布」——代码已按 closed shadow 属性 + 坐标点击实现，但不为验证而真发测试笔记到账号；首次真实自动发布会得 `published` 或诚实的 `unknown` |
