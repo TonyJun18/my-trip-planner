@@ -230,7 +230,7 @@ const collapseDaysV2 = useFlag('tripDetail.ia.v2.collapseDays')
 
 // ── 次级工作台：按时机收纳面板（tab + 全部工具开关）──────────
 const WS_PLAN_KEYS = ['revise', 'planb', 'timegate', 'quality', 'hotel']
-const WS_PREP_KEYS = ['booking', 'hotel', 'servicing', 'packing', 'events']
+const WS_PREP_KEYS = ['booking', 'hotel', 'servicing', 'flights', 'packing', 'events']
 const WS_LIVE_KEYS = ['journey', 'expense', 'passport', 'story']
 // 已结束：行程走完了，「追踪进度」仍有意义（回顾走到了哪），但事件流重新有价值（消费/打卡记录），
 // 而「行中」这个标签已经不成立 —— 单独一组，标签用「回顾」。

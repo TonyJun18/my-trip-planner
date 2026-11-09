@@ -15,8 +15,8 @@ class BookingIn(BaseModel):
     - reference：plan.generated / user.confirmed / channel.callback
     """
 
-    kind: Literal["train", "hotel", "ticket"] = "train"
-    provider: Literal["ctrip", "qunar", "12306", "feizhu", "tongcheng", "manual"] = "ctrip"
+    kind: Literal["train", "hotel", "ticket", "flight"] = "train"
+    provider: Literal["ctrip", "qunar", "12306", "feizhu", "tongcheng", "trip", "manual"] = "ctrip"
     title: str | None = Field(default=None, max_length=300)
     provider_url: str | None = Field(default=None, max_length=500)
     order_no: str | None = Field(default=None, max_length=100)

@@ -96,13 +96,14 @@ const phaseView = computed(() =>
 function collectArtifactInfo(phase) {
   if (phase === 'collecting') {
     return {
-      count: ['attractions', 'weather', 'hotels', 'foods'].reduce(
+      count: ['attractions', 'weather', 'hotels', 'foods', 'flight_deals'].reduce(
         (n, k) => n + (Array.isArray(artifacts.value[k]) ? artifacts.value[k].length : 0), 0),
       subItems: [
         { key: 'attractions', label: t('planWizard.artAttractions'), n: artifacts.value.attractions?.length || 0 },
         { key: 'weather', label: t('planWizard.artWeather'), n: artifacts.value.weather?.length || 0 },
         { key: 'hotels', label: t('planWizard.artHotels'), n: artifacts.value.hotels?.length || 0 },
         { key: 'foods', label: t('planWizard.artFoods'), n: artifacts.value.foods?.length || 0 },
+        { key: 'flight_deals', label: t('planWizard.artFlights'), n: artifacts.value.flight_deals?.length || 0 },
       ],
     }
   }
@@ -129,6 +130,7 @@ const collectingArtifacts = computed(() => [
   { key: 'weather', label: t('planWizard.artWeather'), items: artifacts.value.weather || [] },
   { key: 'hotels', label: t('planWizard.artHotels'), items: artifacts.value.hotels || [] },
   { key: 'foods', label: t('planWizard.artFoods'), items: artifacts.value.foods || [] },
+  { key: 'flight_deals', label: t('planWizard.artFlights'), items: artifacts.value.flight_deals || [] },
 ])
 
 const form = reactive({

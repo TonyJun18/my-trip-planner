@@ -45,6 +45,7 @@ class WeatherServiceError(Exception):
 
 # ── Tavily Search ───────────────────────────────────────
 _TAVILY_ENDPOINT = "https://api.tavily.com/search"
+_TAVILY_EXTRACT_ENDPOINT = "https://api.tavily.com/extract"
 _SEARCH_TIMEOUT = 15.0
 
 # ── 外部数据源运行时降级（进程级滑动窗口） ───────────────
@@ -143,6 +144,49 @@ async def tavily_search(
         content = item.get("content", "")
         results.append({"title": title, "url": url, "content": content})
     return {"query": query, "count": len(results), "results": results}
+
+
+async def tavily_extract(
+    urls: list[str],
+    *,
+    extract_depth: str = "basic",
+) -> dict[str, Any]:
+    """调用 Tavily Extract 抓取页面正文（markdown）。
+
+    用途：机票特价采集需要「航线页正文」里的日期/价格/航司，Search 的 snippet
+    不够。与 ``tavily_search`` 共用同一 ``tavily`` 熔断器——任一接口连续失败
+    都会让调用方整体降级（机票/折扣都只展示规则区，绝不编造）。
+
+    返回 ``{"results": [{"url", "raw_content"}], "failed": [...]}``；
+    单页失败只进 ``failed``，不抛异常（调用方按「少一页素材」处理）。
+    """
+    headers = _tavily_headers()
+    if headers is None:
+        raise SearchServiceError("TAVILY_API_KEY 未配置，无法抽取页面正文。请在 backend/.env 配置。")
+
+    payload = {"urls": urls, "extract_depth": extract_depth}
+    try:
+        async with httpx.AsyncClient(timeout=_SEARCH_TIMEOUT) as client:
+            resp = await client.post(_TAVILY_EXTRACT_ENDPOINT, json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Tavily 抽取失败 http=%s urls=%s", exc.response.status_code, urls[:2])
+        raise SearchServiceError(f"Tavily 抽取失败 HTTP {exc.response.status_code}") from exc
+    except (httpx.TimeoutException, httpx.TransportError) as exc:
+        logger.warning("Tavily 抽取超时/网络错误 urls=%s", urls[:2])
+        raise SearchServiceError(f"Tavily 抽取不可达: {exc}") from exc
+
+    results = [
+        {"url": item.get("url", ""), "raw_content": item.get("raw_content") or ""}
+        for item in data.get("results") or []
+        if isinstance(item, dict)
+    ]
+    failed = [
+        item.get("url") if isinstance(item, dict) else str(item)
+        for item in data.get("failed_results") or []
+    ]
+    return {"results": results, "failed": failed}
 
 
 # ── Nominatim 地理编码 ───────────────────────────────────

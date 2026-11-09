@@ -81,6 +81,8 @@ class PlanSchema(BaseModel):
     transport: dict | None = None
     # 城市级折扣规则（DiscountAgent 采集阶段，确定性规则库，无外部依赖）
     discount_rules: list[dict] = Field(default_factory=list, max_length=30)
+    # 机票特价方案（FlightDealAgent 采集阶段；无出发地/降级时为 None）
+    flight_deals: dict | None = None
     # 定稿后 servicing 产物：市内通勤视图（复用 driving legs，代码生成）
     transit: dict | None = None
     # 定稿后 servicing 产物：酒店入住办理指引（模板 + LLM 润色）

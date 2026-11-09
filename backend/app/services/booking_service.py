@@ -24,8 +24,8 @@ from app.core.exceptions import AppError, NotFoundError
 from app.models import Stop, Trip, TripBooking
 from app.schemas import BookingIn, BookingStatusIn
 
-Provider = Literal["ctrip", "qunar", "12306", "feizhu", "tongcheng", "manual"]
-Kind = Literal["train", "hotel"]
+Provider = Literal["ctrip", "qunar", "12306", "feizhu", "tongcheng", "trip", "manual"]
+Kind = Literal["train", "hotel", "ticket", "flight"]
 
 
 class BookingStateError(AppError):
@@ -43,6 +43,7 @@ _PROVIDER_HOME: dict[str, str] = {
     "12306": "https://www.12306.cn/index/",
     "feizhu": "https://www.fliggy.com/",
     "tongcheng": "https://www.ly.com/",
+    "trip": "https://www.trip.com/flights/",
     "manual": "",
 }
 
@@ -86,6 +87,29 @@ def _deeplink(
 
         encoded = urllib.parse.quote(city)
         return f"https://m.ctrip.com/webapp/hotel/hotellist?city={encoded}"
+    if kind == "flight":
+        # 机票搜索：优先用三字码（HGH/CTU），没有则退回城市名；不组装「有票」语义的 URL
+        import urllib.parse
+
+        _from = (query.get("from_code") or query.get("departure") or "").strip()
+        _to = (query.get("to_code") or query.get("destination") or "").strip()
+        date = (query.get("date") or "").strip()
+        if not _from or not _to:
+            return _PROVIDER_HOME.get(provider) or None
+        if provider == "qunar":
+            return (
+                "https://flight.qunar.com/site/oneway_list.htm"
+                f"?searchDepartureAirport={urllib.parse.quote(_from)}"
+                f"&searchArrivalAirport={urllib.parse.quote(_to)}"
+                f"&startDate={urllib.parse.quote(date)}"
+            )
+        if provider == "ctrip":
+            return (
+                "https://m.ctrip.com/webapp/flight/oneway"
+                f"?dcity={urllib.parse.quote(_from)}&acity={urllib.parse.quote(_to)}"
+                f"&ddate={urllib.parse.quote(date)}"
+            )
+        return _PROVIDER_HOME.get(provider) or None
     return None
 
 

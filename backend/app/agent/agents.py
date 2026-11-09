@@ -47,6 +47,9 @@ from app.services.discount_service import discount_rules_for_request
 
 logger = get_logger(__name__)
 
+# 机票方案在「采集阶段制品」里最多推 3 条（2–3 个方案；events 行不膨胀）
+MAX_FLIGHT_ARTIFACT_OPTIONS = 3
+
 # WebSocket 实时推送：默认空实现（None），run_planning_agents 每产生一条
 # trace 就调用 on_event；由规划任务端点（ws router）注入真正的发布函数。
 # 用「可注入回调」而非直接 import hub，避免 agents 层与传输层耦合。
@@ -713,6 +716,39 @@ async def transport_agent(
 
 
 # ═══════════════════════════════════════════════════════════
+#  FlightDealAgent —— 机票特价采集（确定性：搜索+抽取+解析+闸门+排序）
+# ═══════════════════════════════════════════════════════════
+async def flight_deal_agent(request: dict[str, Any]) -> dict[str, Any]:
+    """全网机票特价采集，产出 2–3 个可选方案（零 LLM、可审计）。
+
+    与 ``transport_agent`` 的分工：
+    - transport：出发地→目的地「怎么去」（高德驾车 + 高铁/航班参考价，规则兜底）；
+    - flight_deals：**真实公开航线页上的特价报价**（含航司/日期/来源链接），
+      用于给用户 2–3 个可选方案并等其确认。
+
+    无出发地 → ``status=skipped``（不阻塞）；采集失败 → ``degraded``（只少一块内容）。
+    价格一律 ``price_kind="from"``，绝不当作所选日期实价。
+    """
+    locale = _request_locale(request)
+    from app.services import flight_deals_service
+
+    try:
+        payload = await flight_deals_service.collect_flight_deals(request)
+    except Exception as exc:  # noqa: BLE001 — 机票采集失败绝不阻断规划
+        logger.warning("FlightDealAgent 失败 err=%s", exc)
+        return {"status": "degraded", "flight_deals": None, "error": str(exc)}
+
+    status = payload.get("status") or "degraded"
+    if status == "skipped":
+        return {
+            "status": "skipped",
+            "flight_deals": None,
+            "error": t(locale, "agent.ctx.no_departure"),
+        }
+    return {"status": status, "flight_deals": payload, "error": None}
+
+
+# ═══════════════════════════════════════════════════════════
 #  DiscountCollectorAgent —— 优惠规则收集专家（确定性本地规则）
 # ═══════════════════════════════════════════════════════════
 async def discount_agent(
@@ -884,6 +920,14 @@ def _planner_user_text(request: dict[str, Any], materials: dict[str, Any], *, lo
     if discount_rules:
         lines.append(f"\n{t(locale, 'agent.ctx.discount_rules', n=len(discount_rules))}")
         lines.append(json.dumps(discount_rules, ensure_ascii=False)[:2000])
+
+    # 机票特价（FlightDealAgent）：只给「已过闸门」的方案；无方案/降级时不占篇幅
+    flight_deals = materials.get("flight_deals") or None
+    flight_options = (flight_deals or {}).get("options") or []
+    if flight_options:
+        lines.append(f"\n{t(locale, 'agent.ctx.flight_deals', n=len(flight_options))}")
+        lines.append(json.dumps(flight_options, ensure_ascii=False)[:2500])
+        lines.append(t(locale, "agent.ctx.flight_deals_hint"))
 
     lines.append("\n" + t(locale, "agent.ctx.integrate"))
     return "\n".join(lines)
@@ -1230,6 +1274,7 @@ async def run_planning_agents(
     food_res = collected.get("foods") or {"status": "failed", "pois": []}
     t_res = collected.get("transport") or {"status": "failed", "transport": None}
     d_res = collected.get("discount") or {"status": "failed", "rules": []}
+    f_res = collected.get("flights") or {"status": "failed", "flight_deals": None}
 
     def _append_trace(entry: dict[str, Any]) -> None:
         """追加一条 trace 并向 WS 订阅者实时推送（推送失败不影响主流程）。"""
@@ -1258,6 +1303,13 @@ async def run_planning_agents(
     _append_trace({"agent": "DiscountAgent", "action": "collect_discount_rules",
                   "observation": t(locale, "plan.trace.collecting.discounts", city=city, n=len(d_res.get("rules", []))),
                   "status": d_res.get("status")})
+    _append_trace({"agent": "FlightDealAgent", "action": "collect_flight_deals",
+                  "observation": (
+                      t(locale, "plan.trace.collecting.flights",
+                        departure=request.get("departure") or t(locale, "plan.trace.collecting.transport.skipped"),
+                        city=city, n=len((f_res.get("flight_deals") or {}).get("options") or []))
+                  ),
+                  "status": f_res.get("status")})
 
     # 2) 餐饮：FoodAgent 主路径；失败时降级到编排层确定性补位（search_foods 直调），
     #    再失败则保留空列表（Planner 可用通用描述，绝不编造）——系统始终产出某种东西。
@@ -1307,10 +1359,20 @@ async def run_planning_agents(
         for o in transport_art[:6] if isinstance(o, dict)
     ])
     _fire_artifact("discount_rules", (d_res.get("rules") or [])[:10])
+    flight_payload = f_res.get("flight_deals") or {}
+    _fire_artifact("flight_deals", [
+        {"name": o.get("title"), "option_id": o.get("option_id"), "title": o.get("title"),
+         "price": o.get("price"), "currency": o.get("currency"),
+         "strategy": o.get("strategy"), "source": o.get("source"),
+         "source_url": o.get("source_url")}
+        for o in (flight_payload.get("options") or [])[:MAX_FLIGHT_ARTIFACT_OPTIONS]
+        if isinstance(o, dict)
+    ])
     _fire_phase("collecting", "completed", summary=t(
         locale, "plan.phase.collecting.summary",
         a=len(attr_pois), w=len((w_res.get("weather") or {}).get("days") or []),
         h=len(hotel_pois), f=len(foods_art), t=len(transport_art), d=len(d_res.get("rules", [])),
+        fd=len(flight_payload.get("options") or []),
     ))
     _fire_phase("assembling", "running")
 
@@ -1324,6 +1386,7 @@ async def run_planning_agents(
         "weather": (w_res.get("weather") or {}),
         "transport": (t_res.get("transport") or None),
         "discount_rules": d_res.get("rules", []),
+        "flight_deals": f_res.get("flight_deals") or None,
     }
 
     from app.agent.pipeline import run_assemble_stage
@@ -1357,7 +1420,7 @@ async def run_planning_agents(
 
     await run_finalize_stage(
         plan, request, trace=trace,
-        t_res=t_res, d_res=d_res, w_res=w_res,
+        t_res=t_res, d_res=d_res, f_res=f_res, w_res=w_res,
         driving_reports=driving_reports,
     )
     await run_servicing_stage(plan, request, trace=trace, provider=provider)

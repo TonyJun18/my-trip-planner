@@ -26,6 +26,7 @@ from app.api.v1 import (
     trips_crud,
     trips_escalations,
     trips_favorites,
+    trips_flights,
     trips_gallery,
     trips_journey,
     trips_passport,
@@ -68,6 +69,9 @@ api_router.include_router(email_import.router, tags=["trips"])
 api_router.include_router(link_import.router, tags=["trips"])
 api_router.include_router(expenses.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_bookings.router, prefix="/trips", tags=["trips"])
+# 机票特价（FlightDeals）：/{trip_id}/flight-deals 与 /flight-choice，
+# 三段路径，不与 trips_crud 的二段 /{trip_id} 冲突。
+api_router.include_router(trips_flights.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_journey.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_passport.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_story.router, prefix="/trips", tags=["trips"])

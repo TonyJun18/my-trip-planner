@@ -142,6 +142,7 @@ class CollectAgentsStep(PipelineStep):
             _food_hints,
             attraction_agent,
             discount_agent,
+            flight_deal_agent,
             food_agent,
             hotel_agent,
             transport_agent,
@@ -166,6 +167,8 @@ class CollectAgentsStep(PipelineStep):
             "foods": food_agent(city, _food_hints(pref_keywords), request=ctx.request, provider=provider, max_iterations=max_iterations),
             "transport": transport_agent(ctx.request.get("departure"), city, date=ctx.request.get("start_date"), provider=provider, max_iterations=max_iterations),
             "discount": discount_agent(city),
+            # 机票特价（确定性搜索+抽取；无出发地/失败只降级，不阻塞其余六路）
+            "flights": flight_deal_agent(ctx.request),
         }
         import asyncio
 
@@ -475,6 +478,9 @@ class FinalizePlanStep(PipelineStep):
         # ── 采集产物回填（详情页大交通/折扣/天气；预算口径依赖此数据）──
         plan["transport"] = (t_res.get("transport") or {}) if isinstance(t_res, dict) else None
         plan["discount_rules"] = (d_res.get("rules") or []) if isinstance(d_res, dict) else []
+        # 机票特价方案（FlightDealAgent；无出发地/降级时为 None，前端不展示卡片）
+        fl_res = kwargs.get("f_res")
+        plan["flight_deals"] = (fl_res.get("flight_deals") or None) if isinstance(fl_res, dict) else None
         # 天气快照回填：WeatherGate 消费 plan.weather（降水/酷暑 → 室内替代建议）；
         # 同时供行中「今日天气卡」与导出快照使用（weather_card 纯函数读取）。
         w_res = kwargs.get("w_res")
@@ -654,6 +660,7 @@ async def run_finalize_stage(
     trace: list[dict[str, Any]] | None = None,
     t_res: dict[str, Any] | None = None,
     d_res: dict[str, Any] | None = None,
+    f_res: dict[str, Any] | None = None,
     w_res: dict[str, Any] | None = None,
     driving_reports: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -666,7 +673,7 @@ async def run_finalize_stage(
         # 显式传入的 trace（可为空 list）必须原样透传，不能 `or []`
         # 否则 append 到新列表，调用方拿不到 step 内追加的 trace。
         trace=trace if trace is not None else [],
-        t_res=t_res or {}, d_res=d_res or {}, w_res=w_res or {},
+        t_res=t_res or {}, d_res=d_res or {}, f_res=f_res or {}, w_res=w_res or {},
         driving_reports=driving_reports or [],
     )
     return plan

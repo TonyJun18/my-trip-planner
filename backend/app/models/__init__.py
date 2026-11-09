@@ -1,5 +1,6 @@
 from app.models.base import Base
 from app.models.chat import ChatMessage, ChatSession
+from app.models.flight_deal import FlightDealSnapshot
 from app.models.profile import UserProfile
 from app.models.trip import (
     PlanTask,
@@ -24,6 +25,7 @@ __all__ = [
     "Base",
     "ChatMessage",
     "ChatSession",
+    "FlightDealSnapshot",
     "PlanTask",
     "ShareToken",
     "Stop",

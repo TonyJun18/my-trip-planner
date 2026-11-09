@@ -9,6 +9,7 @@ import PassportPanel from '@/components/PassportPanel.vue'
 import StoryCardGenerator from '@/components/StoryCardGenerator.vue'
 import PackingList from '@/components/PackingList.vue'
 import TripServicing from '@/components/TripServicing.vue'
+import FlightDealsCard from '@/components/trip-detail/FlightDealsCard.vue'
 import HotelRecommend from '@/components/HotelRecommend.vue'
 import TripEventFeed from '@/components/TripEventFeed.vue'
 import ExpensePanel from '@/components/ExpensePanel.vue'
@@ -327,7 +328,7 @@ function isHoisted(key) {
   </div>
 
   <!-- ═══ 工具箱：装备素材 ═══ -->
-  <div v-if="['packing', 'servicing', 'hotel', 'events'].some((k) => has(k))" class="toolbox-group">
+  <div v-if="['packing', 'servicing', 'flights', 'hotel', 'events'].some((k) => has(k))" class="toolbox-group">
     <div v-if="!flat" class="toolbox-label"><el-icon style="margin-right: 5px"><Suitcase /></el-icon>{{ $t('tripDetail.toolboxGear') }}</div>
     <div class="aux-area">
       <CollapsibleSection
@@ -356,6 +357,17 @@ function isHoisted(key) {
           :discount-rules="servicingProps.discountRules"
           :discounts="servicingProps.discounts"
         />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        v-if="has('flights')"
+        plain
+        :default-open="false"
+        :force-open="exportAll"
+        :storage-key="`tripDetail.aux.v2.flights.${trip.id}`"
+      >
+        <template #title>{{ $t('flight.title') }}</template>
+        <FlightDealsCard :trip-id="trip.id" :travelers="trip.travelers || 1" />
       </CollapsibleSection>
 
       <CollapsibleSection
