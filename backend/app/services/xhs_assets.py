@@ -51,13 +51,10 @@ class AssetRef:
 
 
 def asset_dir() -> Path:
-    """资产目录（可用 ``XHS_ASSET_DIR`` 覆盖，默认 ``backend/var/xhs-assets``）。"""
-    from app.common.config import settings
+    """资产目录（统一由 ``publishers.paths`` 解析，不在业务层拼路径）。"""
+    from app.services.publishers import paths
 
-    raw = getattr(settings, "XHS_ASSET_DIR", None)
-    base = Path(raw) if raw else Path(__file__).resolve().parents[3] / "var" / "xhs-assets"
-    base.mkdir(parents=True, exist_ok=True)
-    return base
+    return paths.assets_dir()
 
 
 def max_bytes() -> int:

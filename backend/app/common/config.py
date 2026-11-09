@@ -176,6 +176,28 @@ class Settings(BaseSettings):
     XHS_RPA_TIMEOUT: float = 60.0
     """单个发布动作的等待上限（秒）。"""
 
+    XHS_DATA_DIR: str = "var/xhs"
+    """发布通道数据根目录（图片/截图/登录态）。
+
+    相对路径按 ``backend/`` 解析；容器部署请设绝对路径并挂卷，例如 ``/data/xhs``。
+    """
+
+    XHS_SCREENSHOT_DIR: str | None = None
+    """截图目录；默认 ``{XHS_DATA_DIR}/screenshots``。"""
+
+    XHS_STATE_DIR: str | None = None
+    """登录态目录（单机自用）；默认 ``{XHS_DATA_DIR}/states``。"""
+
+    XHS_MAX_CONCURRENT_SESSIONS: int = 1
+    """同时打开的发布浏览器上限。每个会话约 300–500MB 内存，按机器规格调。"""
+
+    XHS_ALLOW_SEMI_AUTO_HEADLESS: bool = False
+    """是否允许在无头环境走"填好等人点发布"的半自动模式。
+
+    默认不允许：服务器上没有窗口给人点。无头部署必须用 ``auto_submit=true``，
+    或者改用"发布在用户自己的浏览器里完成"的本地发布器。
+    """
+
     XHS_ASSET_DIR: str | None = None
     """发布用图片的落盘目录，默认 ``backend/var/xhs-assets``。"""
 

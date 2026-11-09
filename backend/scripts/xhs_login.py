@@ -6,8 +6,12 @@
     .venv/bin/python scripts/xhs_login.py --check        # 只检查当前登录态
     .venv/bin/python scripts/xhs_login.py --from-cdp http://127.0.0.1:9333
 
-登录态默认写到 ``backend/var/xhs-state.json``；发布通道读
-``XHS_RPA_STATE_PATH``（未配置时用同一默认路径）。
+登录态默认写到 ``{XHS_STATE_DIR}/default.json``（默认 ``backend/var/xhs/states``，
+容器里指向挂载卷）。发布通道读 ``XHS_RPA_STATE_PATH``，或由服务端按用户
+从加密存储里解出后直接传给驱动（多用户模式，见部署文档）。
+
+⚠️ 这是**单机/单账号**运维工具：服务端多用户场景不要用共享状态文件，
+每个用户一份登录态且必须加密存放。
 
 ⚠️ 安全边界：脚本只负责**打开登录页**，绝不代输账号/密码/验证码；
 二维码由你在小红书 App 里扫。同一账号不要在多处网页端同时登录，
@@ -27,8 +31,10 @@ from app.services.publishers.drivers.playwright_creator import (
     CREATOR_HOME_URL,
     PlaywrightCreatorDriver,
 )
+from app.services.publishers.paths import states_dir
 
-DEFAULT_STATE = Path(__file__).resolve().parent.parent / "var" / "xhs-state.json"
+# 目录由配置决定（容器里通常指到挂载卷），不在脚本里写死路径
+DEFAULT_STATE_NAME = "default.json"
 
 
 async def _diagnose(driver: PlaywrightCreatorDriver) -> None:
@@ -56,11 +62,12 @@ async def _diagnose(driver: PlaywrightCreatorDriver) -> None:
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description="小红书创作服务平台扫码登录")
-    parser.add_argument("--state", default=str(DEFAULT_STATE), help="登录态保存路径")
+    parser.add_argument("--state", default=None, help="登录态保存路径（默认 {XHS_STATE_DIR}/default.json）")
     parser.add_argument("--check", action="store_true", help="只检查登录态，不等待扫码")
     parser.add_argument("--from-cdp", default=None, help="接管已登录 Chrome 的 CDP 地址")
     parser.add_argument("--timeout", type=int, default=180, help="等待扫码秒数")
     args = parser.parse_args()
+    args.state = str(args.state or (states_dir() / DEFAULT_STATE_NAME))
 
     driver = PlaywrightCreatorDriver(
         headless=False,

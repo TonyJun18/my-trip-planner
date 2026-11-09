@@ -221,6 +221,7 @@ async def publish_xhs_note(
         asset_paths=asset_paths,
         mode=data.mode,
         auto_submit=data.auto_submit,
+        user_id=user.id,
     )
     return XhsPublishJobOut(**job.to_dict())
 

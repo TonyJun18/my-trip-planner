@@ -99,6 +99,12 @@ class RpaPublisher(BasePublisher):
         is_original: bool,
     ) -> PublishResult:
         driver = self._ensure_driver()
+        if not auto_submit and self._headless_blocked(driver):
+            raise PublishError(
+                "semi_auto_requires_visible_browser",
+                "当前是无头/服务器环境，无法「填好等人点发布」：请改用 auto_submit=true，"
+                "或改走「在用户自己的浏览器里完成发布」的本地发布器",
+            )
         form = PublishForm(
             title=note.title,
             body=note.body,
@@ -148,6 +154,21 @@ class RpaPublisher(BasePublisher):
             return bool(getattr(settings, "XHS_RPA_KEEP_OPEN", True))
         except Exception:  # noqa: BLE001 — 配置不可读时按"保留窗口"处理（更安全）
             return True
+
+    def _headless_blocked(self, driver) -> bool:
+        """无头环境不能走半自动：服务器上没有窗口给人点「发布」。
+
+        显式配置 ``XHS_ALLOW_SEMI_AUTO_HEADLESS=true`` 可放行（例如用 noVNC
+        把浏览器画面投给用户看的部署方式）。
+        """
+        try:
+            from app.common.config import settings
+
+            if bool(getattr(settings, "XHS_ALLOW_SEMI_AUTO_HEADLESS", False)):
+                return False
+        except Exception:  # noqa: BLE001 — 配置不可读时按严格模式处理
+            logger.debug("xhs rpa: 读取 XHS_ALLOW_SEMI_AUTO_HEADLESS 失败，按严格模式处理")
+        return bool(getattr(driver, "headless", False))
 
     def _result_from_outcome(
         self, outcome: DriverOutcome, fallback_screenshot: str | None

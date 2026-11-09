@@ -173,9 +173,74 @@ cd backend
 
 | 项 | 结果 |
 |---|---|
-| 后端全量测试 | `872 passed`（含新增 40 个小红书用例） |
+| 后端全量测试 | `872 passed`（含新增 44 个小红书用例） |
 | ruff（本次改动文件） | All checks passed |
 | 前端 `npm run build` | ✓ built |
 | i18n 自检 | 1058 keys × 2 语言，无缺失/重复 |
-| 真实浏览器链路 | **已真机全流程验证**：未登录 → `login_required`；扫码登录后 `RpaPublisher` 真实填表 → `state=ready`（标题/正文/话题/图片全部正确落地，未点发布）；截图留证 `backend/var/xhs-screenshots/` |
+| 真实浏览器链路 | **已真机全流程验证**：未登录 → `login_required`；扫码登录后 `RpaPublisher` 真实填表 → `state=ready`（标题/正文/话题/图片全部正确落地，未点发布）；截图留证 |
 | 未验证项 | `auto_submit=true` 的「点发布」——代码已按 closed shadow 属性 + 坐标点击实现，但不为验证而真发测试笔记到账号；首次真实自动发布会得 `published` 或诚实的 `unknown` |
+
+---
+
+## 9. 服务端部署与多用户（重要）
+
+### 9.1 目录与配置（不在代码里写死路径）
+
+所有可写目录统一由 `publishers/paths.py` 解析，**禁止**在业务代码里拼
+`Path(__file__).parents[...]`——那等于把开发机的目录布局写死进项目。
+
+| 环境变量 | 默认 | 说明 |
+|---|---|---|
+| `XHS_DATA_DIR` | `var/xhs`（相对 backend/） | 数据根；容器里设 `/data/xhs` 并挂卷 |
+| `XHS_ASSET_DIR` | `{DATA_DIR}/assets` | 发布图片 |
+| `XHS_SCREENSHOT_DIR` | `{DATA_DIR}/screenshots` | 现场截图（失败取证） |
+| `XHS_STATE_DIR` | `{DATA_DIR}/states` | 单机登录态目录（多用户不用它） |
+| `XHS_MAX_CONCURRENT_SESSIONS` | `1` | 同时打开的浏览器数，每个约 300–500MB |
+| `XHS_ALLOW_SEMI_AUTO_HEADLESS` | `false` | 无头环境是否允许"填好等人点发布" |
+
+docker-compose 片段（示意）：
+
+```yaml
+backend:
+  environment:
+    XHS_DATA_DIR: /data/xhs
+    XHS_MAX_CONCURRENT_SESSIONS: "2"
+  volumes:
+    - xhs_data:/data/xhs
+```
+
+### 9.2 无头环境下的硬约束
+
+服务器上没有窗口给人点「发布」，所以：
+
+- 半自动（`auto_submit=false`）在无头环境会**明确失败**：
+  `reason=semi_auto_requires_visible_browser`（不会假装 ready）；
+- 服务端部署必须用 `auto_submit=true`，或者把浏览器画面投给用户
+  （noVNC 之类，同时设 `XHS_ALLOW_SEMI_AUTO_HEADLESS=true`）；
+- 或者改走"发布在用户自己的浏览器里完成"的本地发布器（见 9.3 方案 B）。
+
+### 9.3 前台用户场景：两种架构（**需要选型后再实现**）
+
+当前代码的登录态入口已经拆开（驱动支持 `storage_state` 直接传 dict、并发按用户串行、
+`XHS_MAX_CONCURRENT_SESSIONS` 限流），但**多用户绑定/授权还没有实现**。
+
+| | A. 服务端代发（每用户扫码绑定） | B. 本地发布器 / 浏览器扩展 |
+|---|---|---|
+| 用户操作 | 扫码绑定一次，之后「点一下就发」 | 装扩展/助手，在浏览器里完成发布 |
+| 凭证在谁手里 | **服务器加密持有用户 cookie** | 只在用户浏览器，服务器零凭证 |
+| 服务器成本 | 每并发一个 headless Chromium（300–500MB） | 几乎为零 |
+| 合规与风控 | 代持账号凭证 + 自动化发布，风险最高；必须加密、可解绑、限频、明示 | 风险最低，等同于用户自己操作 |
+| 移动端用户 | 可用（服务端跑） | 不可用（需桌面浏览器） |
+| 工程量 | 中（绑定表 + 加密 + 二维码登录 + 状态机 + 轮换） | 中（扩展开发 + 分发 + 与平台任务对接） |
+
+**A 的关键实现要点**（若选 A）：
+
+1. 表 `xhs_bindings`：`user_id` 唯一、`state_ciphertext`、`status`、`bound_at`、`last_used_at`、`last_error`；
+2. 二维码登录：`POST /xhs/bindings/login-session` → 返回二维码 PNG（base64）+ session id，
+   `GET .../{id}` 轮询；用户在**自己手机**上扫码，服务端 `export_state()` 后加密入库；
+3. 加密：Fernet（key 走 KMS/env `XHS_COOKIE_KEY`），**绝不明文落库/落盘**，日志与响应里不出现 cookie；
+4. 解绑：`DELETE /xhs/bindings` 删除密文 + 失效会话；过期/被踢自动置 `expired` 并要求重绑；
+5. 发布时：按 `user_id` 取密文解密 → `PlaywrightCreatorDriver(storage_state=state)` → 发布 → 更新 `last_used_at`；
+6. 频控：单用户串行（已实现）+ 每日上限；异常时降级到 manual 通道。
+
+> 提醒：A 方案代持用户账号凭证，属于高敏感数据处理，上线前需要法务看平台协议与个人信息保护口径。

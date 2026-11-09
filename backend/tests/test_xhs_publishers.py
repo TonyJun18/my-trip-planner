@@ -14,7 +14,7 @@ import pytest
 
 from app.common.config import settings
 from app.services import xhs_assets
-from app.services.publishers import factory
+from app.services.publishers import factory, paths
 from app.services.publishers.base import (
     BasePublisher,
     PreparedNote,
@@ -313,3 +313,39 @@ def test_resolve_blocks_cross_trip_access():
     with pytest.raises(PublishError) as exc:
         xhs_assets.resolve_asset("trip-bbbb-222", ref.asset_id)
     assert exc.value.reason == "asset_forbidden"
+
+
+# ── 部署相关：目录可配置 / 无头环境不能半自动 ────────────────
+def test_runtime_dirs_follow_config(monkeypatch, tmp_path):
+    """服务端部署：所有可写目录都能被环境变量指到挂载卷，不写死源码相对路径。"""
+    monkeypatch.setattr(settings, "XHS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(settings, "XHS_ASSET_DIR", None)
+    monkeypatch.setattr(settings, "XHS_SCREENSHOT_DIR", None)
+
+    assert paths.assets_dir() == tmp_path / "data" / "assets"
+    assert paths.screenshots_dir() == tmp_path / "data" / "screenshots"
+    assert paths.assets_dir().is_dir() and paths.screenshots_dir().is_dir()
+
+
+def test_explicit_dirs_win(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "XHS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(settings, "XHS_ASSET_DIR", str(tmp_path / "custom-assets"))
+    assert paths.assets_dir() == tmp_path / "custom-assets"
+
+
+async def test_semi_auto_blocked_in_headless(note, png_file, monkeypatch):
+    """服务器无头环境没有窗口给人点发布 → 半自动必须明确失败，不能假装 ready。"""
+    monkeypatch.setattr(settings, "XHS_ALLOW_SEMI_AUTO_HEADLESS", False)
+    driver = FakeDriver(headless=True)
+    with pytest.raises(PublishError) as exc:
+        await RpaPublisher(lambda: driver).publish_note(note, [str(png_file)])
+    assert exc.value.reason == "semi_auto_requires_visible_browser"
+    assert driver.form is None  # 连表都没开始填
+
+
+async def test_semi_auto_allowed_with_explicit_override(note, png_file, monkeypatch):
+    """noVNC 之类把画面投给用户的部署可以显式放行。"""
+    monkeypatch.setattr(settings, "XHS_ALLOW_SEMI_AUTO_HEADLESS", True)
+    driver = FakeDriver(headless=True)
+    result = await RpaPublisher(lambda: driver).publish_note(note, [str(png_file)])
+    assert result.state == "ready"

@@ -37,6 +37,10 @@ _jobs: OrderedDict[str, PublishJob] = OrderedDict()
 _tasks: set[asyncio.Task] = set()
 _sem: asyncio.Semaphore | None = None
 _sem_loop: asyncio.AbstractEventLoop | None = None
+_sem_value: int | None = None
+# 同一用户的发布串行：一个小红书账号同时只能有一个网页端会话，
+# 并发发布会互相踢下线，也会显著抬升风控概率。
+_user_locks: dict[str, asyncio.Lock] = {}
 
 TERMINAL_STATES = {"ready", "published", "unknown", "failed", "manual"}
 
@@ -47,6 +51,7 @@ class PublishJob:
     trip_id: str
     mode: str
     title: str
+    user_id: str = ""
     state: str = "queued"
     submitted: bool = False
     reason: str | None = None
@@ -80,14 +85,35 @@ class PublishJob:
         }
 
 
+def _max_concurrency() -> int:
+    """同时打开的浏览器会话上限（容器内存有限，默认 1，可配）。"""
+    from app.common.config import settings
+
+    return max(1, int(getattr(settings, "XHS_MAX_CONCURRENT_SESSIONS", 1) or 1))
+
+
 def _semaphore() -> asyncio.Semaphore:
-    """进程级单并发信号量（按 event loop 重建，避免跨 loop 复用报错）。"""
-    global _sem, _sem_loop
+    """进程级会话信号量（按 event loop 重建，避免跨 loop 复用报错）。"""
+    global _sem, _sem_loop, _sem_value
     loop = asyncio.get_running_loop()
-    if _sem is None or _sem_loop is not loop:
-        _sem = asyncio.Semaphore(1)
+    value = _max_concurrency()
+    if _sem is None or _sem_loop is not loop or _sem_value != value:
+        _sem = asyncio.Semaphore(value)
         _sem_loop = loop
+        _sem_value = value
     return _sem
+
+
+def _user_lock(user_id: str) -> asyncio.Lock:
+    """同一用户/账号的发布串行锁（不同用户之间可以并行，受全局信号量约束）。"""
+    key = user_id or "_anonymous"
+    if len(_user_locks) > 500:  # 有界，防长跑进程无限增长
+        _user_locks.clear()
+    lock = _user_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _user_locks[key] = lock
+    return lock
 
 
 def _prune() -> None:
@@ -104,6 +130,7 @@ async def create_and_dispatch(
     asset_paths: list[str],
     mode: str | None = None,
     auto_submit: bool = False,
+    user_id: str = "",
 ) -> PublishJob:
     """建任务并后台执行，立刻返回（前端拿 job_id 轮询）。"""
     resolved = factory.resolve_mode(mode)
@@ -112,6 +139,7 @@ async def create_and_dispatch(
         trip_id=trip_id,
         mode=resolved,
         title=note.title,
+        user_id=user_id,
         asset_ids=list(asset_ids),
         asset_paths=list(asset_paths),
         auto_submit=bool(auto_submit),
@@ -131,6 +159,7 @@ def get_job(job_id: str) -> PublishJob | None:
 def reset_for_tests() -> None:
     _jobs.clear()
     _tasks.clear()
+    _user_locks.clear()
 
 
 async def _run(job: PublishJob, note: XhsNote) -> None:
@@ -139,7 +168,8 @@ async def _run(job: PublishJob, note: XhsNote) -> None:
     job.updated_at = datetime.now(UTC)
     publisher = factory.create(job.mode)
     try:
-        async with _semaphore():
+        # 先按用户串行（同账号不能并存两个网页端会话），再受全局会话上限约束
+        async with _user_lock(job.user_id), _semaphore():
             result = await publisher.publish_note(
                 note,
                 job.asset_paths,

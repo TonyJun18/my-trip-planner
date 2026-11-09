@@ -28,8 +28,8 @@
 """
 from __future__ import annotations
 
+import json
 import logging
-import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -125,10 +125,10 @@ _KEPT_OPEN: list[object] = []
 
 
 def _screenshots_dir() -> Path:
-    raw = os.getenv("XHS_RPA_SCREENSHOT_DIR") or ""
-    base = Path(raw) if raw else Path(__file__).resolve().parents[4] / "var" / "xhs-screenshots"
-    base.mkdir(parents=True, exist_ok=True)
-    return base
+    """截图目录（统一由 ``publishers.paths`` 解析，支持容器挂卷）。"""
+    from app.services.publishers import paths
+
+    return paths.screenshots_dir()
 
 
 class PlaywrightCreatorDriver:
@@ -141,6 +141,7 @@ class PlaywrightCreatorDriver:
         *,
         cdp_url: str | None = None,
         state_path: str | None = None,
+        storage_state: dict | None = None,
         headless: bool | None = None,
         timeout_s: float | None = None,
         executable_path: str | None = None,
@@ -151,6 +152,9 @@ class PlaywrightCreatorDriver:
         self.state_path = (
             state_path if state_path is not None else getattr(settings, "XHS_RPA_STATE_PATH", None)
         )
+        # 多用户场景：登录态由调用方（按用户从加密存储解出）直接传入 dict，
+        # 不落公共文件——服务端部署时每个用户一份，互不可见。
+        self.storage_state = storage_state
         self.executable_path = (
             executable_path
             if executable_path is not None
@@ -198,11 +202,14 @@ class PlaywrightCreatorDriver:
                 logger.info("xhs driver: 使用自定义浏览器 %s", self.executable_path)
             self._browser = await chromium.launch(**launch_kwargs)
             ctx_kwargs: dict[str, object] = {}
-            if self.state_path and Path(self.state_path).is_file():
+            if self.storage_state:
+                ctx_kwargs["storage_state"] = self.storage_state
+                logger.info("xhs driver: 使用调用方传入的登录态（多用户模式）")
+            elif self.state_path and Path(self.state_path).is_file():
                 ctx_kwargs["storage_state"] = self.state_path
-                logger.info("xhs driver: 复用登录态 %s", self.state_path)
+                logger.info("xhs driver: 复用登录态文件")
             else:
-                logger.warning("xhs driver: 未找到登录态文件，发布页大概率要求扫码登录")
+                logger.warning("xhs driver: 未提供登录态，发布页大概率要求扫码登录")
             self._context = await self._browser.new_context(**ctx_kwargs)
             self._page = await self._context.new_page()
             self._owns_browser = True
@@ -430,12 +437,22 @@ class PlaywrightCreatorDriver:
                     logger.debug("xhs driver: playwright stop 失败（忽略）")
             self._pw = self._browser = self._context = self._page = None
 
-    async def save_state(self, path: str | None = None) -> str | None:
-        """导出当前登录态，供下次直接复用（扫码登录脚本用）。"""
-        target = path or self.state_path
-        if not target or self._context is None:
+    async def export_state(self) -> dict | None:
+        """导出当前登录态（服务端按用户加密存库用；调用方负责加密）。"""
+        if self._context is None:
             return None
-        await self._context.storage_state(path=target)
+        return dict(await self._context.storage_state())
+
+    async def save_state(self, path: str | None = None) -> str | None:
+        """导出登录态到文件（单机/自用模式；多用户请用 ``export_state``）。"""
+        target = path or self.state_path
+        if not target:
+            return None
+        state = await self.export_state()
+        if state is None:
+            return None
+        Path(target).parent.mkdir(parents=True, exist_ok=True)
+        Path(target).write_text(json.dumps(state), encoding="utf-8")
         return target
 
     # ── 内部工具 ────────────────────────────────────────────

@@ -26,8 +26,10 @@ class FakeDriver:
         note_url: str | None = "https://www.xiaohongshu.com/explore/fake-note-1",
         fail_in: str = "",
         screenshot_path: str | None = None,
+        headless: bool = False,
     ) -> None:
         self.logged_in = logged_in
+        self.headless = headless
         self.submit_state = submit_state
         self.note_url = note_url
         # fail_in ∈ {"open","fill","submit"}：模拟对应阶段抛错
