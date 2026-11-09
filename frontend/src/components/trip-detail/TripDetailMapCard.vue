@@ -8,6 +8,8 @@ defineProps({
   activeDay: { type: [Number, null], default: null },
   canMapDrag: { type: Boolean, default: false },
   mapDragError: { type: String, default: '' },
+  // 离线降级（task-offline-degrade）：透传给 TripMap，改渲染按日站点列表
+  offline: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['clear-focus', 'map-move'])
@@ -38,6 +40,7 @@ const emit = defineEmits(['clear-focus', 'map-move'])
       :active-day="activeDay"
       height="360px"
       :draggable="canMapDrag"
+      :offline="offline"
       :on-move="(payload) => emit('map-move', payload)"
     />
   </div>

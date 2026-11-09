@@ -650,7 +650,7 @@ function watchCollabFeed() {
             <span class="card-title">{{ $t('common.mapTitle') }}</span>
             <span class="map-hint">{{ $t('common.mapHint') }}</span>
           </div>
-          <TripMap :markers="markers" height="420px" :draggable="editMode" :on-move="onMapMove" />
+          <TripMap :markers="markers" height="420px" :draggable="editMode" :offline="!isOnline() || offlineFallback" :on-move="onMapMove" />
         </div>
         <div class="budget-card">
           <div class="card-head"><span class="card-title">{{ $t('common.budgetTitle') }}</span></div>

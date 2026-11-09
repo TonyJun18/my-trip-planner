@@ -20,6 +20,9 @@ const props = defineProps({
   // 联动高亮（task-trip-detail-triptych）：activeDay 指定日子的 marker 高亮
   // （放大 + 高亮色），其余日子降透明度；null 表示不高亮。
   activeDay: { type: [Number, null], default: null },
+  // 离线降级（task-offline-degrade）：在线地图依赖 OSM 瓦片（联网），离线时
+  // 不初始化 Leaflet，改为「按日站点列表」——数据已在 SW 缓存里，不空白。
+  offline: { type: Boolean, default: false },
 })
 
 const mapEl = ref(null)
@@ -236,7 +239,8 @@ function renderMarkers(markers) {
   map.fitBounds(bounds.pad(0.25), { maxZoom: 15 })
 }
 
-onMounted(() => {
+function initMap() {
+  if (map || !mapEl.value) return
   map = L.map(mapEl.value, { attributionControl: false }).setView([30.245, 120.15], 9)
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
@@ -244,6 +248,10 @@ onMounted(() => {
   }).addTo(map)
   markerLayer = L.layerGroup().addTo(map)
   renderMarkers(props.markers)
+}
+
+onMounted(() => {
+  if (!props.offline) initMap()
 
   // 视口跨过断点（手机 ↔ 桌面）时高度会变 → 让 Leaflet 重新量容器
   if (typeof window !== 'undefined' && window.matchMedia) {
@@ -251,6 +259,18 @@ onMounted(() => {
     narrowMq.addEventListener?.('change', onViewportChange)
   }
 })
+
+// 离线 ↔ 在线切换：回到在线时才初始化地图（离线时 mapEl 不存在）
+watch(
+  () => props.offline,
+  async (off) => {
+    if (off) return
+    await nextTick()
+    initMap()
+    renderMarkers(props.markers)
+    map?.invalidateSize()
+  },
+)
 
 // 高度变化（移动端压缩 / 父组件换尺寸）→ Leaflet 必须 invalidateSize，
 // 否则瓦片仍按旧尺寸排布，底部露灰
@@ -280,7 +300,21 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="mapEl" class="trip-map" :style="mapStyle" />
+  <!-- 离线降级：地图瓦片需联网，改为「按日站点顺序」列表（数据来自 SW 缓存的行程快照） -->
+  <div v-if="offline" class="trip-map-offline" :style="mapStyle">
+    <div class="tm-offline-head">🗺️ {{ t('mapOffline.title') }}</div>
+    <div class="tm-offline-hint">{{ t('mapOffline.hint') }}</div>
+    <div class="tm-offline-list">
+      <div v-for="(m, i) in markers" :key="m.stop_id || i" class="tm-offline-row">
+        <span class="tm-offline-idx">{{ i + 1 }}</span>
+        <span class="tm-offline-name">{{ m.name }}</span>
+        <span v-if="m.day_number" class="tm-offline-day">{{ t('mapOffline.dayN', { n: m.day_number }) }}</span>
+        <span class="tm-offline-type">{{ typeLabel[m.stop_type]?.() || m.stop_type }}</span>
+      </div>
+      <div v-if="!markers.length" class="tm-offline-empty">{{ t('mapOffline.empty') }}</div>
+    </div>
+  </div>
+  <div v-else ref="mapEl" class="trip-map" :style="mapStyle" />
 </template>
 
 <style>
@@ -300,6 +334,72 @@ onBeforeUnmount(() => {
 }
 .trip-map .leaflet-marker-icon[draggable='true']:active {
   cursor: grabbing;
+}
+/* ── 离线降级：按日站点列表（task-offline-degrade）── */
+.trip-map-offline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 1px dashed var(--line, #e5e7eb);
+  border-radius: 10px;
+  background: var(--card, #fff);
+  overflow-y: auto;
+}
+.tm-offline-head {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink, #111);
+}
+.tm-offline-hint {
+  font-size: 12px;
+  color: var(--muted, #6b7280);
+}
+.tm-offline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.tm-offline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px dashed var(--line, #e5e7eb);
+  font-size: 13px;
+}
+.tm-offline-row:last-child { border-bottom: none; }
+.tm-offline-idx {
+  flex: 0 0 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--brand-soft, #ffe4e6);
+  color: var(--brand, #ff385c);
+  font-size: 11px;
+  font-weight: 700;
+}
+.tm-offline-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink, #111);
+}
+.tm-offline-day,
+.tm-offline-type {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--muted, #6b7280);
+}
+.tm-offline-empty {
+  padding: 12px 0;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--muted, #6b7280);
 }
 /* ── pin 信息卡（task-map-pin-cards）── */
 .trip-popup-card {

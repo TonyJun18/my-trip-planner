@@ -990,6 +990,13 @@ export default {
     },
     amountText: '~{amount} {currency}',
   },
+  // ── Offline map fallback (tiles need network → ordered stop list) ──
+  mapOffline: {
+    title: 'Offline — map needs a connection',
+    hint: 'Showing the cached stop order; the map returns once you are back online',
+    empty: 'No stops yet',
+    dayN: 'Day {n}',
+  },
   // ── Persistent budget bar + basis (Mindtrip / DVGO) ──
   budgetBar: {
     planned: 'Budget',

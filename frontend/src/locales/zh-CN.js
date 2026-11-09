@@ -990,6 +990,13 @@ export default {
     },
     amountText: '约 {amount} {currency}',
   },
+  // ── 离线地图降级（task-offline-degrade：瓦片需联网 → 按日站点列表） ──
+  mapOffline: {
+    title: '离线模式：地图需联网',
+    hint: '下面是缓存的站点顺序，联网后地图自动恢复',
+    empty: '暂无站点',
+    dayN: '第 {n} 天',
+  },
   // ── 常驻预算条 + 预算口径（task：Mindtrip 持久预算条 / DVGO 含·不含清单） ──
   budgetBar: {
     planned: '预算',

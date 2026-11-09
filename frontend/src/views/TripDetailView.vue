@@ -27,6 +27,7 @@ import { useTripShareActions } from '@/composables/useTripShareActions'
 import { useExport } from '@/composables/useExport'
 import { useTripTypes } from '@/composables/useTripTypes'
 import { useFlag } from '@/utils/flags'
+import { isOnline } from '@/utils/pwa'
 import { detailPhase, currentDayNumber } from '@/utils/tripPhase'
 import { trackEvent, ANALYTICS_EVENTS, tripPhase } from '@/api/modules/analytics'
 
@@ -93,6 +94,12 @@ function refreshJourney() {
 
 // ── 行中「记一笔」对话框（今日卡片入口；工具箱内也有独立面板，同一 API） ──
 const expenseDialogVisible = ref(false)
+
+// ── 离线降级（task-offline-degrade）：在线才加载地图瓦片，离线改「按日站点列表」 ──
+const online = ref(isOnline())
+function syncOnline() {
+  online.value = isOnline()
+}
 
 const core = useTripDetailLoad({ onJourneyChange: refreshJourney })
 const {
@@ -833,6 +840,8 @@ onMounted(() => {
   load()
   watchCollabFeed()
   window.addEventListener('scroll', onScrollDepth, { passive: true })
+  window.addEventListener('online', syncOnline)
+  window.addEventListener('offline', syncOnline)
 })
 // 首屏/切换行程后加载折叠头徽标数据（journey + passport 摘要）
 watch(
@@ -868,6 +877,8 @@ onBeforeUnmount(() => {
   }
   if (firstViewObs) { firstViewObs.disconnect(); firstViewObs = null }
   window.removeEventListener('scroll', onScrollDepth)
+  window.removeEventListener('online', syncOnline)
+  window.removeEventListener('offline', syncOnline)
 })
 </script>
 
@@ -898,9 +909,9 @@ onBeforeUnmount(() => {
     </div>
 
     <template v-if="trip">
-      <!-- 离线模式标识（PWA：网络失败时读缓存展示） -->
+      <!-- 离线模式标识（PWA：网络失败时读缓存展示；纯离线时提前告知地图降级） -->
       <el-alert
-        v-if="offlineFallback"
+        v-if="offlineFallback || !online"
         class="offline-banner"
         type="warning"
         :closable="false"
@@ -954,6 +965,7 @@ onBeforeUnmount(() => {
               :active-day="activeDay"
               :can-map-drag="canMapDrag"
               :map-drag-error="mapDragError"
+              :offline="!online"
               @clear-focus="activeDay = null"
               @map-move="onMapMove"
             />
