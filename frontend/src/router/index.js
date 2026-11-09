@@ -12,6 +12,7 @@ const routes = [
   { path: '/plan', name: 'plan', component: () => import('@/views/PlanWizard.vue') },
   { path: '/chat', name: 'chat', component: () => import('@/views/ChatView.vue') },
   { path: '/preferences', name: 'preferences', component: () => import('@/views/PreferencesView.vue') },
+  { path: '/favorites', name: 'favorites', component: () => import('@/views/FavoritesView.vue') },
   {
     path: '/trips/:id',
     name: 'trip-detail',
