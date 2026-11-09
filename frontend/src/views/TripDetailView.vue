@@ -101,7 +101,41 @@ function syncOnline() {
   online.value = isOnline()
 }
 
-const core = useTripDetailLoad({ onJourneyChange: refreshJourney })
+// ── 协作变更提示（task-collab-update-notice）：同伴改了行程 → 顶部轻提示「刷新查看」 ──
+// 事件不带 actor（后端事件流是事实记录，不做身份承载），因此用「本地写入抑制窗」区分自己：
+// 自己刚发起的写操作 8 秒内到达的事件不提示，避免刷新按钮被自己的动作点亮。
+const collabStale = ref(false)
+const COLLAB_SUPPRESS_MS = 8000
+let suppressCollabUntil = 0
+function markLocalWrite() {
+  suppressCollabUntil = Date.now() + COLLAB_SUPPRESS_MS
+}
+function reloadFromCollab() {
+  collabStale.value = false
+  suppressCollabUntil = Date.now() + COLLAB_SUPPRESS_MS
+  load()
+  loadSummaries()
+  if (live.value?.phase === 'live') loadLive()
+}
+// 会改动行程内容的协作事件（评论/投票/分享不算——它们不改行程，不该让人以为要刷新）
+const COLLAB_STALE_EVENTS = new Set(['edit', 'revise', 'check', 'skip', 'delay', 'expense', 'chat_edit'])
+function isCollabContentEvent(type) {
+  if (!type) return false
+  if (type === 'event.booking.confirmed' || type === 'event.booking.cancelled') return true
+  return type.startsWith('event.') && COLLAB_STALE_EVENTS.has(type.slice(6))
+}
+
+// 本地写操作包装：记账（今日卡片入口 / 工具箱内面板）也走同一抑制窗
+function onExpenseAdded() {
+  markLocalWrite()
+  refreshJourney()
+}
+function onToolboxChanged() {
+  markLocalWrite()
+  load()
+}
+
+const core = useTripDetailLoad({ onJourneyChange: refreshJourney, onLocalWrite: markLocalWrite })
 const {
   trip, loading, budget, plan, offlineFallback,
   live, liveOp,
@@ -127,6 +161,7 @@ core.setCheckFavorite(share.checkFavorite)
 // ── AI 对话式修订行程（方案 B：revise） ──────────────────
 const reviseState = useRevise({
   afterRevise: () => {
+    markLocalWrite()  // 自己发起的修订：抑制窗内不弹「同伴更新」提示
     budget.value = null
     load()
   },
@@ -140,6 +175,7 @@ const {
 const edit = useEditDialog({
   trip,
   afterSave: (opts) => {
+    markLocalWrite()
     if (opts?.deleted) {
       router.push('/trips')
     } else {
@@ -503,6 +539,7 @@ const mapDragBusy = ref(false)
 const mapDragError = ref('')
 async function onMapMove({ name, lat, lng, day_number }) {
   if (mapDragBusy.value || !trip.value?.id) return
+  markLocalWrite()
   mapDragBusy.value = true
   mapDragError.value = ''
   try {
@@ -538,6 +575,7 @@ const statusOptions = computed(() => Object.entries(statusMap.value).map(([value
 const statusUpdating = ref(false)
 async function changeStatus() {
   const newStatus = trip.value.status
+  markLocalWrite()
   statusUpdating.value = true
   try {
     await api.updateTrip(route.params.id, { status: newStatus })
@@ -664,6 +702,7 @@ async function onOptimizeOrder(day) {
   if (!day?.id || !trip.value?.id || optimizingDay.value) return
   setOptimizeError(day.id, '')
   optimizingDay.value = day.id
+  markLocalWrite()
   try {
     const res = await api.optimizeDayOrder(trip.value.id, day.id)
     if (!res.changed) {
@@ -756,6 +795,7 @@ async function genDays() {
     return
   }
   genDaysLoading.value = true
+  markLocalWrite()
   try {
     const [start, end] = genRange.value
     const days = await api.generateDays(route.params.id, start, end)
@@ -829,9 +869,15 @@ function watchCollabFeed() {
   if (!route.params.id) return
   collabClose = api.subscribeTripCollab(route.params.id, {
     onEvent: (evt) => {
+      const type = evt?.type || ''
       // 行中相关事件（打卡/跳过/顺延）→ 刷新今日卡片；评论/投票事件不打扰
-      if (evt && ((evt.type || '').startsWith('stop.') || (evt.type || '') === 'trip.delayed')) {
+      if (type.startsWith('stop.') || type === 'trip.delayed') {
         loadLive()
+      }
+      // 行程内容被改动（同伴修订/打卡/跳过/顺延/记账/预订确认）→ 顶部轻提示，由用户决定何时刷新
+      // 抑制窗内到达的是自己刚发起的写操作，不提示（事件流不带 actor）
+      if (isCollabContentEvent(type) && Date.now() > suppressCollabUntil) {
+        collabStale.value = true
       }
     },
   })
@@ -922,6 +968,24 @@ onBeforeUnmount(() => {
         </template>
       </el-alert>
 
+      <!-- 协作变更提示：同伴改了行程 → 不自动刷新（会打断当前操作），交给用户点一下 -->
+      <!-- 刻意放在 exportEl 之外：提示条不该进 PDF / 截图导出 -->
+      <el-alert
+        v-if="collabStale"
+        class="collab-stale-banner"
+        type="info"
+        :closable="true"
+        show-icon
+        @close="collabStale = false"
+      >
+        <template #title>
+          <span class="collab-stale-text">{{ $t('tripDetail.collabStale') }}</span>
+          <el-button link type="primary" size="small" @click="reloadFromCollab">
+            {{ $t('tripDetail.collabStaleAction') }}
+          </el-button>
+        </template>
+      </el-alert>
+
       <!-- 导出区（截图/PDF 抓取范围） -->
       <div ref="exportEl" class="export-area">
         <!-- 行中「今日视图」（live 期间全宽置顶） -->
@@ -943,7 +1007,7 @@ onBeforeUnmount(() => {
           :trip-id="trip.id"
           :budget-total="Number(trip.budget) || 0"
           :spent-total="Number(tripSummaries?.journey?.expense_total) || 0"
-          @added="refreshJourney"
+          @added="onExpenseAdded"
         />
 
         <!-- 主路径：地图 + 逐日大纲（永不进 tab）+ 侧栏仪表盘 -->
@@ -1081,8 +1145,8 @@ onBeforeUnmount(() => {
                 @revise="revise"
                 @revise-input="(v) => (reviseMsg = v)"
                 @tool-open="onToolOpen"
-                @changed="load"
-                @arranged="load"
+                @changed="onToolboxChanged"
+                @arranged="onToolboxChanged"
               />
             </TripDetailWorkspace>
           </div>
@@ -1161,6 +1225,8 @@ onBeforeUnmount(() => {
 
 /* PWA 离线模式标识 */
 .offline-banner { margin-bottom: 16px; }
+.collab-stale-banner { margin-bottom: 16px; }
+.collab-stale-text { margin-right: 8px; }
 
 /* 双栏布局：主列（地图 + 每日行程 + 工作台）/ 侧栏（仪表盘） */
 .detail-layout {

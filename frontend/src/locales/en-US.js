@@ -678,6 +678,9 @@ export default {
     // ── PWA offline mode ──
     offlineMode: 'Offline mode',
     offlineModeHint: 'Showing a local cached snapshot. Refresh when back online to see the latest changes.',
+    // ── Collaboration update notice (a companion changed the trip) ──
+    collabStale: 'A companion updated this trip',
+    collabStaleAction: 'Refresh',
     // ── PWA install prompt (task-mobile-install) ──
     installPromptTitle: 'Install TripMate on your device',
     installPromptDesc: 'One-tap install — open your trips anytime, even offline',
@@ -714,6 +717,8 @@ export default {
   share: {
     readonlyBanner: 'This is a read-only shared itinerary · editing is disabled',
     editBanner: 'Invited editing mode · your changes sync to the owner (name / note / checked / order)',
+    collabStale: 'This trip has new changes',
+    collabStaleAction: 'Refresh',
     linkInvalid: 'Share link is invalid or expired',
     editLinkInvalid: 'Collaborative edit link is invalid or expired',
     // ── Access password gate (task-share-gate-eval frontend wiring) ──

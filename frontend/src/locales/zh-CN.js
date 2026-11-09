@@ -678,6 +678,9 @@ export default {
     // ── PWA 离线模式 ──
     offlineMode: '离线模式',
     offlineModeHint: '当前展示的是本地缓存的行程快照，最新修改请联网后刷新查看',
+    // ── 协作变更提示（同伴改了行程） ──
+    collabStale: '同伴更新了行程',
+    collabStaleAction: '刷新查看',
     // ── PWA 安装引导（task-mobile-install） ──
     installPromptTitle: '安装「随行」到桌面',
     installPromptDesc: '一键安装，随时打开规划行程，弱网也能查看离线行程',
@@ -714,6 +717,8 @@ export default {
   share: {
     readonlyBanner: '这是分享的只读行程 · 无法编辑',
     editBanner: '受邀编辑模式 · 你的修改会同步给行程 owner（名称 / 备注 / 勾选 / 顺序）',
+    collabStale: '行程有新的修改',
+    collabStaleAction: '刷新查看',
     linkInvalid: '分享链接无效或已失效',
     editLinkInvalid: '协作编辑链接无效或已失效',
     // ── 访问密码门禁（task-share-gate-eval 前端接线） ──

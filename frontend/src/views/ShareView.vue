@@ -125,6 +125,7 @@ const markers = computed(() => {
 const mapMoving = ref(false)
 async function onMapMove(payload) {
   if (!editMode.value || mapMoving.value || !trip.value) return
+  markLocalWrite()
   mapMoving.value = true
   try {
     // 受邀编辑模式：凭 edit_token 免登录调 map-edit（与受邀编辑 stop 更新同链路）
@@ -362,6 +363,7 @@ function voteParticipation(stopId) {
 
 // ── 受邀编辑（editMode）：勾选 / 行内改名备注 / 上移下移顺序 ──
 async function toggleChecked(stop) {
+  markLocalWrite()
   try {
     const updated = await api.updateInvitedStop(route.params.token, stop.id, { checked: !stop.checked })
     stop.checked = updated.checked
@@ -384,6 +386,7 @@ async function saveEditStop(stop) {
     return
   }
   savingStop.value = true
+  markLocalWrite()
   try {
     const updated = await api.updateInvitedStop(route.params.token, stop.id, {
       name,
@@ -405,6 +408,7 @@ async function moveStop(day, stop, dir) {
   if (idx < 0 || target < 0 || target >= stops.length) return
   const order = stops.map((s) => s.id)
   ;[order[idx], order[target]] = [order[target], order[idx]]
+  markLocalWrite()
   try {
     // 用服务端返回的新顺序更新本地（避免整页重载闪烁）
     day.stops = await api.reorderInvitedStops(route.params.token, day.id, order)
@@ -459,6 +463,28 @@ const liveWeatherAdvice = computed(() =>
 )
 let collabClose = null
 
+// ── 协作变更提示（task-collab-update-notice）：同伴改了行程 → 顶部轻提示「刷新查看」──
+// 与详情页同口径：事件流不带 actor，靠「本地写入抑制窗」区分「自己刚改的」（8 秒）。
+const collabStale = ref(false)
+const COLLAB_SUPPRESS_MS = 8000
+let suppressCollabUntil = 0
+function markLocalWrite() {
+  suppressCollabUntil = Date.now() + COLLAB_SUPPRESS_MS
+}
+function reloadFromCollab() {
+  collabStale.value = false
+  suppressCollabUntil = Date.now() + COLLAB_SUPPRESS_MS
+  load()
+  if (live.value?.phase === 'live') loadLive()
+}
+// 会改动行程内容的协作事件（评论/投票不算——它们不改行程，不该让人以为要刷新）
+const COLLAB_STALE_EVENTS = new Set(['edit', 'revise', 'check', 'skip', 'delay', 'expense', 'chat_edit'])
+function isCollabContentEvent(type) {
+  if (!type) return false
+  if (type === 'event.booking.confirmed' || type === 'event.booking.cancelled') return true
+  return type.startsWith('event.') && COLLAB_STALE_EVENTS.has(type.slice(6))
+}
+
 async function loadLive() {
   if (!editMode.value || offlineFallback.value || !route.params.token) return
   liveLoading.value = true
@@ -474,6 +500,7 @@ async function loadLive() {
 async function doCheckLiveStop(stop, checked) {
   if (liveOp.value || !editMode.value) return
   liveOp.value = 'check'
+  markLocalWrite()
   try {
     live.value = await api.checkLiveStopByToken(route.params.token, stop.id, checked)
   } catch {
@@ -493,6 +520,7 @@ async function doSkipLiveStop(stop) {
     )
   } catch { return }
   liveOp.value = 'skip'
+  markLocalWrite()
   try {
     live.value = await api.skipLiveStopByToken(route.params.token, stop.id)
     await load()
@@ -512,6 +540,7 @@ async function doDelayLiveTrip() {
     )
   } catch { return }
   liveOp.value = 'delay'
+  markLocalWrite()
   try {
     live.value = await api.delayLiveTripByToken(route.params.token)
     await load()
@@ -535,6 +564,10 @@ function watchCollabFeed() {
       if (type.startsWith('stop.') || type === 'trip.delayed') {
         loadLive()
       }
+      // 行程内容被改动 → 轻提示（抑制窗内是自己刚发起的写操作）
+      if (isCollabContentEvent(type) && Date.now() > suppressCollabUntil) {
+        collabStale.value = true
+      }
     },
   })
 }
@@ -548,6 +581,23 @@ function watchCollabFeed() {
       <span v-if="!editMode">{{ $t('share.readonlyBanner') }}</span>
       <span v-else>{{ $t('share.editBanner') }}</span>
     </div>
+
+    <!-- 协作变更提示：同伴改了行程 / owner 改了行程 → 不自动替换你正在看的内容，点一下再刷新 -->
+    <el-alert
+      v-if="editMode && collabStale"
+      class="collab-stale-banner"
+      type="info"
+      :closable="true"
+      show-icon
+      @close="collabStale = false"
+    >
+      <template #title>
+        <span class="collab-stale-text">{{ $t('share.collabStale') }}</span>
+        <el-button link type="primary" size="small" @click="reloadFromCollab">
+          {{ $t('share.collabStaleAction') }}
+        </el-button>
+      </template>
+    </el-alert>
 
     <!-- 画廊来源：看完行程再决定是否复制（免登录可看，复制需登录） -->
     <div v-if="showGalleryCta" class="gallery-cta">
@@ -910,6 +960,10 @@ function watchCollabFeed() {
 }
 /* 受邀编辑：勾选后的站点置灰 */
 .stop-item.checked .stop-body { opacity: 0.62; }
+
+/* 协作变更提示条（同伴/owner 改了行程） */
+.collab-stale-banner { margin-bottom: 16px; }
+.collab-stale-text { margin-right: 8px; }
 
 /* 画廊来源 CTA（task-gallery-v2）：看完行程再决定复制 */
 .gallery-cta {

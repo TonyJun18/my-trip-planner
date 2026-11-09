@@ -71,6 +71,16 @@ def resolve_rate_to_base(currency: str, rate_to_base: float | None) -> float:
     )
 
 
+async def _record_event(db: AsyncSession, trip_id: str, payload: dict[str, Any]) -> None:
+    """记录行程事件 + collab 广播（失败静默，绝不阻断记账）。"""
+    try:
+        from app.services.event_service import record_event
+
+        await record_event(db, trip_id=trip_id, event_type="edit", payload=payload)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def add_expense(
     db: AsyncSession,
     trip_id: str,
@@ -97,6 +107,13 @@ async def add_expense(
     db.add(expense)
     await db.commit()
     await db.refresh(expense)
+    # 事件流 + collab 广播：同伴行中记账 → 其他打开该行程的客户端收到「行程已更新」
+    await _record_event(db, trip_id, {
+        "kind": "expense",
+        "action": "add",
+        "amount": expense.amount,
+        "currency": expense.currency,
+    })
     return expense
 
 
@@ -119,6 +136,7 @@ async def delete_expense(
     if result.rowcount == 0:
         raise NotFoundError("费用记录不存在", code="expense_not_found")
     await db.commit()
+    await _record_event(db, trip_id, {"kind": "expense", "action": "delete"})
 
 
 async def list_expenses(

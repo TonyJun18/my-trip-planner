@@ -61,6 +61,7 @@ export function useTripDetailLoad(opts = {}) {
   async function doCheckStop(stop, checked) {
     if (liveOp.value) return
     liveOp.value = 'check'
+    _localWrite()
     try {
       live.value = await api.checkLiveStop(trip.value.id, stop.id, checked)
       _refreshJourney()
@@ -78,6 +79,14 @@ export function useTripDetailLoad(opts = {}) {
     }
   }
 
+  // 本地写操作钩子：装配层用它打「协作变更提示」的自我抑制窗
+  // （事件流不带 actor，靠自己登记写操作时间窗来区分「同伴改的」与「我刚改的」）
+  function _localWrite() {
+    if (typeof opts.onLocalWrite === 'function') {
+      opts.onLocalWrite()
+    }
+  }
+
   async function doSkipStop(stop) {
     if (liveOp.value) return
     try {
@@ -88,6 +97,7 @@ export function useTripDetailLoad(opts = {}) {
       )
     } catch { return }
     liveOp.value = 'skip'
+    _localWrite()
     try {
       live.value = await api.skipLiveStop(trip.value.id, stop.id)
       _refreshJourney()
@@ -108,6 +118,7 @@ export function useTripDetailLoad(opts = {}) {
       )
     } catch { return }
     liveOp.value = 'delay'
+    _localWrite()
     try {
       live.value = await api.delayLiveTrip(trip.value.id)
       _refreshJourney()

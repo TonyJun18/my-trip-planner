@@ -124,6 +124,52 @@ async def test_invalid_share_token_404(client: AsyncClient):
     assert resp.status_code == 404
 
 
+# ── 记账 → 事件流（协作变更提示的数据源）──────────────────────
+@pytest.mark.asyncio
+async def test_expense_writes_edit_event_and_broadcasts(db_session, monkeypatch):
+    """记账/撤销 → 事件流 edit(kind=expense) + collab 广播。
+
+    前端「同伴更新了行程」提示只认 collab feed 上的 event.* 消息，
+    所以记账必须留下事件并广播，否则同伴记账在本端完全静默。
+    """
+    from app.models import Trip
+    from app.schemas.expense import ExpenseIn
+    from app.services import expense_service
+
+    published: list[dict] = []
+    monkeypatch.setattr(
+        "app.services.collab_service.publish_collab",
+        lambda trip_id, payload: published.append({"trip_id": trip_id, **payload}),
+    )
+
+    trip = Trip(owner="user-1", title="记账事件", destination="杭州",
+                start_date=date(2026, 11, 1), end_date=date(2026, 11, 2))
+    db_session.add(trip)
+    await db_session.commit()
+
+    exp = await expense_service.add_expense(
+        db_session, trip.id,
+        ExpenseIn(category="food", amount=88.5, currency="CNY"),
+        owner="user-1",
+    )
+
+    events = await event_service.list_events(db_session, trip.id)
+    assert len(events) == 1
+    assert events[0].event_type == "edit"
+    payload = events[0].payload or {}
+    assert payload.get("kind") == "expense"
+    assert payload.get("action") == "add"
+    assert payload.get("amount") == 88.5
+    assert published and published[-1]["type"] == "event.edit"
+    assert published[-1]["trip_id"] == trip.id
+
+    await expense_service.delete_expense(db_session, trip.id, exp.id, owner="user-1")
+    events = await event_service.list_events(db_session, trip.id)
+    assert len(events) == 2
+    assert (events[0].payload or {}).get("kind") == "expense"
+    assert (events[0].payload or {}).get("action") == "delete"
+
+
 # ── API：event 记录 → 读取闭环（打卡产生事件）─────────────────────
 @pytest.mark.asyncio
 async def test_check_action_records_event(client: AsyncClient, auth_user):
