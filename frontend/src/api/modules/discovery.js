@@ -4,11 +4,12 @@ import http from '../http'
 // 后端契约：POST /trips/note/import {text} / screenshot/import <图片原始字节> /
 // email/import {text} / link/import {url} / social/import {text} → 解析为站点候选，勾选后经 addStop 并入行程
 export const importNote = (data) => http.post('/trips/note/import', data).then((r) => r.data)
-export const importScreenshot = (file) =>
+export const importScreenshot = (file, config = {}) =>
   http
     .post('/trips/screenshot/import', file, {
       headers: { 'Content-Type': file.type || 'application/octet-stream' },
       maxBodyLength: 20 * 1024 * 1024,
+      ...config,
     })
     .then((r) => r.data)
 export const importEmail = (data) => http.post('/trips/email/import', data).then((r) => r.data)

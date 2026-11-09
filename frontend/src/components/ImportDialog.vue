@@ -19,8 +19,10 @@ const { t } = useI18n()
 const tab = ref('note')
 const textInput = ref('')
 const linkInput = ref('')
-const screenshotName = ref('')
-let fileRaw = null
+// 批量截图导入（task-photo-batch-screenshot）：多选 → 串行 OCR → 合并去重
+const MAX_SCREENSHOTS = 12
+const screenshotFiles = ref([]) // [{ uid, raw, name }]
+const parseProgress = ref({ done: 0, total: 0 })
 
 const parsing = ref(false)
 const importing = ref(false)
@@ -38,10 +40,15 @@ const targetDayId = ref('')
 const dialogWidth = 'min(680px, 94vw)'
 
 const canParse = computed(() => {
-  if (tab.value === 'screenshot') return !!fileRaw
+  if (tab.value === 'screenshot') return screenshotFiles.value.length > 0
   if (tab.value === 'link') return linkInput.value.trim().length >= 6
   return textInput.value.trim().length > 0
 })
+const parseButtonText = computed(() =>
+  parsing.value && tab.value === 'screenshot' && parseProgress.value.total
+    ? t('importDialog.parsingProgress', parseProgress.value)
+    : t('importDialog.parse'),
+)
 const checkedCount = computed(() => candidates.value.filter((c) => c._checked).length)
 const flaggedSummary = computed(() =>
   flaggedLines.value.map((f) => `L${f.line_number} ${f.content || ''}`).join('；').slice(0, 200),
@@ -61,8 +68,8 @@ watch(visible, (v) => {
 function reset() {
   textInput.value = ''
   linkInput.value = ''
-  screenshotName.value = ''
-  fileRaw = null
+  screenshotFiles.value = []
+  parseProgress.value = { done: 0, total: 0 }
   candidates.value = []
   bookings.value = []
   flaggedLines.value = []
@@ -86,8 +93,23 @@ async function loadTrips() {
 }
 
 function onFileChange(file) {
-  fileRaw = file.raw || null
-  screenshotName.value = file.name || ''
+  const raw = file?.raw
+  if (!raw) return
+  // el-upload 对多选逐张触发 on-change：按 uid 去重（受控列表在本地维护）
+  if (screenshotFiles.value.some((f) => f.uid === file.uid)) return
+  if (screenshotFiles.value.length >= MAX_SCREENSHOTS) {
+    ElMessage.warning(t('importDialog.screenshotLimit', { n: MAX_SCREENSHOTS }))
+    return
+  }
+  screenshotFiles.value.push({ uid: file.uid, raw, name: file.name || 'image' })
+}
+
+function onExceed() {
+  ElMessage.warning(t('importDialog.screenshotLimit', { n: MAX_SCREENSHOTS }))
+}
+
+function removeScreenshot(index) {
+  screenshotFiles.value.splice(index, 1)
 }
 
 function typeLabel(type) {
@@ -99,14 +121,64 @@ function bookingTagType(kind) {
   return { flight: 'primary', hotel: 'success', activity: 'warning' }[kind] || 'info'
 }
 
+function normalizeName(name) {
+  return String(name || '').trim().toLowerCase().replace(/\s+/g, '')
+}
+
+// 批量截图：逐张串行 OCR（并发会抢 CPU 且 macOS Vision 单进程易排队），
+// 合并候选并按站点名去重；单张失败只跳过该张，不整体失败。
+async function parseScreenshots() {
+  const files = screenshotFiles.value
+  const merged = []
+  const seen = new Set()
+  const flagged = []
+  const failed = []
+  let deduped = 0
+
+  parseProgress.value = { done: 0, total: files.length }
+  for (const f of files) {
+    try {
+      const res = await api.importScreenshot(f.raw, { silent: true })
+      for (const c of res.candidates || []) {
+        const key = normalizeName(c.name)
+        if (!key) continue
+        if (seen.has(key)) {
+          deduped += 1
+          continue
+        }
+        seen.add(key)
+        merged.push({ ...c, _source: f.name })
+      }
+      if (res.flagged_lines?.length) flagged.push(...res.flagged_lines)
+    } catch {
+      failed.push(f.name) // 拦截器已静默（silent），失败整批汇总后提示
+    } finally {
+      parseProgress.value = { done: parseProgress.value.done + 1, total: files.length }
+    }
+  }
+
+  applyResult({ candidates: merged, bookings: [], flagged_lines: flagged })
+  if (deduped) ElMessage.info(t('importDialog.screenshotDedupe', { n: deduped }))
+  if (failed.length) ElMessage.warning(t('importDialog.screenshotPartial', { n: failed.length }))
+}
+
 async function parse() {
+  if (tab.value === 'screenshot') {
+    if (!screenshotFiles.value.length) return
+    parsing.value = true
+    try {
+      await parseScreenshots()
+    } finally {
+      parsing.value = false
+      parseProgress.value = { done: 0, total: 0 }
+    }
+    return
+  }
+
   parsing.value = true
   try {
     let res
-    if (tab.value === 'screenshot') {
-      if (!fileRaw) return
-      res = await api.importScreenshot(fileRaw)
-    } else if (tab.value === 'link') {
+    if (tab.value === 'link') {
       res = await api.importLink({ url: linkInput.value.trim() })
     } else if (tab.value === 'email') {
       res = await api.importEmail({ text: textInput.value })
@@ -195,13 +267,35 @@ async function commit() {
       />
     </div>
     <div v-else-if="tab === 'screenshot'" class="input-area">
-      <el-upload :auto-upload="false" :show-file-list="false" accept="image/*" :limit="1" :on-change="onFileChange">
+      <el-upload
+        :auto-upload="false"
+        :show-file-list="false"
+        accept="image/*"
+        multiple
+        :limit="MAX_SCREENSHOTS"
+        :on-change="onFileChange"
+        :on-exceed="onExceed"
+      >
         <el-button type="primary" plain :loading="parsing">
           <el-icon style="margin-right: 4px"><Upload /></el-icon>{{ t('importDialog.chooseImage') }}
         </el-button>
       </el-upload>
-      <p class="hint">{{ t('importDialog.screenshotHint') }}</p>
-      <p v-if="screenshotName" class="file-name">{{ screenshotName }}</p>
+      <p class="hint">{{ t('importDialog.screenshotHint', { n: MAX_SCREENSHOTS }) }}</p>
+      <div v-if="screenshotFiles.length" class="shot-list">
+        <span class="shot-count">{{ t('importDialog.screenshotSelected', { n: screenshotFiles.length }) }}</span>
+        <el-tag
+          v-for="(f, i) in screenshotFiles"
+          :key="f.uid"
+          size="small"
+          :type="parsing ? 'info' : 'primary'"
+          effect="plain"
+          closable
+          :disable-transitions="true"
+          @close="removeScreenshot(i)"
+        >
+          {{ f.name }}
+        </el-tag>
+      </div>
     </div>
     <div v-else class="input-area">
       <el-input v-model="linkInput" :placeholder="t('importDialog.linkPlaceholder')" clearable>
@@ -211,7 +305,7 @@ async function commit() {
 
     <div class="actions">
       <el-button type="primary" :loading="parsing" :disabled="!canParse" @click="parse">
-        {{ t('importDialog.parse') }}
+        {{ parseButtonText }}
       </el-button>
     </div>
 
@@ -244,6 +338,7 @@ async function commit() {
         <el-tag size="small" type="info">{{ typeLabel(c.stop_type) }}</el-tag>
         <span v-if="c.estimated_cost != null" class="candidate-cost">¥{{ c.estimated_cost }}</span>
         <span v-if="c.estimated_duration_minutes != null" class="candidate-dur">{{ c.estimated_duration_minutes }}min</span>
+        <span v-if="c._source" class="candidate-src" :title="c._source">📷 {{ c._source }}</span>
         <p v-if="c.description" class="candidate-desc">{{ c.description }}</p>
       </div>
     </div>
@@ -293,6 +388,17 @@ async function commit() {
 .input-area { margin-bottom: 12px; }
 .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
 .file-name { font-size: 12px; color: var(--brand); margin: 4px 0 0; }
+/* 批量截图：已选文件 chips（可单个移除，最多 12 张） */
+.shot-list { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.shot-count { font-size: 12px; color: var(--muted); }
+.candidate-src {
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .actions { margin: 4px 0 8px; }
 
 .result-block {
