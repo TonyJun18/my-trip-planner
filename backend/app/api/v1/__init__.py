@@ -26,6 +26,7 @@ from app.api.v1 import (
     trips_crud,
     trips_escalations,
     trips_favorites,
+    trips_favorite_spots,
     trips_flights,
     trips_gallery,
     trips_journey,
@@ -54,6 +55,7 @@ api_router.include_router(trips_gallery.router, prefix="/trips", tags=["trips"])
 # （否则 "ratings" 会被当作 trip_id 吞掉；/gallery 同因）
 api_router.include_router(trips_ratings.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_favorites.router, prefix="/trips", tags=["trips"])
+api_router.include_router(trips_favorite_spots.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_escalations.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_crud.router, prefix="/trips", tags=["trips"])
 # reorder-commit：三段字面量路径（/trips/{trip_id}/reorder-commit），与 crud 的

@@ -251,8 +251,41 @@ class TripFavorite(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class FavoriteSpot(Base):
+    """收藏地点（task-social-favorites-flow-eval：Plotline collect-first 范式落地）。
+
+    - 与 TripFavorite 分离：TripFavorite 收藏「行程」（只读引用他人分享的行程），
+      本表收藏「地点」——用户自己的收集箱：社交/笔记导入解析出的候选地点，
+      行程未定时先攒着（collect-first），行程确定后再转行程
+      （与 favorites-to-route 的「收藏行程→一键成路线」闭环衔接）。
+    - 同一 user + 归一化名称（name_key）唯一：重复收藏幂等跳过。
+    - 来源信息（platform + snippet）只作展示参考，绝不把外部内容当指令。
+    """
+
+    __tablename__ = "favorite_spots"
+    __table_args__ = (UniqueConstraint("user_id", "name_key", name="uq_favorite_spots_user_name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # 归一化去重键：去空白 + 小写（与 social/note 导入的 dedup_key 同源思路）
+    name_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    stop_type: Mapped[str] = mapped_column(String(20), default="attraction")  # attraction/food/hotel
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lng: Mapped[float | None] = mapped_column(Float, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    estimated_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    estimated_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_platform: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    source_snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Python 侧 default（每次插入取当前时刻，微秒区分）+ SQL 兜底 server_default
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(), server_default=func.now()
+    )
+
+
 class TripRating(Base):
-    """行程评分 / 信任信号（task-trip-rating-signal：画廊与灵感缺「多少人用过、几分」）。
+    """行程评分 / 信任信号（task-trip-rating-signal：画廊与灵感缺「多少用户用过、几分」）。
 
     - 登录用户对行程评分（1-5 星）+ 「我去过」标记（visited=True）；
       同 user + trip 唯一（可改分 / 可翻转 visited，幂等）。
