@@ -31,6 +31,7 @@ from app.api.v1 import (
     trips_gallery,
     trips_journey,
     trips_passport,
+    trips_property_qa,
     trips_ratings,
     trips_share,
     trips_story,
@@ -54,6 +55,9 @@ api_router.include_router(trips_gallery.router, prefix="/trips", tags=["trips"])
 # ratings：/ratings/summary 是字面量段，必须先于 trips_crud 的 /{trip_id} 注册
 # （否则 "ratings" 会被当作 trip_id 吞掉；/gallery 同因）
 api_router.include_router(trips_ratings.router, prefix="/trips", tags=["trips"])
+# property-qa：/{trip_id}/property-qa 三段路径，与 crud 二段不冲突；
+# 但保持字面量优先惯例，注册在 trips_crud 之前
+api_router.include_router(trips_property_qa.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_favorites.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_favorite_spots.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_escalations.router, prefix="/trips", tags=["trips"])
