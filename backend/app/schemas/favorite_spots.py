@@ -5,10 +5,12 @@
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.trip import TripOut
 
 
 class FavoriteSpotIn(BaseModel):
@@ -66,3 +68,34 @@ class FavoriteSpotListOut(BaseModel):
 
     items: list[FavoriteSpotOut]
     total: int
+
+
+class FavoriteRouteIn(BaseModel):
+    """从收集箱地点生成行程的请求。
+
+    spot_ids 顺序即用户勾选顺序（服务端按 id 查本人收藏，杜绝任意地点/越权）；
+    days 1–14，travelers ≥1 默认 1。
+    """
+
+    spot_ids: list[str] = Field(min_length=1, max_length=50)
+    title: str = Field(min_length=1, max_length=200)
+    destination: str = Field(min_length=1, max_length=200)
+    start_date: date
+    days: int = Field(ge=1, le=14)
+    travelers: int = Field(default=1, ge=1)
+
+
+class FavoriteRouteReport(BaseModel):
+    """生成报告：诚实标注实际成行 / 溢出 / 跳过。"""
+
+    placed: int
+    overflow: int
+    hotel_overflow: int
+    skipped: int
+
+
+class FavoriteRouteOut(BaseModel):
+    """一键成路线响应：新行程 + 诚实报告。"""
+
+    trip: TripOut
+    report: FavoriteRouteReport

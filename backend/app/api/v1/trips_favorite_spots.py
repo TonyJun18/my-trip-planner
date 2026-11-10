@@ -11,6 +11,7 @@
 - POST /favorite-spots/batch  —— 批量收藏导入候选
 - GET  /favorite-spots       —— 我的收藏地点（倒序）
 - DELETE /favorite-spots/{spot_id} —— 删除一条
+- POST /favorite-spots/route —— 一键成路线：收藏地点 → 新草稿行程（第二段聚合）
 """
 from __future__ import annotations
 
@@ -21,13 +22,40 @@ from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.models import User
 from app.schemas.favorite_spots import (
+    FavoriteRouteIn,
+    FavoriteRouteOut,
     FavoriteSpotBatchIn,
     FavoriteSpotBatchOut,
     FavoriteSpotListOut,
 )
-from app.services import favorite_spots_service as svc
+from app.services import favorite_spots_route_service, favorite_spots_service as svc
 
 router = APIRouter()
+
+
+@router.post(
+    "/favorite-spots/route",
+    response_model=FavoriteRouteOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="一键成路线：从收藏地点生成新草稿行程（第二段聚合）",
+)
+async def create_route_from_spots(
+    data: FavoriteRouteIn,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> FavoriteRouteOut:
+    """从收集箱勾选地点生成一条新草稿行程。
+
+    - spot_ids 顺序即勾选顺序；服务端按 id 只读本人收藏（他人/不存在 → skipped
+      计入报告，不 404 整单；全无效 → 400）。
+    - 分天规则确定性：酒店每天至多 1 家置首位；其余按坐标字典序/勾选顺序装入
+      每天 ≤ MAX_STOPS_PER_DAY 的日程（复用 time_validation 常量）。
+    - 返回新行程（TripOut）+ 诚实报告 {placed, overflow, hotel_overflow, skipped}。
+    """
+    result = await favorite_spots_route_service.create_route_from_spots(db, user, data)
+    return FavoriteRouteOut(
+        trip=result["trip"], report=result["report"]
+    )
 
 
 @router.post(

@@ -23,3 +23,9 @@ export const collectFavoriteSpots = (spots) =>
 
 export const removeFavoriteSpot = (spotId) =>
   http.delete(`/trips/favorite-spots/${spotId}`).then((r) => r.data)
+
+// ── 收藏地点 → 一键成路线（第二段聚合：收集箱 → 新草稿行程） ──
+// 勾选收集箱地点 + 行程基础信息 → 生成新行程（确定性分天，每天 ≤ 5 站）。
+// 返回 { trip, report: { placed, overflow, hotel_overflow, skipped } }。
+export const createFavoriteSpotRoute = (payload) =>
+  http.post('/trips/favorite-spots/route', payload).then((r) => r.data)

@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, Star, View, Delete, Share } from '@element-plus/icons-vue'
+import { MagicStick, Star, View, Delete } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import * as api from '@/api'
 
@@ -22,6 +22,21 @@ const spots = ref([])
 const spotsTotal = ref(0)
 const spotsLoading = ref(false)
 const removingSpotId = ref('')
+// 收集箱勾选 → 一键成路线（第二段聚合）
+const spotChecked = ref({}) // { [spotId]: boolean }
+const routeDialogVisible = ref(false)
+const routeCreating = ref(false)
+const routeForm = ref({
+  title: '',
+  destination: '',
+  start_date: '',
+  days: 3,
+  travelers: 2,
+})
+const checkedSpots = computed(() => spots.value.filter((s) => spotChecked.value[s.id]))
+const checkedSpotIds = computed(() => checkedSpots.value.map((s) => s.id))
+const selectedCount = computed(() => checkedSpots.value.length)
+const canCreateRoute = computed(() => selectedCount.value > 0)
 
 async function load() {
   loading.value = true
@@ -94,6 +109,49 @@ async function createRoute(fav) {
     // api 拦截器已提示（未收藏/行程失效 404 等）
   } finally {
     creatingId.value = ''
+  }
+}
+
+function openRouteDialog() {
+  if (!canCreateRoute.value) return
+  routeDialogVisible.value = true
+}
+
+async function createRouteFromSpots() {
+  if (!checkedSpotIds.value.length || routeCreating.value) return
+  const form = routeForm.value
+  if (!form.title.trim() || !form.destination.trim() || !form.start_date) {
+    ElMessage.warning(t('favorites.createRoutePlaceholder'))
+    return
+  }
+  routeCreating.value = true
+  try {
+    const payload = {
+      spot_ids: checkedSpotIds.value,
+      title: form.title.trim(),
+      destination: form.destination.trim(),
+      start_date: form.start_date,
+      days: form.days,
+      travelers: form.travelers,
+    }
+    const data = await api.createFavoriteSpotRoute(payload)
+    const report = data.report || {}
+    ElMessage.success(t('favorites.createRouteSuccess'))
+    if (report.overflow > 0) {
+      ElMessage.warning(t('favorites.createRouteOverflow', { overflow: report.overflow }))
+    }
+    if (report.hotel_overflow > 0) {
+      ElMessage.warning(t('favorites.createRouteHotelOverflow', { count: report.hotel_overflow }))
+    }
+    if (report.skipped > 0) {
+      ElMessage.info(t('favorites.createRouteSkipped', { count: report.skipped }))
+    }
+    routeDialogVisible.value = false
+    router.push(`/trips/${data.trip.id}`)
+  } catch {
+    // api 拦截器已提示
+  } finally {
+    routeCreating.value = false
   }
 }
 
@@ -178,8 +236,11 @@ onMounted(() => {
       <div v-if="spotsLoading" class="box-empty">{{ t('common.loading') }}</div>
       <div v-else-if="!spots.length" class="box-empty">{{ t('favorites.boxEmpty') }}</div>
       <div v-else class="box-chips">
-        <span v-for="s in spots" :key="s.id" class="box-chip">
-          <template v-if="s.source_platform" class="box-src">{{ s.source_platform }}</template>
+        <span v-for="s in spots" :key="s.id" class="box-chip" :class="{ 'box-chip-checked': spotChecked[s.id] }">
+          <label class="box-check">
+            <input v-model="spotChecked[s.id]" type="checkbox" />
+            <template v-if="s.source_platform" class="box-src">{{ s.source_platform }}</template>
+          </label>
           {{ s.name }}
           <em class="agg-type">{{ typeLabels[s.stop_type] || s.stop_type }}</em>
           <button
@@ -192,6 +253,12 @@ onMounted(() => {
             ×
           </button>
         </span>
+      </div>
+      <div v-if="spots.length" class="box-actions">
+        <span v-if="selectedCount" class="box-selected">{{ t('favorites.createRouteSelect', { count: selectedCount }) }}</span>
+        <button class="btn-primary btn-sm" :disabled="!canCreateRoute" @click="openRouteDialog">
+          <el-icon style="margin-right: 4px"><MagicStick /></el-icon>{{ t('favorites.boxCreateRoute') }}
+        </button>
       </div>
     </div>
 
@@ -221,6 +288,54 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- 收集箱 → 一键成路线（第二段聚合）对话框 -->
+    <el-dialog
+      v-model="routeDialogVisible"
+      :title="t('favorites.createRouteDialogTitle')"
+      width="min(560px, 94vw)"
+      destroy-on-close
+    >
+      <div class="route-dialog">
+        <p class="route-selected">{{ t('favorites.createRouteSelect', { count: selectedCount }) }}</p>
+        <div class="route-spots">
+          <span v-for="s in checkedSpots" :key="s.id" class="route-spot-chip">
+            <em class="agg-type">{{ typeLabels[s.stop_type] || s.stop_type }}</em>{{ s.name }}
+          </span>
+        </div>
+        <el-form label-position="top" class="route-form">
+          <el-form-item :label="t('favorites.createRouteTitle')">
+            <el-input v-model="routeForm.title" :placeholder="t('favorites.createRouteTitlePlaceholder')" maxlength="200" />
+          </el-form-item>
+          <el-form-item :label="t('favorites.createRouteDestination')">
+            <el-input v-model="routeForm.destination" :placeholder="t('favorites.createRouteDestinationPlaceholder')" maxlength="200" />
+          </el-form-item>
+          <el-form-item :label="t('favorites.createRouteStartDate')">
+            <el-date-picker
+              v-model="routeForm.start_date"
+              type="date"
+              value-format="YYYY-MM-DD"
+              style="width: 100%"
+            />
+          </el-form-item>
+          <div class="route-row">
+            <el-form-item :label="t('favorites.createRouteDays')">
+              <el-input-number v-model="routeForm.days" :min="1" :max="14" />
+            </el-form-item>
+            <el-form-item :label="t('favorites.createRouteTravelers')">
+              <el-input-number v-model="routeForm.travelers" :min="1" :max="20" />
+            </el-form-item>
+          </div>
+        </el-form>
+        <p class="hint">{{ t('favorites.boxCreateHint') }}</p>
+      </div>
+      <template #footer>
+        <el-button @click="routeDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="routeCreating" @click="createRouteFromSpots">
+          <el-icon style="margin-right: 4px"><MagicStick /></el-icon>{{ t('favorites.createRouteSubmit') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -309,6 +424,47 @@ onMounted(() => {
   border-radius: 50%;
 }
 .box-remove:hover { color: #f56c6c; }
+.box-chip-checked {
+  border-color: var(--primary, #409eff);
+  background: color-mix(in srgb, var(--primary, #409eff) 8%, #fff);
+}
+.box-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.box-check input {
+  accent-color: var(--primary, #409eff);
+  margin: 0;
+}
+.box-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color, #e5e7eb);
+}
+.box-selected { color: var(--faint); font-size: 13px; }
+
+/* 一键成路线对话框 */
+.route-dialog .route-selected { margin: 0 0 8px; font-size: 13px; color: var(--faint); }
+.route-dialog .route-spots { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.route-spot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  font-size: 13px;
+}
+.route-form { margin-bottom: 4px; }
+.route-row { display: flex; gap: 20px; }
+.route-row .el-form-item { flex: 1; }
+.route-dialog .hint { font-size: 12px; color: var(--faint); margin: 0; }
 
 .empty-hint { text-align: center; color: var(--faint); padding: 48px 0; }
 
