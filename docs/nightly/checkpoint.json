@@ -1,11 +1,20 @@
 {
   "night": "2026-11-11",
-  "status": "in_progress",
+  "status": "completed",
   "todo": [
     "task-weather-probability-eval"
   ],
-  "completed": [],
-  "current_index": 0,
-  "issues": [],
-  "branches": []
+  "completed": [
+    "task-weather-probability-eval"
+  ],
+  "current_index": 1,
+  "issues": [
+    "路径偏差（继续有效）：手册第0节项目路径写 /Users/pengjun/Desktop/my-agent/my-trip-planner，实际仓库在 /Users/pengjun/Documents/my-agent/my-trip-planner，按实际路径执行（11-10 报告已记载）。",
+    "未提交改动（本夜核验，白天产物不碰）：docs/code-map/ 与 docs/superpowers/ 与 openspec/changes/trip-detail-schedule-timeline/ 为白天新增目录（untracked），不属于夜间任务，不提交不入分支。",
+    "本夜评估新增发现（已登记 todo 行动项，未实现）：① wttr 降级路径 text_day 返回英文（lang_zh 实测 Smoke/Clear），RAIN_KEYWORDS 仅中文 → 雨天室内替代建议在降级路径会漏报（task-weather-wttr-en-keywords 中优先级候选）；② wttr 有 chanceofrain 但高德主力源无概率字段，「概率>60%阈值」维持关单（task-weather-probability-card 低优先级候选，透出不裁决）。",
+    "web_extract 对 lbs.amap.com / wttr.in 被 SSRF 误判 Blocked（与 11-09 同款），改用 curl 抓官方文档 + j1 实测 JSON，一手证据齐全。"
+  ],
+  "branches": [
+    "nightly/2026-11-11/0-task-weather-probability-eval"
+  ]
 }
