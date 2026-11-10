@@ -18,6 +18,7 @@ import TripDetailToolbox from '@/components/trip-detail/TripDetailToolbox.vue'
 import TripDetailWorkspace from '@/components/trip-detail/TripDetailWorkspace.vue'
 import TripDetailSidebar from '@/components/trip-detail/TripDetailSidebar.vue'
 import TripDetailRatingCard from '@/components/trip-detail/TripDetailRatingCard.vue'
+import TripDetailQaCard from '@/components/trip-detail/TripDetailQaCard.vue'
 import TripDetailDialogs from '@/components/trip-detail/TripDetailDialogs.vue'
 import AddExpenseDialog from '@/components/AddExpenseDialog.vue'
 import { useTripDetailLoad } from '@/composables/useTripDetailLoad'
@@ -1167,6 +1168,10 @@ onBeforeUnmount(() => {
       <!-- 行程评分（收尾动作：行程结束后给这次行程打分 + 标记去过）
            刻意放在导出区之外：评分是私域操作，不该被截图 / PDF 导出带走 -->
       <TripDetailRatingCard :trip-id="trip.id" :phase="phase" />
+
+      <!-- 行程问答（task-property-qa-eval 前端接线）：只答结构化事实，零 LLM 防编造
+           同样放在导出区之外 —— 交互式提问/答案不该进截图 / PDF -->
+      <TripDetailQaCard :trip-id="trip.id" />
     </template>
 
     <!-- 对话框（小红书 / 导入 / 批量生成 / 分享设置 / 编辑三合一） -->

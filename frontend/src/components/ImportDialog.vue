@@ -27,6 +27,7 @@ const parseProgress = ref({ done: 0, total: 0 })
 const parsing = ref(false)
 const importing = ref(false)
 const creatingDay = ref(false)
+const collecting = ref(false)
 
 const candidates = ref([]) // { _checked, name, stop_type, description, estimated_cost, estimated_duration_minutes }
 const bookings = ref([])
@@ -240,6 +241,36 @@ async function ensureDay() {
   }
 }
 
+// 存入收集箱（collect-first：导入候选先攒成地点收藏，行程定了再汇入）
+// 不需要先选行程/日程；只取 schema 白名单字段，外部内容按敌意源处理。
+async function collectToBox() {
+  const picked = candidates.value.filter((c) => c._checked)
+  if (!picked.length || collecting.value) return
+  collecting.value = true
+  try {
+    const spots = picked.slice(0, 50).map((c) => {
+      const spot = { name: c.name, stop_type: c.stop_type || 'attraction' }
+      if (c.lat != null) spot.lat = c.lat
+      if (c.lng != null) spot.lng = c.lng
+      if (c.description) spot.description = c.description
+      if (c.estimated_cost != null) spot.estimated_cost = c.estimated_cost
+      if (c.estimated_duration_minutes != null) {
+        spot.estimated_duration_minutes = c.estimated_duration_minutes
+      }
+      if (tab.value) spot.source_platform = tab.value
+      return spot
+    })
+    const res = await api.collectFavoriteSpots(spots)
+    ElMessage.success(
+      t('importDialog.collectDone', { n: res.collected, skipped: res.skipped }),
+    )
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    collecting.value = false
+  }
+}
+
 async function commit() {
   const dayId = targetDayId.value
   const picked = candidates.value.filter((c) => c._checked)
@@ -408,6 +439,10 @@ async function commit() {
       <el-button type="primary" :loading="importing" :disabled="!targetDayId" @click="commit">
         <el-icon style="margin-right: 4px"><Download /></el-icon>{{ t('importDialog.commit') }}
       </el-button>
+      <el-button :loading="collecting" @click="collectToBox">
+        <el-icon style="margin-right: 4px"><Star /></el-icon>{{ t('importDialog.collectToBox') }}
+      </el-button>
+      <p class="hint">{{ t('importDialog.collectHint') }}</p>
     </div>
 
     <template #footer>

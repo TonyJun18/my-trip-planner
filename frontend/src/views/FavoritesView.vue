@@ -16,6 +16,13 @@ const agg = ref({ items: [], total: 0, trips: 0 })
 const aggLoading = ref(false)
 const creatingId = ref('')
 
+// 收集箱（task-social-favorites-flow-eval：collect-first）——导入候选先攒着，
+// 与「收藏行程」分离：这里装的是单个地点，还没有行程。
+const spots = ref([])
+const spotsTotal = ref(0)
+const spotsLoading = ref(false)
+const removingSpotId = ref('')
+
 async function load() {
   loading.value = true
   try {
@@ -38,6 +45,34 @@ async function loadAgg() {
     agg.value = { items: [], total: 0, trips: 0 }
   } finally {
     aggLoading.value = false
+  }
+}
+
+async function loadSpots() {
+  spotsLoading.value = true
+  try {
+    const data = await api.listFavoriteSpots({ limit: 200 })
+    spots.value = data.items || []
+    spotsTotal.value = data.total || 0
+  } catch {
+    // api 拦截器已提示
+  } finally {
+    spotsLoading.value = false
+  }
+}
+
+async function removeSpot(spot) {
+  if (removingSpotId.value) return
+  removingSpotId.value = spot.id
+  try {
+    await api.removeFavoriteSpot(spot.id)
+    ElMessage.success(t('favorites.boxRemoved'))
+    spots.value = spots.value.filter((s) => s.id !== spot.id)
+    spotsTotal.value = Math.max(0, spotsTotal.value - 1)
+  } catch {
+    // api 拦截器已提示
+  } finally {
+    removingSpotId.value = ''
   }
 }
 
@@ -96,6 +131,7 @@ const typeLabels = {
 onMounted(() => {
   load()
   loadAgg()
+  loadSpots()
 })
 </script>
 
@@ -127,6 +163,35 @@ onMounted(() => {
         </span>
         <span v-if="aggMore > 0" class="agg-more">+{{ aggMore }}</span>
         <span v-if="aggLoading" class="agg-more">{{ t('common.loading') }}</span>
+      </div>
+    </div>
+
+    <!-- 收集箱：导入候选先攒着（地点级，还没有行程） -->
+    <div class="box-card">
+      <div class="agg-head">
+        <span class="agg-title">
+          {{ t('favorites.boxTitle') }}
+          <em v-if="spotsTotal" class="box-count">{{ spotsTotal }}</em>
+        </span>
+        <span class="agg-hint">{{ t('favorites.boxHint') }}</span>
+      </div>
+      <div v-if="spotsLoading" class="box-empty">{{ t('common.loading') }}</div>
+      <div v-else-if="!spots.length" class="box-empty">{{ t('favorites.boxEmpty') }}</div>
+      <div v-else class="box-chips">
+        <span v-for="s in spots" :key="s.id" class="box-chip">
+          <template v-if="s.source_platform" class="box-src">{{ s.source_platform }}</template>
+          {{ s.name }}
+          <em class="agg-type">{{ typeLabels[s.stop_type] || s.stop_type }}</em>
+          <button
+            class="box-remove"
+            type="button"
+            :disabled="removingSpotId === s.id"
+            :title="t('favorites.boxRemove')"
+            @click="removeSpot(s)"
+          >
+            ×
+          </button>
+        </span>
       </div>
     </div>
 
@@ -196,6 +261,54 @@ onMounted(() => {
 }
 .agg-type { font-style: normal; color: var(--faint); font-size: 11px; }
 .agg-more { color: var(--faint); font-size: 13px; align-self: center; }
+
+/* 收集箱（collect-first：地点级候选，尚未进行程） */
+.box-card {
+  border: 1px dashed var(--border-color, #e5e7eb);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  background: var(--bg-soft, #fafafa);
+}
+.box-count {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--primary, #409eff);
+  background: color-mix(in srgb, var(--primary, #409eff) 12%, transparent);
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-left: 6px;
+}
+.box-empty { color: var(--faint); font-size: 13px; }
+.box-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.box-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 999px;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  font-size: 13px;
+}
+.box-src {
+  font-size: 10px;
+  color: var(--faint);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 999px;
+  padding: 0 5px;
+}
+.box-remove {
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 50%;
+}
+.box-remove:hover { color: #f56c6c; }
 
 .empty-hint { text-align: center; color: var(--faint); padding: 48px 0; }
 
