@@ -103,6 +103,9 @@ function goHome() {
                   <el-dropdown-item divided @click="router.push('/preferences')">
                     <el-icon style="margin-right: 6px"><User /></el-icon>{{ t('app.preferencesNav') }}
                   </el-dropdown-item>
+                  <el-dropdown-item @click="router.push('/favorites')">
+                    <el-icon style="margin-right: 6px"><Star /></el-icon>{{ t('app.favoritesNav') }}
+                  </el-dropdown-item>
                   <el-dropdown-item divided @click="logout">
                     <el-icon style="margin-right: 6px"><SwitchButton /></el-icon>{{ t('app.logout') }}
                   </el-dropdown-item>
