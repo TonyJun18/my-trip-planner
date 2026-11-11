@@ -598,7 +598,15 @@ async def _weather_amap(city: str, *, days: int = 3) -> dict[str, Any]:
 
 
 async def _weather_wttr(city: str, *, days: int = 3) -> dict[str, Any]:
-    """wttr.in 降级（无需 key，JSON 输出）。"""
+    """wttr.in 降级（无需 key，JSON 输出）。
+
+    注意一手实测（2026-11-11 task-weather-probability-eval）：
+    - ``lang=zh`` 时 wttr.in 返回的 ``lang_zh`` 字段实际为英文描述
+      （如 Smoke/Clear/Partly Cloudy），且是 ``[{"value": ...}]`` 列表——不能
+      直接当字符串使用；
+    - ``lang_en`` 恒为 null，英文描述实际在 ``weatherDesc`` 数组里。
+    因此归一化时：取 ``lang_zh`` 首元素解包，空则回退 ``weatherDesc[0].value``。
+    """
     params = {"format": "j1", "lang": "zh"}
     try:
         async with httpx.AsyncClient(timeout=settings.LLM_TIMEOUT) as client:
@@ -610,13 +618,25 @@ async def _weather_wttr(city: str, *, days: int = 3) -> dict[str, Any]:
 
     days_out = []
     for item in (data.get("weather") or [])[: max(days, 1)]:
+        hours = item.get("hourly") or [{}]
+        hour = hours[4] if len(hours) > 4 else (hours[0] if hours else {})
+        # lang_zh 实测为 [{"value": "..."}] 列表（且内容是英文）→ 解包；
+        # 空则回退 weatherDesc 数组（英文）。绝不把列表/空串塞进 text_day。
+        lang_zh = hour.get("lang_zh")
+        text_day = None
+        if isinstance(lang_zh, list) and lang_zh and isinstance(lang_zh[0], dict):
+            text_day = lang_zh[0].get("value")
+        if not text_day:
+            desc = hour.get("weatherDesc") or []
+            if desc and isinstance(desc[0], dict):
+                text_day = desc[0].get("value")
         days_out.append({
             "date": item.get("date"),
-            "text_day": (item.get("hourly") or [{}])[4].get("lang_zh") or item.get("hourly", [{}])[4].get("weatherDesc", [{}])[0].get("value"),
+            "text_day": text_day,
             "text_night": None,
             "temp_max": item.get("maxtempC"),
             "temp_min": item.get("mintempC"),
-            "humidity": (item.get("hourly") or [{}])[4].get("humidity"),
+            "humidity": hour.get("humidity"),
         })
     return {"city": city, "days": days_out, "count": len(days_out), "source": "wttr.in"}
 

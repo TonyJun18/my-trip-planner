@@ -42,8 +42,16 @@ from app.i18n.translations import t
 
 # ── 天气告警阈值（规则库，零凭证） ─────────────────────────────
 # 雨天关键词：预报 text_day 命中任一即视为当天有降水（含雪/雷暴）。
+# 英文关键词（task-weather-wttr-en-keywords，2026-11-12）：wttr.in 降级路径
+# lang_zh 实测返回英文（Smoke/Clear/Partly Cloudy，11-11 评估记录），若只认
+# 中文词则高德不可用时雨天室内替代建议会漏报——补英文降水词覆盖该路径。
+# 词均为子串匹配：Light rain / Patchy rain nearby / Thunderstorm / Drizzle 等
+# 均可命中；Snow 亦可命中 Snowy；不匹配 Sunny / Clear / Overcast / Mist / Smoke。
+# IGNORECASE：wttr.in 英文描述首字母大写（Rain Shower / Light Snow），
+# 大小写不敏感保证大写开头同样命中。
 RAIN_KEYWORDS: tuple[str, ...] = (
     "雨", "雪", "雷", "阵", "雹", "霰",
+    "rain", "snow", "thunder", "drizzle", "shower", "sleet", "hail",
 )
 # 酷暑阈值：日最高温 ≥ 35°C 视为酷暑（气象学高温预警标准口径）。
 HOT_TEMP_THRESHOLD: int = 35
@@ -54,7 +62,7 @@ _INDOOR_EXEMPT_KEYWORDS: tuple[str, ...] = (
     "博物馆", "美术馆", "展览", "科技馆", "图书馆", "室内", "商城", "购物", "水族馆", "剧院",
 )
 
-_RAIN_RE = re.compile("|".join(RAIN_KEYWORDS))
+_RAIN_RE = re.compile("|".join(RAIN_KEYWORDS), re.IGNORECASE)
 
 
 def _parse_iso_date(value: Any) -> Any | None:
