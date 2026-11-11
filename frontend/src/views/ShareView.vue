@@ -461,6 +461,13 @@ const liveWeatherAdvice = computed(() =>
     .filter(Boolean)
     .join(' · '),
 )
+// 降水概率（task-weather-probability-card）：与详情页同口径——wttr 源透出
+// {rain_probability}；高德源无概率字段 → null → 不渲染（诚实沉默）。
+const liveWeatherRainText = computed(() => {
+  const p = liveWeather.value?.rain_probability
+  if (p == null) return ''
+  return t('tripDetail.weatherRainProb', { p })
+})
 let collabClose = null
 
 // ── 协作变更提示（task-collab-update-notice）：同伴改了行程 → 顶部轻提示「刷新查看」──
@@ -768,6 +775,7 @@ function watchCollabFeed() {
           <span class="live-weather-text">
             {{ liveWeather.text_day || $t('tripDetail.weatherNoData') }}
             <template v-if="liveWeatherTemp"> · {{ liveWeatherTemp }}</template>
+            <template v-if="liveWeatherRainText"> · {{ liveWeatherRainText }}</template>
           </span>
           <span class="live-weather-badge">{{ $t('tripDetail.weatherForecastBadge') }}</span>
           <span v-if="liveWeatherAdvice" class="live-weather-advice">{{ liveWeatherAdvice }}</span>
