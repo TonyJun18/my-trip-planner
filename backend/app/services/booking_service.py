@@ -189,6 +189,10 @@ async def upsert_booking(
                 existing.reference = data.reference or existing.reference
                 existing.credential = data.credential or existing.credential
                 existing.amount = data.amount if data.amount is not None else existing.amount
+                if data.service_date is not None:
+                    existing.service_date = data.service_date
+                if data.service_note is not None:
+                    existing.service_note = data.service_note
                 existing.updated_at = datetime.now(timezone.utc)
                 if data.status == "confirmed" and not existing.confirmed_at:
                     existing.confirmed_at = datetime.now(timezone.utc)
@@ -209,6 +213,8 @@ async def upsert_booking(
         credential=data.credential,
         status=data.status,
         reference=data.reference,
+        service_date=data.service_date,
+        service_note=data.service_note,
         amount=data.amount,
         currency=data.currency or "CNY",
         confirmed_at=datetime.now(timezone.utc) if data.status == "confirmed" else None,
@@ -254,6 +260,10 @@ async def update_booking_status(
         booking.order_no = data.order_no
     if data.credential:
         booking.credential = data.credential
+    if data.service_date is not None:
+        booking.service_date = data.service_date
+    if data.service_note is not None:
+        booking.service_note = data.service_note
     if new_status == "confirmed":
         booking.confirmed_at = booking.confirmed_at or datetime.now(timezone.utc)
         booking.cancelled_at = None

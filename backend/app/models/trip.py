@@ -336,6 +336,10 @@ class TripBooking(Base):
     credential: Mapped[str | None] = mapped_column(String(200), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="suggested", nullable=False, index=True)
     reference: Mapped[str] = mapped_column(String(20), default="plan.generated", nullable=False)
+    # 服务日期（task-booking-ledger-rhythm）：车次发车日 / 酒店入住日 / 门票出行日。
+    # 台账一级排序与倒计时键；不参与状态机判定（与凭证防线无关）。
+    service_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    service_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     currency: Mapped[str] = mapped_column(String(10), default="CNY", nullable=False)
     probe_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
