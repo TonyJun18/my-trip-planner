@@ -37,6 +37,9 @@ from app.schemas.booking import (
     BookingScanOut,
     BookingStatusIn,
     BookingSuggestedOut,
+    EmailMergeItem,
+    EmailMergeListIn,
+    EmailMergeOut,
     StopLinkIn,
 )
 from app.schemas.chat import (

@@ -25,6 +25,8 @@ from app.schemas import (
     BookingOut,
     BookingScanOut,
     BookingStatusIn,
+    EmailMergeListIn,
+    EmailMergeOut,
     StopLinkIn,
     StopOut,
 )
@@ -109,6 +111,31 @@ async def add_trip_booking(
     """owner 新增一条预订（suggested 建议 / user.confirmed 回填凭证）。"""
     booking = await booking_service.upsert_booking(db, trip_id, data, owner=user.id)
     return BookingOut.model_validate(booking)
+
+
+@router.post(
+    "/{trip_id}/bookings/merge-email",
+    response_model=EmailMergeOut,
+    summary="邮件预订条目归并台账（owner）",
+)
+async def merge_email_bookings(
+    trip_id: str,
+    data: EmailMergeListIn,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> EmailMergeOut:
+    """把邮件导入解析出的预订条目归并进台账（task-booking-ledger-rhythm）。
+
+    - 解析是候选、落库是决定：一律 status=pending、reference=email.import，
+      绝不采纳请求侧 status/credential（防伪造已订）；
+    - 幂等：有码 provider+order_no；无码 em- 合成键；
+    - kind 归一：flight/hotel/activity → flight/hotel/ticket。
+    """
+    merged = await booking_service.merge_email_bookings(
+        db, trip_id, data.items, owner=user.id
+    )
+    out = [BookingOut.model_validate(b) for b in merged]
+    return EmailMergeOut(merged=out, total=len(out))
 
 
 @router.post(

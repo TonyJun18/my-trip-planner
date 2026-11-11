@@ -72,6 +72,36 @@ class BookingStatusIn(BaseModel):
     service_note: str | None = Field(default=None, max_length=500)
 
 
+class EmailMergeItem(BaseModel):
+    """邮件解析出的预订条目（task-booking-ledger-rhythm 归并请求项）。
+
+    - 字段与 email_import.EmailBookingOut 对齐（kind: flight/hotel/activity）；
+    - 服务端绝不信任 status/credential——归并一律落 pending + reference=email.import；
+    - code 缺失时服务端按内容合成 `em-` 幂等键（或校验客户端 fingerprint）。
+    """
+
+    kind: str = Field(default="hotel", max_length=20)  # flight/hotel/activity（activity→ticket）
+    name: str | None = Field(default=None, max_length=300)
+    code: str | None = Field(default=None, max_length=100)
+    datetime: str | None = Field(default=None, max_length=40)
+    amount: float | None = Field(default=None, ge=0)
+    currency: str = "CNY"
+    fingerprint: str | None = Field(default=None, max_length=64)
+
+
+class EmailMergeListIn(BaseModel):
+    """邮件条目批量归并请求体。"""
+
+    items: list[EmailMergeItem] = Field(default_factory=list)
+
+
+class EmailMergeOut(BaseModel):
+    """归并结果（返回台账条目）。"""
+
+    merged: list[BookingOut] = Field(default_factory=list)
+    total: int = 0
+
+
 class BookingSuggestedOut(BaseModel):
     """规划后 BookingAgent 产出的可预订建议（挂 plan.bookings）。"""
 
