@@ -206,6 +206,7 @@ owner 一键把已分享行程发布到精选（目的地/天数/预算/一句�
 
 - **只做公开跳转**：`booking_service._deeplink` 是纯函数拼携程 / 去哪儿 / 12306 / 飞猪 / 同程的检索链接——不自建库存、不代收资金、不伪造「已订」；`TripBooking` 状态机只允许带真实凭证（订单号 / 确认码）进入 `confirmed`。
 - **零返佣**：外链里没有任何联盟或返佣参数（`grep -rn "affiliate\|utm_\|allianceid" backend/app/services/booking_service.py` 无命中）。
+- **台账与节奏，不进场**：预订台账只记录**用户自己的**预订（邮件解析结果一律以 `pending` + `reference=email.import` 落库，回填真实凭证才可 `confirmed`）；预订节奏是确定性规则推算并标注 `basis=rule_based`，只回答「什么时候该订」，不查库存、不报价、不代订，放票/预售信息一律注明「以官方渠道为准」。
 - **数据自由**：`GET /trips/{id}/export`（owner）与 `GET /trips/share/{token}/export`（免登录只读）随时导出完整 JSON，令牌字段绝不外泄。
 - **口径诚实**：预算 / 时间 / 距离由确定性代码计算并标注来源（`basis`），不是 LLM 估值。
 
