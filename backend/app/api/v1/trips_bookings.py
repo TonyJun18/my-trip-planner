@@ -14,7 +14,10 @@
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.database import get_session
@@ -23,14 +26,19 @@ from app.schemas import (
     BookingIn,
     BookingListOut,
     BookingOut,
+    BookingRhythmItemOut,
+    BookingRhythmOut,
     BookingScanOut,
     BookingStatusIn,
+    EmailMergeListIn,
+    EmailMergeOut,
     StopLinkIn,
     StopOut,
     StopWriteOut,
 )
 from app.services import booking_service
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.booking_rhythm import compute_booking_rhythm
+from app.services.trip_service import get_trip
 
 router = APIRouter()
 
@@ -47,8 +55,13 @@ async def list_trip_bookings(
 ) -> BookingListOut:
     """owner 查看行程的预订条目（建议 + 回填 + 状态）。"""
     items = await booking_service.list_bookings(db, trip_id, owner=user.id)
+    outs: list[BookingOut] = []
+    for b in items:
+        out = BookingOut.model_validate(b)
+        out.days_until = booking_service.booking_days_until(b)
+        outs.append(out)
     return BookingListOut(
-        items=[BookingOut.model_validate(b) for b in items],
+        items=outs,
         total=len(items),
     )
 
@@ -110,6 +123,56 @@ async def add_trip_booking(
     """owner 新增一条预订（suggested 建议 / user.confirmed 回填凭证）。"""
     booking = await booking_service.upsert_booking(db, trip_id, data, owner=user.id)
     return BookingOut.model_validate(booking)
+
+
+@router.post(
+    "/{trip_id}/bookings/merge-email",
+    response_model=EmailMergeOut,
+    summary="邮件预订条目归并台账（owner）",
+)
+async def merge_email_bookings(
+    trip_id: str,
+    data: EmailMergeListIn,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> EmailMergeOut:
+    """把邮件导入解析出的预订条目归并进台账（task-booking-ledger-rhythm）。
+
+    - 解析是候选、落库是决定：一律 status=pending、reference=email.import，
+      绝不采纳请求侧 status/credential（防伪造已订）；
+    - 幂等：有码 provider+order_no；无码 em- 合成键；
+    - kind 归一：flight/hotel/activity → flight/hotel/ticket。
+    """
+    merged = await booking_service.merge_email_bookings(
+        db, trip_id, data.items, owner=user.id
+    )
+    out = [BookingOut.model_validate(b) for b in merged]
+    return EmailMergeOut(merged=out, total=len(out))
+
+
+@router.get(
+    "/{trip_id}/bookings/rhythm",
+    response_model=BookingRhythmOut,
+    summary="预订节奏表（owner；确定性规则库实时计算，不落库）",
+)
+async def get_booking_rhythm(
+    trip_id: str,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> BookingRhythmOut:
+    """「什么时候该订什么」的节奏表（task-booking-ledger-rhythm · D8/D9）。
+
+    - 纯派生读路径：每次读取实时计算（签名级无写入路径），不落 trip_events、
+      不依赖定时任务/推送；两次读取结果稳定；
+    - 四类规则：火车预售 15 天 / 场馆放票（规则表+通用档）/ 机票 T-30 关注窗 /
+      酒店入住前 7 天取消检查；每条 basis=rule_based 且提示以官方渠道为准；
+    - 去重：confirmed 目标不再提醒；同目标至多一条。
+    """
+    trip = await get_trip(db, trip_id, owner=user.id)
+    bookings = await booking_service.list_bookings(db, trip_id, owner=user.id)
+    items = compute_booking_rhythm(trip, bookings, today=datetime.now(UTC).date())
+    out = [BookingRhythmItemOut(**i) for i in items]
+    return BookingRhythmOut(items=out, total=len(out))
 
 
 @router.post(

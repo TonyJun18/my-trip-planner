@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.models import User
-from app.services import export_service, trip_service
+from app.services import booking_service, export_service, trip_service
 
 router = APIRouter()
 
@@ -34,11 +34,14 @@ async def export_trip(
     db: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> dict:
-    """owner 导出行程完整 JSON（含日程/预算/质检摘要/规划上下文）。"""
+    """owner 导出行程完整 JSON（含日程/预算/质检摘要/规划上下文/预订台账全量）。"""
     trip = await trip_service.get_trip(db, trip_id, owner=user.id)
     plan = await trip_service.get_plan_by_trip_id(db, trip.id)
     plan_data = await trip_service.ensure_plan_transport(db, trip, plan) or {}
-    return export_service.build_trip_export(trip, plan_data=plan_data)
+    bookings = await booking_service.list_bookings(db, trip.id, owner=user.id)
+    return export_service.build_trip_export(
+        trip, plan_data=plan_data, bookings=bookings, bookings_full=True
+    )
 
 
 @router.get("/share/{token}/export", summary="导出行程 JSON（免登录，凭 share_token 只读）")
@@ -48,11 +51,14 @@ async def export_shared_trip(
     x_share_gate: str | None = Header(None, alias="X-Share-Gate"),
     db: AsyncSession = Depends(get_session),
 ) -> dict:
-    """凭 share_token 免登录导出（只读数据快照；与分享读取同信任语义）。"""
+    """凭 share_token 免登录导出（只读数据快照；与分享读取同信任语义；预订脱敏）。"""
     trip = await trip_service.get_trip_by_share_token(db, token, password=x_share_password, gate_token=x_share_gate)
     plan = await trip_service.get_plan_by_trip_id(db, trip.id)
     plan_data = await trip_service.ensure_plan_transport(db, trip, plan) or {}
-    return export_service.build_trip_export(trip, plan_data=plan_data)
+    bookings = await booking_service.list_bookings_by_trip_id(db, trip.id)
+    return export_service.build_trip_export(
+        trip, plan_data=plan_data, bookings=bookings, bookings_full=False
+    )
 
 
 @router.get("/{trip_id}/export/ics", summary="导出行程 ICS 日历（owner）")

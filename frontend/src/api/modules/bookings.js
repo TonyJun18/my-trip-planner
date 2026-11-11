@@ -7,6 +7,12 @@ export const updateBookingStatus = (tripId, bookingId, data) =>
   http.post(`/trips/${tripId}/bookings/${bookingId}/status`, data).then((r) => r.data)
 export const deleteBooking = (tripId, bookingId) =>
   http.delete(`/trips/${tripId}/bookings/${bookingId}`)
+// 邮件条目并入台账（task-booking-ledger-rhythm：服务端强制 pending + email.import）
+export const mergeEmailBookings = (tripId, items) =>
+  http.post(`/trips/${tripId}/bookings/merge-email`, { items }).then((r) => r.data)
+// 预订节奏（确定性规则库实时计算，不落库）
+export const getBookingRhythm = (tripId) =>
+  http.get(`/trips/${tripId}/bookings/rhythm`).then((r) => r.data)
 
 // ── 旅程全程追踪（task-journey-timeline：投影） ──
 export const getJourney = (tripId) => http.get(`/trips/${tripId}/journey`).then((r) => r.data)
