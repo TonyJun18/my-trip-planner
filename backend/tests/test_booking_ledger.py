@@ -14,7 +14,7 @@ from datetime import date, timedelta
 
 from httpx import AsyncClient
 
-from app.models import Trip, TripBooking, TripDay
+from app.models import Trip, TripDay
 
 
 # ── fixture：最小行程 ────────────────────────────────────────────

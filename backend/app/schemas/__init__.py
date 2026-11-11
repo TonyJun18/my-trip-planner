@@ -40,6 +40,8 @@ from app.schemas.booking import (
     EmailMergeItem,
     EmailMergeListIn,
     EmailMergeOut,
+    BookingRhythmItemOut,
+    BookingRhythmOut,
     StopLinkIn,
 )
 from app.schemas.chat import (

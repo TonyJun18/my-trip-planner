@@ -102,6 +102,33 @@ class EmailMergeOut(BaseModel):
     total: int = 0
 
 
+class BookingRhythmItemOut(BaseModel):
+    """一条节奏条目（task-booking-ledger-rhythm · booking-rhythm spec）。
+
+    - phase：open=窗口已开 / upcoming=窗口未开 / closing=临近截止（≤3 天）；
+    - basis 恒为 rule_based（纯日期数学，零外部源），note 带「以官方渠道为准」；
+    - booking_id/stop_id：条目来源（台账条目或行程站点），二选一或均空。
+    """
+
+    kind: str
+    target: str
+    target_date: date
+    window_open: date
+    window_deadline: date
+    phase: Literal["open", "upcoming", "closing"]
+    basis: Literal["rule_based"] = "rule_based"
+    note: str
+    booking_id: str | None = None
+    stop_id: str | None = None
+
+
+class BookingRhythmOut(BaseModel):
+    """节奏表（GET /bookings/rhythm 响应，实时计算不落库）。"""
+
+    items: list[BookingRhythmItemOut] = Field(default_factory=list)
+    total: int = 0
+
+
 class BookingSuggestedOut(BaseModel):
     """规划后 BookingAgent 产出的可预订建议（挂 plan.bookings）。"""
 

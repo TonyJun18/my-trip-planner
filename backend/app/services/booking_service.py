@@ -317,7 +317,7 @@ def _days_until(service_date: date | None, *, today: date | None = None) -> int 
     """台账倒计时：未来为正、当天 0、已过为负、无服务日期 None。"""
     if service_date is None:
         return None
-    return (service_date - (today or date.today())).days
+    return (service_date - (today or datetime.now(timezone.utc).date())).days
 
 
 def booking_days_until(booking: TripBooking, *, today: date | None = None) -> int | None:

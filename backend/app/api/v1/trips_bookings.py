@@ -14,7 +14,10 @@
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.database import get_session
@@ -23,6 +26,8 @@ from app.schemas import (
     BookingIn,
     BookingListOut,
     BookingOut,
+    BookingRhythmItemOut,
+    BookingRhythmOut,
     BookingScanOut,
     BookingStatusIn,
     EmailMergeListIn,
@@ -31,7 +36,8 @@ from app.schemas import (
     StopOut,
 )
 from app.services import booking_service
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.booking_rhythm import compute_booking_rhythm
+from app.services.trip_service import get_trip
 
 router = APIRouter()
 
@@ -141,6 +147,31 @@ async def merge_email_bookings(
     )
     out = [BookingOut.model_validate(b) for b in merged]
     return EmailMergeOut(merged=out, total=len(out))
+
+
+@router.get(
+    "/{trip_id}/bookings/rhythm",
+    response_model=BookingRhythmOut,
+    summary="预订节奏表（owner；确定性规则库实时计算，不落库）",
+)
+async def get_booking_rhythm(
+    trip_id: str,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> BookingRhythmOut:
+    """「什么时候该订什么」的节奏表（task-booking-ledger-rhythm · D8/D9）。
+
+    - 纯派生读路径：每次读取实时计算（签名级无写入路径），不落 trip_events、
+      不依赖定时任务/推送；两次读取结果稳定；
+    - 四类规则：火车预售 15 天 / 场馆放票（规则表+通用档）/ 机票 T-30 关注窗 /
+      酒店入住前 7 天取消检查；每条 basis=rule_based 且提示以官方渠道为准；
+    - 去重：confirmed 目标不再提醒；同目标至多一条。
+    """
+    trip = await get_trip(db, trip_id, owner=user.id)
+    bookings = await booking_service.list_bookings(db, trip_id, owner=user.id)
+    items = compute_booking_rhythm(trip, bookings, today=datetime.now(UTC).date())
+    out = [BookingRhythmItemOut(**i) for i in items]
+    return BookingRhythmOut(items=out, total=len(out))
 
 
 @router.post(
