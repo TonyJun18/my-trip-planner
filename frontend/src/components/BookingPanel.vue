@@ -7,6 +7,20 @@
       </el-tooltip>
     </div>
 
+    <!-- 预订节奏（task-booking-ledger-rhythm：确定性规则库，派生读路径） -->
+    <div v-if="rhythm.length" class="rhythm-card">
+      <div class="rhythm-title">{{ t('booking.rhythmTitle') }}</div>
+      <div v-for="(r, i) in rhythm" :key="i" class="rhythm-item">
+        <el-tag size="small" :type="phaseTag(r.phase)">{{ phaseLabel(r.phase) }}</el-tag>
+        <span class="rhythm-target">{{ r.target }}</span>
+        <span class="rhythm-window">{{ r.window_open }} → {{ r.window_deadline }}</span>
+        <el-tooltip :content="r.note" placement="top">
+          <el-icon class="rhythm-info"><InfoFilled /></el-icon>
+        </el-tooltip>
+      </div>
+      <p class="rhythm-basis">{{ t('booking.rhythmBasisNote', { basis: 'rule_based' }) }}</p>
+    </div>
+
     <!-- 加载/空态 -->
     <el-empty
       v-if="!loading && items.length === 0"
@@ -15,49 +29,71 @@
     />
 
     <div v-else class="booking-items">
-      <div v-for="b in items" :key="b.id" class="booking-item" :class="`status-${b.status}`">
-        <div class="booking-item-main">
-          <div class="booking-item-top">
-            <el-tag size="small" :type="kindTag(b.kind)">{{ kindLabel(b.kind) }}</el-tag>
-            <el-tag size="small" effect="plain" class="provider-tag">{{ providerLabel(b.provider) }}</el-tag>
-            <span class="booking-status">{{ statusLabel(b.status) }}</span>
+      <template v-for="group in groups" :key="group.key">
+        <div class="booking-group-title">{{ group.label }}（{{ group.items.length }}）</div>
+        <div
+          v-for="b in group.items"
+          :key="b.id"
+          class="booking-item"
+          :class="`status-${b.status}`"
+        >
+          <div class="booking-item-main">
+            <div class="booking-item-top">
+              <el-tag size="small" :type="kindTag(b.kind)">{{ kindLabel(b.kind) }}</el-tag>
+              <el-tag size="small" effect="plain" class="provider-tag">{{ providerLabel(b.provider) }}</el-tag>
+              <span v-if="daysText(b)" class="booking-countdown" :class="{ overdue: b.days_until < 0 }">
+                {{ daysText(b) }}
+              </span>
+              <span class="booking-status">{{ statusLabel(b.status) }}</span>
+            </div>
+            <div class="booking-item-title">{{ b.title || '—' }}</div>
+            <div v-if="b.service_date" class="booking-item-service">
+              {{ t('booking.serviceDate') }}: {{ b.service_date }}
+              <span v-if="b.service_note" class="booking-service-note">· {{ b.service_note }}</span>
+            </div>
+            <div v-if="b.amount" class="booking-item-price">
+              {{ t('booking.amountText', { amount: b.amount, currency: b.currency }) }}
+            </div>
+            <div v-if="b.order_no" class="booking-item-order">
+              {{ t('booking.orderNo') }}: {{ b.order_no }}
+            </div>
+            <div v-if="b.status === 'pending' && !b.credential" class="booking-pending-hint">
+              {{ t('booking.pendingHint') }}
+            </div>
           </div>
-          <div class="booking-item-title">{{ b.title || '—' }}</div>
-          <div v-if="b.amount" class="booking-item-price">
-            {{ t('booking.amountText', { amount: b.amount, currency: b.currency }) }}
-          </div>
-          <div v-if="b.order_no" class="booking-item-order">
-            {{ t('booking.orderNo') }}: {{ b.order_no }}
-          </div>
-        </div>
 
-        <div class="booking-item-actions">
-          <!-- suggested/pending: 可跳转预订 -->
-          <el-button
-            v-if="b.status === 'suggested' || b.status === 'pending'"
-            size="small"
-            type="primary"
-            :disabled="!b.provider_url"
-            @click="openBooking(b)"
-          >
-            {{ t('booking.bookNow') }}
-          </el-button>
-          <!-- 回填凭证（偶发手动） -->
-          <el-button v-if="b.status === 'suggested'" size="small" plain @click="openConfirm(b)">
-            {{ t('booking.fillBack') }}
-          </el-button>
-          <!-- confirmed: 可取消 -->
-          <el-button
-            v-if="b.status === 'confirmed'"
-            size="small"
-            type="danger"
-            plain
-            @click="cancelBooking(b)"
-          >
-            {{ t('booking.cancel') }}
-          </el-button>
+          <div class="booking-item-actions">
+            <!-- suggested/pending: 可跳转预订 -->
+            <el-button
+              v-if="(b.status === 'suggested' || b.status === 'pending') && b.provider_url"
+              size="small"
+              type="primary"
+              @click="openBooking(b)"
+            >
+              {{ t('booking.bookNow') }}
+            </el-button>
+            <!-- 回填凭证（suggested 手动补录 / pending 邮件归并后确认） -->
+            <el-button
+              v-if="b.status === 'suggested' || (b.status === 'pending' && !b.credential)"
+              size="small"
+              plain
+              @click="openConfirm(b)"
+            >
+              {{ t('booking.fillBack') }}
+            </el-button>
+            <!-- confirmed: 可取消 -->
+            <el-button
+              v-if="b.status === 'confirmed'"
+              size="small"
+              type="danger"
+              plain
+              @click="cancelBooking(b)"
+            >
+              {{ t('booking.cancel') }}
+            </el-button>
+          </div>
         </div>
-      </div>
+      </template>
     </div>
 
     <!-- 回填凭证对话框 -->
@@ -84,11 +120,11 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
-import { addBooking, listBookings, updateBookingStatus } from '../api'
+import { InfoFilled, QuestionFilled } from '@element-plus/icons-vue'
+import { getBookingRhythm, listBookings, updateBookingStatus } from '../api'
 
 const props = defineProps({
   tripId: { type: String, required: true },
@@ -97,17 +133,30 @@ const emit = defineEmits(['changed'])
 
 const { t } = useI18n()
 const items = ref([])
+const rhythm = ref([])
 const loading = ref(false)
 const confirming = ref(false)
 const confirmVisible = ref(false)
 const current = ref(null)
 const confirmForm = reactive({ order_no: '', credential: '', amount: null })
 
+// 台账分组：待办（suggested+pending）→ 已确认 → 已取消（组内保持后端 service_date 排序）
+const groups = computed(() => {
+  const todo = items.value.filter((b) => b.status === 'suggested' || b.status === 'pending')
+  const confirmed = items.value.filter((b) => b.status === 'confirmed')
+  const cancelled = items.value.filter((b) => b.status === 'cancelled')
+  return [
+    { key: 'todo', label: t('booking.groupTodo'), items: todo },
+    { key: 'confirmed', label: t('booking.groupConfirmed'), items: confirmed },
+    { key: 'cancelled', label: t('booking.groupCancelled'), items: cancelled },
+  ].filter((g) => g.items.length > 0)
+})
+
 function kindLabel(kind) {
-  return kind === 'train' ? t('booking.kind.train') : t('booking.kind.hotel')
+  return t(`booking.kind.${kind}`)
 }
 function kindTag(kind) {
-  return kind === 'train' ? 'primary' : 'warning'
+  return { train: 'primary', flight: 'primary', hotel: 'warning', ticket: 'success' }[kind] || 'info'
 }
 function providerLabel(p) {
   const map = {
@@ -125,12 +174,31 @@ function statusLabel(s) {
   }
   return map[s] || s
 }
+// 倒计时：未来 N 天后 / 今天 / 已过 N 天前（无服务日期不显示）
+function daysText(b) {
+  const d = b.days_until
+  if (d === null || d === undefined) return ''
+  if (d > 0) return t('booking.daysUntil', { n: d })
+  if (d === 0) return t('booking.daysToday')
+  return t('booking.daysAgo', { n: -d })
+}
+function phaseLabel(p) {
+  return { open: t('booking.phaseOpen'), upcoming: t('booking.phaseUpcoming'), closing: t('booking.phaseClosing') }[p] || p
+}
+function phaseTag(p) {
+  return { open: 'success', upcoming: 'info', closing: 'warning' }[p] || 'info'
+}
 
 async function load() {
   loading.value = true
   try {
-    const data = await listBookings(props.tripId)
+    // 节奏失败不阻断台账展示（派生读路径，可缺失）
+    const [data, rhythmData] = await Promise.all([
+      listBookings(props.tripId),
+      getBookingRhythm(props.tripId).catch(() => ({ items: [] })),
+    ])
     items.value = data.items || []
+    rhythm.value = rhythmData.items || []
   } catch (e) {
     ElMessage.warning(t('booking.loadFailed'))
   } finally {
@@ -148,7 +216,7 @@ function openBooking(b) {
 
 function openConfirm(b) {
   current.value = b
-  confirmForm.order_no = ''
+  confirmForm.order_no = b.order_no || ''
   confirmForm.credential = ''
   confirmForm.amount = null
   confirmVisible.value = true
@@ -221,6 +289,49 @@ onMounted(load)
   color: var(--el-text-color-secondary);
   cursor: help;
 }
+/* 节奏卡（行前准备：什么时候该订什么） */
+.rhythm-card {
+  border: 1px dashed var(--el-border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--el-fill-color-lighter);
+}
+.rhythm-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.rhythm-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  padding: 3px 0;
+}
+.rhythm-target {
+  font-weight: 500;
+}
+.rhythm-window {
+  color: var(--el-text-color-secondary);
+  font-family: monospace;
+}
+.rhythm-info {
+  color: var(--el-text-color-secondary);
+  cursor: help;
+}
+.rhythm-basis {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+}
+.booking-group-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+  margin: 8px 0 6px;
+}
 .booking-items {
   display: flex;
   flex-direction: column;
@@ -254,10 +365,25 @@ onMounted(load)
   color: var(--el-text-color-secondary);
   margin-left: auto;
 }
+.booking-countdown {
+  font-size: 12px;
+  color: var(--el-color-warning);
+  font-weight: 600;
+}
+.booking-countdown.overdue {
+  color: var(--el-text-color-secondary);
+}
 .booking-item-title {
   font-weight: 500;
   margin: 4px 0;
   line-height: 1.4;
+}
+.booking-item-service {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.booking-service-note {
+  margin-left: 2px;
 }
 .booking-item-price {
   font-size: 13px;
@@ -266,6 +392,11 @@ onMounted(load)
 .booking-item-order {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.booking-pending-hint {
+  font-size: 12px;
+  color: var(--el-color-warning);
+  margin-top: 2px;
 }
 .booking-item-actions {
   display: flex;

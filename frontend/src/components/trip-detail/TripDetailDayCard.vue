@@ -19,6 +19,8 @@ const props = defineProps({
   optimizing: { type: Boolean, default: false },
   // 重排失败的内联提示（约束未通过时展示在卡片内，而不是全局 toast）
   optimizeError: { type: String, default: '' },
+  // 已确认预订（task-booking-ledger-rhythm：按 service_date 投影到所在日，父组件过滤传入）
+  confirmedBookings: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits([
@@ -61,6 +63,18 @@ function toggle() {
   if (!hasStops.value) return
   emit('toggle-open', props.day)
 }
+
+// 订单徽标（task-booking-ledger-rhythm）：已确认预订按 service_date 投影到日卡片
+const BOOKING_EMOJI = { train: '🚄', flight: '✈️', hotel: '🏨', ticket: '🎫' }
+const PROVIDER_LABEL = {
+  ctrip: '携程', qunar: '去哪儿', '12306': '12306',
+  feizhu: '飞猪', tongcheng: '同程', trip: 'Trip',
+}
+function bookingBadgeText(b) {
+  const kind = t(`booking.kind.${b.kind}`)
+  const provider = b.provider === 'manual' ? t('booking.provider.manual') : PROVIDER_LABEL[b.provider] || b.provider
+  return `${BOOKING_EMOJI[b.kind] || '🎫'} ${kind} · ${provider}`
+}
 </script>
 
 <template>
@@ -80,6 +94,18 @@ function toggle() {
             <span v-if="summary && !open" class="day-summary">{{ summary }}</span>
           </span>
           <span class="day-note">{{ day.note || $t('common.freeExplore') }}</span>
+          <span v-if="confirmedBookings.length" class="day-booking-badges">
+            <el-tag
+              v-for="b in confirmedBookings"
+              :key="b.id"
+              size="small"
+              type="success"
+              effect="plain"
+              class="day-booking-badge"
+            >
+              {{ bookingBadgeText(b) }}
+            </el-tag>
+          </span>
         </span>
         <el-icon v-if="hasStops" class="day-chevron" :class="{ open }"><ArrowDown /></el-icon>
       </button>
@@ -310,6 +336,15 @@ function toggle() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.day-booking-badges {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.day-booking-badge {
+  font-size: 11px;
 }
 .day-chevron {
   font-size: 12px;

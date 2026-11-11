@@ -93,6 +93,28 @@ function refreshJourney() {
   loadSummaries()
 }
 
+// 预订台账（task-booking-ledger-rhythm）：日卡片订单徽标的数据源（service_date 投影）
+const tripBookings = ref([])
+async function loadTripBookings() {
+  if (!trip.value?.id) return
+  try {
+    const data = await api.listBookings(trip.value.id)
+    tripBookings.value = data.items || []
+  } catch {
+    tripBookings.value = []
+  }
+}
+function confirmedBookingsForDay(day) {
+  if (!day?.date) return []
+  return tripBookings.value.filter(
+    (b) => b.status === 'confirmed' && b.service_date === day.date,
+  )
+}
+function onImported() {
+  load()
+  loadTripBookings()
+}
+
 // ── 行中「记一笔」对话框（今日卡片入口；工具箱内也有独立面板，同一 API） ──
 const expenseDialogVisible = ref(false)
 
@@ -134,6 +156,7 @@ function onExpenseAdded() {
 function onToolboxChanged() {
   markLocalWrite()
   load()
+  loadTripBookings()
 }
 
 const core = useTripDetailLoad({ onJourneyChange: refreshJourney, onLocalWrite: markLocalWrite })
@@ -894,7 +917,10 @@ onMounted(() => {
 watch(
   () => trip.value?.id,
   (id) => {
-    if (id) loadSummaries()
+    if (id) {
+      loadSummaries()
+      loadTripBookings()
+    }
   },
   { immediate: true },
 )
@@ -1094,6 +1120,7 @@ onBeforeUnmount(() => {
               :open="isDayOpen(day)"
               :optimizing="optimizingDay === day.id"
               :optimize-error="optimizeErrors[day.id] || ''"
+              :confirmed-bookings="confirmedBookingsForDay(day)"
               @toggle-open="toggleDayOpen"
               @focus-day="focusDay"
               @add-stop="openAddStop"
@@ -1215,7 +1242,7 @@ onBeforeUnmount(() => {
       @revoke-share-link="revokeShareLink"
       @set-share-password="setSharePassword"
       @clear-share-password="clearSharePassword"
-      @imported="load"
+      @imported="onImported"
       @update:import-visible="(v) => (importVisible = v)"
       @update:xhs-visible="(v) => (xhsNoteVisible = v)"
     />

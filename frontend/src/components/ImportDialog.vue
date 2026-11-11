@@ -217,12 +217,49 @@ async function parse() {
 
 function applyResult(res) {
   candidates.value = (res.candidates || []).map((c) => ({ ...c, _checked: true }))
-  bookings.value = res.bookings || []
+  bookings.value = (res.bookings || []).map((b) => ({ ...b, _checked: true }))
   flaggedLines.value = res.flagged_lines || []
   linkResult.value = res.extracted !== undefined ? res : null
-  if (trips.value.length) {
+  // 保留已选目标（详情页预选当前行程）；仅未选时默认第一条
+  if (trips.value.length && !targetTripId.value) {
     targetTripId.value = trips.value[0].id
     targetDayId.value = targetTripDays.value[0]?.id || ''
+  }
+}
+
+// ── 邮件条目并入台账（task-booking-ledger-rhythm） ─────────────
+// 解析是候选、落库是决定：只提交用户勾选的条目；服务端强制 pending +
+// reference=email.import（绝不采信解析结果/前端状态），凭证由用户稍后回填。
+const checkedBookings = computed(() => bookings.value.filter((b) => b._checked))
+const mergingBookings = ref(false)
+
+async function mergeBookingsToLedger() {
+  const picked = checkedBookings.value
+  if (!picked.length || mergingBookings.value) return
+  if (!targetTripId.value) {
+    ElMessage.warning(t('booking.mergeNeedTrip'))
+    return
+  }
+  mergingBookings.value = true
+  try {
+    const items = picked.map((b) => ({
+      kind: b.kind,
+      name: b.name || undefined,
+      code: b.code || undefined,
+      datetime: b.datetime || undefined,
+      amount: b.amount ?? undefined,
+      currency: b.currency || 'CNY',
+    }))
+    const res = await api.mergeEmailBookings(targetTripId.value, items)
+    ElMessage.success(t('booking.mergedOk', { n: res.total }))
+    picked.forEach((b) => {
+      b._checked = false
+    })
+    emit('imported')
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    mergingBookings.value = false
   }
 }
 
@@ -359,15 +396,31 @@ async function commit() {
       </el-button>
     </div>
 
-    <!-- 邮件：识别到的预订条目（仅展示，金额供预算参考） -->
+    <!-- 邮件：识别到的预订条目（勾选后可一键并入台账；服务端强制 pending） -->
     <div v-if="bookings.length" class="result-block">
       <h4>{{ t('importDialog.bookingTitle') }}</h4>
       <div v-for="(b, i) in bookings" :key="i" class="booking-row">
+        <el-checkbox v-model="b._checked" />
         <el-tag size="small" :type="bookingTagType(b.kind)">{{ t('importDialog.bookingKind' + (b.kind[0].toUpperCase() + b.kind.slice(1))) }}</el-tag>
         <span class="booking-name">{{ b.name || '-' }}</span>
         <span v-if="b.code" class="booking-code">{{ b.code }}</span>
         <span v-if="b.datetime" class="booking-date">{{ b.datetime }}</span>
         <span v-if="b.amount != null" class="booking-amount">{{ b.currency }} {{ b.amount }}</span>
+      </div>
+      <p class="hint">{{ t('importDialog.bookingMergeHint') }}</p>
+      <div class="booking-merge-row">
+        <el-select v-model="targetTripId" filterable :placeholder="t('importDialog.selectTrip')" size="small" style="min-width: 220px">
+          <el-option v-for="tr in trips" :key="tr.id" :label="`${tr.title}（${tr.destination || '?'}）`" :value="tr.id" />
+        </el-select>
+        <el-button
+          size="small"
+          type="primary"
+          :loading="mergingBookings"
+          :disabled="!checkedBookings.length || !targetTripId"
+          @click="mergeBookingsToLedger"
+        >
+          <el-icon style="margin-right: 4px"><Download /></el-icon>{{ t('booking.mergeToLedger') }}（{{ checkedBookings.length }}）
+        </el-button>
       </div>
     </div>
 
@@ -483,6 +536,7 @@ async function commit() {
 .booking-code { color: var(--muted); font-family: monospace; }
 .booking-date { color: var(--muted); }
 .booking-amount { color: var(--success); font-weight: 600; }
+.booking-merge-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 
 .candidate-row {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
