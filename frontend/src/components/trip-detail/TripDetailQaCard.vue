@@ -113,7 +113,15 @@ watch(() => props.tripId, loadFacts, { immediate: true })
         </p>
       </div>
 
-      <div v-else-if="failed || !availableFacts.length" class="qa-empty">
+      <!-- 接口失败 ≠ 无数据：单独错误态 + 重试（不复用「还没有结构化数据」文案） -->
+      <div v-else-if="failed" class="qa-error">
+        <span>{{ t('propertyQa.qaLoadError') }}</span>
+        <button class="qa-retry-btn" type="button" @click="loadFacts">
+          {{ t('propertyQa.qaRetry') }}
+        </button>
+      </div>
+
+      <div v-else-if="!availableFacts.length" class="qa-empty">
         {{ t('propertyQa.noFacts') }}
       </div>
 
@@ -208,6 +216,25 @@ watch(() => props.tripId, loadFacts, { immediate: true })
 }
 .qa-hint { color: var(--faint); font-size: 12px; }
 .qa-empty { color: var(--faint); font-size: 13px; padding: 8px 0; }
+/* 错误态：与空态视觉区分（红调 + 重试按钮） */
+.qa-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #b91c1c;
+  padding: 8px 0;
+}
+.qa-retry-btn {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+  border-radius: 999px;
+  padding: 2px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.qa-retry-btn:hover { background: #fee2e2; }
 .qa-section-title {
   font-size: 12px;
   font-weight: 600;

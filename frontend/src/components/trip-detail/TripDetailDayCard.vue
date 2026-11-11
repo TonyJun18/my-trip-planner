@@ -47,13 +47,50 @@ const durationText = computed(() => {
   return rest ? `${h}h${rest}m` : `${h}h`
 })
 
+// ── 时间轴派生时刻（schedule_service 读取路径注入；缺失时回退无时刻渲染）──
+// 日窗口 = 首站 visit_start → 末站 visit_end；跨夜（end=24:00）或跨度 >12h → 过载高亮。
+const stops = computed(() => props.day.stops || [])
+const hasSchedule = computed(() => stops.value.some((s) => s.visit_start))
+
+function toMinutes(hhmm) {
+  if (!hhmm) return null
+  const [h, m] = hhmm.split(':').map(Number)
+  if (Number.isNaN(h) || Number.isNaN(m)) return null
+  return h * 60 + m
+}
+
+const dayWindow = computed(() => {
+  if (!hasSchedule.value) return null
+  const first = stops.value.find((s) => s.visit_start)
+  const last = [...stops.value].reverse().find((s) => s.visit_end)
+  if (!first || !last) return null
+  const start = toMinutes(first.visit_start)
+  const end = toMinutes(last.visit_end)
+  if (start == null || end == null) return null
+  return {
+    text: `${first.visit_start} → ${last.visit_end}`,
+    span: Math.max(0, end - start),
+    overflow: end >= 24 * 60 || end - start > 720,
+  }
+})
+
+// 段间交通样式：纯时长口径（前端无距离数据，阈值对应 servicing 距离档的常见耗时）
+function travelMeta(prevStop) {
+  const m = prevStop?.travel_to_next_minutes
+  if (!m || m <= 0) return null
+  const emoji = m <= 15 ? '🚶' : m <= 45 ? '🚌' : '🚕'
+  return { emoji, text: `${t('tripDetail.travelGap', { n: m })}` }
+}
+
 // 收起态摘要：站数 · 花费 · 时长（缺项自动省略，不占位）
 const summary = computed(() => {
   if (!hasStops.value) return ''
   return [
     t('tripDetail.dayStops', { n: props.day.stops.length }),
     totalCost.value ? `¥${totalCost.value}` : '',
-    durationText.value,
+    // 时间窗口优先于裸时长（17h30m 这种数字无法一眼判断是否过载）
+    dayWindow.value && !dayWindow.value.overflow ? dayWindow.value.text : durationText.value,
+    dayWindow.value?.overflow ? t('tripDetail.dayOverflowBadge') : '',
   ].filter(Boolean).join(' · ')
 })
 
@@ -78,6 +115,13 @@ function toggle() {
           <span class="day-title-row">
             <span class="day-title">{{ day.date || $t('common.dayN', { n: day.day_number }) }}</span>
             <span v-if="summary && !open" class="day-summary">{{ summary }}</span>
+          </span>
+          <!-- 展开态日头时间窗口（派生时刻存在时） -->
+          <span v-if="open && dayWindow && day.stops.length >= 2" class="day-window" :class="{ 'day-window-overflow': dayWindow.overflow }">
+            <el-icon><Clock /></el-icon>{{ dayWindow.text }}
+            <el-tooltip v-if="dayWindow.overflow" :content="$t('tripDetail.dayOverflowHint')" placement="top" :show-after="200">
+              <span class="day-window-overflow-badge">⚠ {{ $t('tripDetail.dayOverflowBadge') }}</span>
+            </el-tooltip>
           </span>
           <span class="day-note">{{ day.note || $t('common.freeExplore') }}</span>
         </span>
@@ -134,6 +178,10 @@ function toggle() {
               <span class="rail-line" v-if="idx < day.stops.length - 1" />
             </div>
             <div class="stop-body">
+              <!-- 段间交通 chip（来自上一站的 travel_to_next_minutes） -->
+              <div v-if="idx > 0 && travelMeta(day.stops[idx - 1])" class="stop-travel-chip">
+                {{ travelMeta(day.stops[idx - 1]).emoji }} {{ travelMeta(day.stops[idx - 1]).text }}
+              </div>
               <div class="stop-head">
                 <span class="stop-name" @click.stop="emit('stop-edit', day, stop)">{{ stop.name }}</span>
                 <div class="stop-head-right">
@@ -183,8 +231,16 @@ function toggle() {
                 </div>
               </div>
               <div class="stop-meta">
+                <!-- 时刻徽标：住宿站=「入住 HH:MM」；交通占位站=🚄；普通站=起止时刻 -->
+                <span v-if="stop.visit_start && stop.stop_type === 'hotel'" class="stop-time stop-time-hotel">
+                  <el-icon><Clock /></el-icon>{{ $t('tripDetail.checkinAt', { t: stop.visit_start }) }}
+                </span>
+                <span v-else-if="stop.visit_start && stop.is_transfer" class="stop-time stop-time-transfer">🚄 {{ stop.visit_start }}</span>
+                <span v-else-if="stop.visit_start && stop.visit_start !== stop.visit_end" class="stop-time">
+                  <el-icon><Clock /></el-icon>{{ stop.visit_start }}–{{ stop.visit_end }}
+                </span>
                 <span v-if="stop.estimated_cost != null"><el-icon><Wallet /></el-icon>¥{{ stop.estimated_cost }}</span>
-                <span v-if="stop.estimated_duration_minutes"><el-icon><Clock /></el-icon>{{ stop.estimated_duration_minutes }} {{ $t('common.minutes') }}</span>
+                <span v-if="stop.estimated_duration_minutes && stop.stop_type !== 'hotel'"><el-icon><Clock /></el-icon>{{ stop.estimated_duration_minutes }} {{ $t('common.minutes') }}</span>
               </div>
               <div v-if="stop.description" class="stop-desc">{{ stop.description }}</div>
             </div>
@@ -436,6 +492,53 @@ function toggle() {
 .stop-meta .el-icon {
   font-size: 13px;
   color: var(--faint);
+}
+/* 时刻徽标：比价格/时长略醒目（时间轴核心信息） */
+.stop-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ink-2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.stop-time-transfer {
+  color: #6d28d9;
+}
+/* 段间交通 chip：站点之间的小间距提示 */
+.stop-travel-chip {
+  margin: 2px 0 4px 2px;
+  font-size: 11.5px;
+  color: var(--muted);
+  padding: 1px 8px;
+  background: var(--fill, #f6f6f7);
+  border-radius: 999px;
+  width: fit-content;
+}
+/* 日头时间窗口（展开态） */
+.day-window {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.day-window .el-icon { font-size: 12px; color: var(--faint); }
+.day-window-overflow {
+  color: #b45309;
+  font-weight: 600;
+}
+.day-window-overflow-badge {
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  cursor: help;
 }
 .stop-desc {
   margin-top: 5px;

@@ -79,7 +79,15 @@ const weatherAdviceText = computed(() =>
         />
         <div class="live-stop-info">
           <div class="live-stop-name" :class="{ muted: stop.checked }">{{ stop.name }}</div>
-          <div class="live-stop-type">{{ typeEmoji[stop.stop_type] }} {{ typeLabel[stop.stop_type] || stop.stop_type }}</div>
+          <div class="live-stop-type">
+            <!-- 时刻徽标（schedule_service 注入派生时刻；缺失时兜底只显示类型） -->
+            <span
+              v-if="stop.visit_start"
+              class="live-stop-time"
+              :class="{ 'live-stop-time-transfer': stop.is_transfer }"
+            >{{ stop.is_transfer ? '🚄' : '🕐' }} {{ stop.stop_type === 'hotel' ? $t('tripDetail.checkinAt', { t: stop.visit_start }) : stop.visit_start + (stop.visit_end && stop.visit_end !== stop.visit_start ? '–' + stop.visit_end : '') }}</span>
+            {{ typeEmoji[stop.stop_type] }} {{ typeLabel[stop.stop_type] || stop.stop_type }}
+          </div>
         </div>
         <div class="live-stop-actions">
           <el-button size="small" text type="danger" :disabled="!!liveOp" @click="emit('skip', stop)">
@@ -210,6 +218,16 @@ const weatherAdviceText = computed(() =>
   font-size: 12px;
   color: var(--muted);
   margin-top: 2px;
+}
+/* 时刻徽标：今日站点行内的派生时刻 */
+.live-stop-time {
+  font-weight: 600;
+  color: var(--ink-2, #333);
+  font-variant-numeric: tabular-nums;
+  margin-right: 6px;
+}
+.live-stop-time-transfer {
+  color: #6d28d9;
 }
 .live-stop-actions {
   flex-shrink: 0;
