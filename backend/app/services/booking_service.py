@@ -301,14 +301,41 @@ async def list_bookings(
     *,
     owner: str | None = None,
 ) -> list[TripBooking]:
-    """列出行程全部预订（时间正序）。"""
+    """列出行程全部预订（台账序：service_date 升序空值殿后 → 创建时间升序）。"""
     from app.services.trip_service import get_trip
 
     await get_trip(db, trip_id, owner=owner)
     stmt = (
         select(TripBooking)
         .where(TripBooking.trip_id == trip_id)
-        .order_by(TripBooking.created_at.asc())
+        .order_by(TripBooking.service_date.asc().nulls_last(), TripBooking.created_at.asc())
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+def _days_until(service_date: date | None, *, today: date | None = None) -> int | None:
+    """台账倒计时：未来为正、当天 0、已过为负、无服务日期 None。"""
+    if service_date is None:
+        return None
+    return (service_date - (today or date.today())).days
+
+
+def booking_days_until(booking: TripBooking, *, today: date | None = None) -> int | None:
+    """公开入口：条目倒计时（响应构造用）。"""
+    return _days_until(booking.service_date, today=today)
+
+
+async def list_bookings_by_trip_id(db: AsyncSession, trip_id: str) -> list[TripBooking]:
+    """按 trip_id 直接查台账（不做 owner 校验）。
+
+    用于已通过「分享令牌」校验访问权的场景（trip 本身已确认可见）——
+    与 get_plan_by_trip_id 同模式：绝不用 owner=None 过滤（那会查成
+    「无主行程」而不是「跳过归属校验」）。
+    """
+    stmt = (
+        select(TripBooking)
+        .where(TripBooking.trip_id == trip_id)
+        .order_by(TripBooking.service_date.asc().nulls_last(), TripBooking.created_at.asc())
     )
     return list((await db.execute(stmt)).scalars().all())
 

@@ -48,8 +48,13 @@ async def list_trip_bookings(
 ) -> BookingListOut:
     """owner 查看行程的预订条目（建议 + 回填 + 状态）。"""
     items = await booking_service.list_bookings(db, trip_id, owner=user.id)
+    outs: list[BookingOut] = []
+    for b in items:
+        out = BookingOut.model_validate(b)
+        out.days_until = booking_service.booking_days_until(b)
+        outs.append(out)
     return BookingListOut(
-        items=[BookingOut.model_validate(b) for b in items],
+        items=outs,
         total=len(items),
     )
 

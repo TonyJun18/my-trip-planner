@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 
 from httpx import AsyncClient
@@ -215,3 +216,89 @@ class TestMergeEmailBookings:
         merged = resp.json()["merged"][0]
         assert merged["status"] == "pending"
         assert merged["reference"] == "email.import"
+
+
+# ── Task 3：排序/倒计时 + 导出补预订（脱敏） ─────────────────────
+class TestLedgerOrderingAndExport:
+    async def _add_booking(self, client, headers, trip_id: str, *,
+                           service_date: str | None = None,
+                           order_no: str | None = None, credential: str | None = None,
+                           status: str = "suggested") -> dict:
+        body: dict = {
+            "kind": "train", "provider": "12306", "title": f"车票 {order_no or ''}",
+            "status": status, "reference": "user.confirmed" if credential else "plan.generated",
+        }
+        if service_date:
+            body["service_date"] = service_date
+        if order_no:
+            body["order_no"] = order_no
+        if credential:
+            body["credential"] = credential
+        resp = await client.post(f"/api/v1/trips/{trip_id}/bookings", headers=headers, json=body)
+        assert resp.status_code == 201, resp.text
+        return resp.json()
+
+    async def test_list_sorted_by_service_date_with_countdown(self, client: AsyncClient, auth_user):
+        """台账按 service_date 升序（空值殿后）；days_until 倒计时正确。"""
+        _user, headers = auth_user
+        trip_id = await _api_trip(client, headers, title="排序倒计时")
+        a = await self._add_booking(client, headers, trip_id,
+                                    service_date=str(date.today() + timedelta(days=3)))
+        b = await self._add_booking(client, headers, trip_id,
+                                    service_date=str(date.today() + timedelta(days=1)))
+        c = await self._add_booking(client, headers, trip_id, service_date=None)
+
+        resp = await client.get(f"/api/v1/trips/{trip_id}/bookings", headers=headers)
+        assert resp.status_code == 200, resp.text
+        items = resp.json()["items"]
+        ids = [i["id"] for i in items]
+        assert ids == [b["id"], a["id"], c["id"]]  # B(+1d) → A(+3d) → C(无日期殿后)
+
+        by_id = {i["id"]: i for i in items}
+        assert by_id[b["id"]]["days_until"] == 1
+        assert by_id[a["id"]]["days_until"] == 3
+        assert by_id[c["id"]]["days_until"] is None
+
+    async def test_export_owner_contains_bookings_full(self, client: AsyncClient, auth_user):
+        """owner 导出：bookings 段全量（含 credential 原值——自己备份自己）。"""
+        _user, headers = auth_user
+        trip_id = await _api_trip(client, headers, title="导出全量")
+        await self._add_booking(client, headers, trip_id,
+                                service_date=str(date.today() + timedelta(days=2)),
+                                order_no="BK999888777", credential="凭证XYZ",
+                                status="confirmed")
+
+        resp = await client.get(f"/api/v1/trips/{trip_id}/export", headers=headers)
+        assert resp.status_code == 200, resp.text
+        bookings = resp.json().get("bookings")
+        assert bookings and len(bookings) == 1
+        assert bookings[0]["order_no"] == "BK999888777"
+        assert bookings[0]["credential"] == "凭证XYZ"
+
+    async def test_export_share_masks_bookings(self, client: AsyncClient, auth_user):
+        """分享导出：credential 绝不输出；order_no 尾 4 掩码；em- 合成键输出为 —。"""
+        _user, headers = auth_user
+        trip_id = await _api_trip(client, headers, title="导出脱敏")
+        # 真实凭证条目
+        await self._add_booking(client, headers, trip_id,
+                                order_no="BK999888777", credential="凭证XYZ", status="confirmed")
+        # em- 合成键条目（无码归并）
+        resp = await client.post(
+            f"/api/v1/trips/{trip_id}/bookings/merge-email", headers=headers,
+            json={"items": [{"kind": "flight", "name": "MU5101", "datetime": "2026-11-20 08:30"}]},
+        )
+        assert resp.status_code == 200, resp.text
+
+        resp = await client.post(f"/api/v1/trips/{trip_id}/share", headers=headers)
+        token = resp.json()["share_token"]
+        resp = await client.get(f"/api/v1/trips/share/{token}/export")
+        assert resp.status_code == 200, resp.text
+        bookings = resp.json().get("bookings")
+        assert bookings and len(bookings) == 2
+        for b in bookings:
+            assert "credential" not in b, "分享导出绝不输出凭证"
+            if b["order_no"] and b["order_no"] != "—":
+                assert re.fullmatch(r"\*{4}\d{4}", b["order_no"]), b["order_no"]
+        masked = [b["order_no"] for b in bookings]
+        assert "****8777" in masked  # BK999888777 尾 4
+        assert "—" in masked  # em- 合成键不展示

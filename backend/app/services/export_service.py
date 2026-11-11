@@ -38,13 +38,51 @@ def _sanitize_plan(plan_data: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in plan_data.items() if k != "days"}
 
 
+def _sanitize_booking(b: Any, *, full: bool) -> dict[str, Any]:
+    """预订条目导出序列化（脱敏单处集中，task-booking-ledger-rhythm）。
+
+    - full=True（owner 自备份）：全量含 credential 原值；
+    - full=False（share 令牌路径）：credential 永不输出；order_no 尾 4 掩码
+      （em- 合成键不是真实凭证，输出「—」）。
+    """
+    data: dict[str, Any] = {
+        "id": b.id,
+        "kind": b.kind,
+        "provider": b.provider,
+        "title": b.title,
+        "provider_url": b.provider_url,
+        "status": b.status,
+        "reference": b.reference,
+        "service_date": _iso(b.service_date),
+        "service_note": b.service_note,
+        "amount": b.amount,
+        "currency": b.currency,
+        "confirmed_at": _iso_dt(b.confirmed_at),
+        "cancelled_at": _iso_dt(b.cancelled_at),
+    }
+    if full:
+        data["order_no"] = b.order_no
+        data["credential"] = b.credential
+    else:
+        order_no = b.order_no or ""
+        if order_no.startswith("em-"):
+            data["order_no"] = "—"
+        elif order_no:
+            data["order_no"] = f"****{order_no[-4:]}"
+        else:
+            data["order_no"] = None
+    return data
+
+
 def build_trip_export(
     trip: Trip, *, plan_data: dict[str, Any] | None = None,
+    bookings: list[Any] | None = None, bookings_full: bool = False,
 ) -> dict[str, Any]:
     """构建导出行程 JSON（两条访问路径共用）。
 
     plan_data 为 None 或 {} 时 plan 输出 None（行程可能尚未 AI 规划；
     手工创建的行程照样可导出）。
+    bookings 为行程台账条目（owner 路径 full=True 全量；share 路径 full=False 脱敏）。
     """
     from app.services import budget_service
 
@@ -96,6 +134,7 @@ def build_trip_export(
         },
         "days": days,
         "budget_summary": budget_summary,
+        "bookings": [_sanitize_booking(b, full=bookings_full) for b in (bookings or [])],
         "plan": _sanitize_plan(data) if data else None,
     }
 
