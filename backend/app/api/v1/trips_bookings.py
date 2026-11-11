@@ -27,6 +27,7 @@ from app.schemas import (
     BookingStatusIn,
     StopLinkIn,
     StopOut,
+    StopWriteOut,
 )
 from app.services import booking_service
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -153,7 +154,7 @@ async def delete_trip_booking(
 # ── 确认号回填 stop（task-book-ahead-scan：Passage AI「Need tickets?」） ──
 @router.post(
     "/{trip_id}/bookings/{booking_id}/link",
-    response_model=StopOut,
+    response_model=StopWriteOut,
     summary="回填预订确认号到站点（owner）",
 )
 async def link_booking_to_stop(
@@ -162,7 +163,7 @@ async def link_booking_to_stop(
     body: StopLinkIn,
     db: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
-) -> StopOut:
+) -> StopWriteOut:
     """把预订条目挂到站点（stop.details.booking_id），确认号在站点级可见。
 
     - body: {"stop_id": "..."}；三路交叉校验（行程/预订/站点同属）；
@@ -171,12 +172,12 @@ async def link_booking_to_stop(
     stop = await booking_service.link_booking_to_stop(
         db, trip_id, booking_id, body.stop_id, owner=user.id
     )
-    return StopOut.model_validate(stop)
+    return StopWriteOut.model_validate(stop)
 
 
 @router.delete(
     "/{trip_id}/bookings/{booking_id}/link",
-    response_model=StopOut,
+    response_model=StopWriteOut,
     summary="解除预订与站点关联（owner）",
 )
 async def unlink_booking_from_stop(
@@ -185,9 +186,9 @@ async def unlink_booking_from_stop(
     body: StopLinkIn,
     db: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
-) -> StopOut:
+) -> StopWriteOut:
     """解除站点与预订的关联（移除 stop.details.booking_id；预订条目本身保留）。"""
     stop = await booking_service.unlink_booking_from_stop(
         db, trip_id, booking_id, body.stop_id, owner=user.id
     )
-    return StopOut.model_validate(stop)
+    return StopWriteOut.model_validate(stop)

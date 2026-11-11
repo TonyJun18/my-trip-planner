@@ -27,6 +27,7 @@ from app.schemas import (
     StopIn,
     StopOrderIn,
     StopOut,
+    StopWriteOut,
     StopUpdate,
     TripCreate,
     TripEventListOut,
@@ -83,7 +84,10 @@ async def get_trip(
     user: User = Depends(get_current_user),
 ) -> TripOut:
     trip = await trip_service.get_trip(db, trip_id, owner=user.id)
-    return TripOut.model_validate(trip)
+    # 时间轴派生时刻注入（读取路径，零 DDL 零写路径挂钩）
+    from app.services.schedule_service import attach_trip_schedule
+
+    return attach_trip_schedule(TripOut.model_validate(trip))
 
 
 # ── 小红书笔记（方案 A：内容工厂，用户复制后在 App 内发布） ──────
@@ -315,31 +319,31 @@ async def generate_days(
     return [DayOut.model_validate(d) for d in days]
 
 
-@router.post("/days/{day_id}/stops", response_model=StopOut, status_code=status.HTTP_201_CREATED, summary="添加站点")
+@router.post("/days/{day_id}/stops", response_model=StopWriteOut, status_code=status.HTTP_201_CREATED, summary="添加站点")
 async def add_stop(
     day_id: str,
     data: StopIn,
     db: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
-) -> StopOut:
+) -> StopWriteOut:
     stop = await trip_service.add_stop(db, day_id, data, owner=user.id)
-    return StopOut.model_validate(stop)
+    return StopWriteOut.model_validate(stop)
 
 
-@router.patch("/days/{day_id}/stops/{stop_id}", response_model=StopOut, summary="编辑站点（手动细粒度编辑）")
+@router.patch("/days/{day_id}/stops/{stop_id}", response_model=StopWriteOut, summary="编辑站点（手动细粒度编辑）")
 async def update_stop(
     day_id: str,
     stop_id: str,
     data: StopUpdate,
     db: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
-) -> StopOut:
+) -> StopWriteOut:
     """手动编辑单个站点字段：仅更新传入字段，其余保持原值（与 AI 修订并存）。"""
     stop = await trip_service.update_stop(db, day_id, stop_id, data, owner=user.id)
-    return StopOut.model_validate(stop)
+    return StopWriteOut.model_validate(stop)
 
 
-@router.put("/days/{day_id}/stops/order", response_model=list[StopOut], summary="重排整日站点顺序")
+@router.put("/days/{day_id}/stops/order", response_model=list[StopWriteOut], summary="重排整日站点顺序")
 async def reorder_stops(
     day_id: str,
     data: StopOrderIn,

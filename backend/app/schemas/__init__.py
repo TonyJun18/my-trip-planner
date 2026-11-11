@@ -96,6 +96,7 @@ from app.schemas.trip import (
     StopOut,
     StopType,
     StopUpdate,
+    StopWriteOut,
     TripCreate,
     TripListOut,
     TripOut,

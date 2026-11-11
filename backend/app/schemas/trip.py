@@ -29,6 +29,26 @@ class StopOut(StopIn):
     order_index: int
     checked: bool = False
     details: dict | None = None
+    # 时间轴派生时刻（schedule_service 读取路径注入，非持久化存储字段），
+    # 与 TripOut.escalated 同为派生字段先例；写入路径（PATCH/PUT/POST、分享令牌）
+    # response_model 直接构造 StopOut 时保持 None/False（契约面不变）。
+    visit_start: str | None = None
+    visit_end: str | None = None
+    travel_to_next_minutes: int | None = None
+    is_transfer: bool = False
+
+
+class StopWriteOut(StopIn):
+    """写入路径站点响应（POST/PATCH/PUT/预订操作）——不含响应层派生时刻字段。
+
+    契约面保持既有 7+3 字段不变；派生时刻只注入读取路径（attach_trip_schedule）。
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    order_index: int
+    checked: bool = False
+    details: dict | None = None
 
 
 class StopUpdate(BaseModel):

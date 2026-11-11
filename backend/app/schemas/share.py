@@ -103,6 +103,10 @@ class LiveStopOut(BaseModel):
     description: str | None = None
     lat: float | None = None
     lng: float | None = None
+    # 时间轴派生时刻（schedule_service 注入，非存储）
+    visit_start: str | None = None
+    visit_end: str | None = None
+    is_transfer: bool = False
 
 
 class LiveSnapshotOut(BaseModel):

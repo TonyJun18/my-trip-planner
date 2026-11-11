@@ -266,6 +266,20 @@ class PlanningExecutor:
                         result.get("agents"))
 
 
+def _stop_details(stop: dict[str, Any]) -> dict[str, Any] | None:
+    """站点落库 details 白名单（读取路径元数据，非业务核心字段）。
+
+    - is_transfer：多城市交通占位站标记（multi_city），时间轴/渲染据此识别；
+    - source/source_url/address/geo/rating：既有来源元数据。
+    """
+    keys = ("source", "source_url", "address", "geo", "rating", "is_transfer")
+    return {
+        k: stop.get(k)
+        for k in keys
+        if stop.get(k) is not None
+    } or None
+
+
 async def _persist_trip(
     db: AsyncSession,
     request: dict[str, Any],
@@ -311,12 +325,8 @@ async def _persist_trip(
                     estimated_cost=stop.get("estimated_cost"),
                     estimated_duration_minutes=stop.get("duration_minutes"),
                     # 保留来源元数据（前端地图/导出可用；将来可扩展富信息）
-                    details={
-                        k: stop.get(k)
-                        for k in ("source", "source_url", "address", "geo", "rating")
-                        if stop.get(k) is not None
-                    }
-                    or None,
+                    # is_transfer：多城市交通占位站标记（时间轴识别）
+                    details=_stop_details(stop),
                 )
             )
 

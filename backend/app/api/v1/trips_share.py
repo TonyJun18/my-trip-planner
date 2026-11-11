@@ -29,6 +29,7 @@ from app.schemas import (
     SharedTripOut,
     StopOrderIn,
     StopOut,
+    StopWriteOut,
     TripBudgetOut,
     TripEventListOut,
     TripEventOut,
@@ -44,6 +45,7 @@ from app.schemas.collab import (
 )
 from app.services import budget_service, collab_service, trip_service
 from app.services.collab_service import publish_collab
+from app.services.schedule_service import attach_trip_schedule
 
 router = APIRouter()
 
@@ -63,8 +65,9 @@ async def get_shared_trip(
     # 分享 token 已校验访问权：直接按 trip_id 查 plan（不做 owner 过滤）
     plan = await trip_service.get_plan_by_trip_id(db, trip.id)
     plan_data = await trip_service.ensure_plan_transport(db, trip, plan)
+    trip_out = attach_trip_schedule(TripOut.model_validate(trip))
     return SharedTripOut(
-        **TripOut.model_validate(trip).model_dump(),
+        **trip_out.model_dump(),
         budget_summary=TripBudgetOut.model_validate(
             budget_service.compute_budget(trip, plan_data=plan_data)
         ),
@@ -179,7 +182,7 @@ async def get_editable_trip(
     )
 
 
-@router.patch("/edit/{token}/stops/{stop_id}", response_model=StopOut, summary="受邀者编辑站点受限字段")
+@router.patch("/edit/{token}/stops/{stop_id}", response_model=StopWriteOut, summary="受邀者编辑站点受限字段")
 async def update_invited_stop(
     token: str,
     stop_id: str,
@@ -187,17 +190,17 @@ async def update_invited_stop(
     x_share_password: str | None = Header(None, alias="X-Share-Password"),
     x_share_gate: str | None = Header(None, alias="X-Share-Gate"),
     db: AsyncSession = Depends(get_session),
-) -> StopOut:
+) -> StopWriteOut:
     """受邀者（凭 edit_token）更新站点 name/description/checked，其余字段不可改。
 
     与 owner 的 PATCH /days/{day_id}/stops/{stop_id} 不同：这里的授权来源是
     edit_token（免登录），且字段白名单更窄（协作字段，不经 AI 修订）。
     """
     stop = await collab_service.update_invited_stop(db, token, stop_id, data, password=x_share_password, gate_token=x_share_gate)
-    return StopOut.model_validate(stop)
+    return StopWriteOut.model_validate(stop)
 
 
-@router.put("/edit/{token}/days/{day_id}/stops/order", response_model=list[StopOut], summary="受邀者重排整日站点顺序")
+@router.put("/edit/{token}/days/{day_id}/stops/order", response_model=list[StopWriteOut], summary="受邀者重排整日站点顺序")
 async def reorder_invited_stops(
     token: str,
     day_id: str,

@@ -85,7 +85,16 @@ def live_snapshot(trip: Trip, *, today: date | None = None) -> dict[str, Any]:
 
     stops_out: list[dict[str, Any]] = []
     if day is not None:
-        for s in sorted(day.stops, key=lambda x: x.order_index):
+        # 时间轴派生时刻：同一排程器口径注入今日站点（读取路径专用）
+        from app.services.schedule_service import _stop_to_dict, schedule_day
+
+        ordered = sorted(day.stops, key=lambda x: x.order_index)
+        schedule_items = {
+            item["stop_id"]: item
+            for item in schedule_day([_stop_to_dict(s) for s in ordered])["items"]
+        }
+        for s in ordered:
+            sched = schedule_items.get(s.id, {})
             stops_out.append({
                 "id": s.id,
                 "name": s.name,
@@ -95,6 +104,9 @@ def live_snapshot(trip: Trip, *, today: date | None = None) -> dict[str, Any]:
                 "description": s.description,
                 "lat": s.lat,
                 "lng": s.lng,
+                "visit_start": sched.get("start"),
+                "visit_end": sched.get("end"),
+                "is_transfer": sched.get("is_transfer", False),
             })
 
     # 今日天气卡（task-weather-gate-eval）：从最新 AI 方案快照读取 weather，
