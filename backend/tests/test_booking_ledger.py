@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from httpx import AsyncClient
 
@@ -242,10 +242,13 @@ class TestLedgerOrderingAndExport:
         """台账按 service_date 升序（空值殿后）；days_until 倒计时正确。"""
         _user, headers = auth_user
         trip_id = await _api_trip(client, headers, title="排序倒计时")
+        # 端点用 UTC 计算 today（datetime.now(UTC).date()）；种子日期同样取 UTC，
+        # 否则本地 UTC+8 在 00:00–08:00 窗口内会与 UTC 差一天 → off-by-one 假失败。
+        today_utc = datetime.now(UTC).date()
         a = await self._add_booking(client, headers, trip_id,
-                                    service_date=str(date.today() + timedelta(days=3)))
+                                    service_date=str(today_utc + timedelta(days=3)))
         b = await self._add_booking(client, headers, trip_id,
-                                    service_date=str(date.today() + timedelta(days=1)))
+                                    service_date=str(today_utc + timedelta(days=1)))
         c = await self._add_booking(client, headers, trip_id, service_date=None)
 
         resp = await client.get(f"/api/v1/trips/{trip_id}/bookings", headers=headers)
