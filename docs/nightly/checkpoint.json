@@ -1,6 +1,6 @@
 {
   "night": "2026-11-13",
-  "status": "in_progress",
+  "status": "completed",
   "todo": [
     "competitive-analysis",
     "task-share-target-eval",
@@ -10,9 +10,10 @@
   "completed": [
     "competitive-analysis",
     "task-share-target-eval",
-    "task-monday-closure-coverage"
+    "task-monday-closure-coverage",
+    "content-ai-fault-study-43"
   ],
-  "current_index": 3,
+  "current_index": 4,
   "issues": [
     "路径偏差（沿用既有记载）：手册第 0 节项目路径写 /Users/pengjun/Desktop/my-agent/my-trip-planner，实际仓库在 /Users/pengjun/Documents/my-agent/my-trip-planner，按实际路径执行。",
     "night-start 重建（2026-11-12 23:30）：checkpoint 于 11-12 08:32 已存在且 night=2026-11-12 但 status=completed（凌晨流水线已完成 2 个 weather 任务并出报告，含 issues/branches 历史）；按启动指令「status≠in_progress → 重建」重建为空 todo 检查点。",
@@ -24,11 +25,13 @@
     "worker-2 被掐断遗留（worker-3 接管，2026-11-13）：task-share-target-eval 已在本分支 nightly/2026-11-13/1-task-share-target-eval（checkpoint current_index=1 时已建分支 + 评估记录在案 + WIP 未提交）——manifest share_target + ShareTargetView + ImportDialog prefill + 路由均已实现，但 i18n shareTarget.* 6 键缺失（评估记录声称已加实际未加，worker-3 核验补上）；worker-3 按重试协议核验质量后补 i18n + commit 7845a80。验收：npm run build 3.49s 通过 + check:i18n 1190 keys × 2 通过；后端零改动（评估设计如此），全套 1076 passed（排除白天 WIP test_frame_summary_copy 后基线干净）。",
     "白天 WIP 测试帧（不入夜间分支，2026-11-13 worker-3 记录）：backend/tests/test_frame_summary_copy.py 为 feature/frame-marketplace 白天产物，依赖不在 main 的 app.services.frame_copy_service（frame-marketplace 未合并 main），4 例失败与夜间分支无关；regression 验证以 --ignore 排除后 1076 passed。",
     "task-share-target-eval 遗留（评估记录 §7，2026-11-13 worker-3 登记）：①iOS Safari 不支持 share_target（webkit.org/b/194593）→ iOS 手动粘贴兜底；②文件（图片/视频）分享未做（需 POST+multipart+存储，超零凭证边界，维持不排期）；③Firefox 不支持（bugzil.la/1476515）；④未做真机 E2E（cron 无 Android 设备），白天可在 Android Chrome 安装 PWA 实测「TikTok 分享 → 随行」链路",
-    "worker-4 完成 task-monday-closure-coverage（2026-11-13）：审计 dynamic_facts._weekly_closed 类目 → 补入展馆同义（展览馆/陈列馆/博览馆）+ 纪念馆/故居 + 图书馆 + 遗址博物馆（北京日报 2026-09-02《别跑空》实证）；刻意不补动物园/海洋馆/植物园/公园（全年开放）、遗址公园用「遗址博物馆」复合词豁免；显式豁免机制核验（open_hours 声明「周二闭馆」→ 跳过 weekly 规则，首都博物馆错峰案例固化为测试）；排程联动核验存在无需改动（pipeline.py:570 + revise_service.py:589 已调 check_plan_dynamic_facts）；专项 18 passed（+5 新）、全套 1081 passed（--ignore test_frame_summary_copy.py）；分支 nightly/2026-11-13/2-task-monday-closure-coverage 两 commit（33435a6 feat + 323a2aa docs）待用户 review。技术备注：git branch -d/-D 触发审批拦截无法删除初始误建分支（指向 main 的 nightly/2026-11-13/2-task-monday-closure-coverage 已被 checkout -B 重置到 cc23416 最新 HEAD，无数据丢失）。"
+    "worker-4 完成 task-monday-closure-coverage（2026-11-13）：审计 dynamic_facts._weekly_closed 类目 → 补入展馆同义（展览馆/陈列馆/博览馆）+ 纪念馆/故居 + 图书馆 + 遗址博物馆（北京日报 2026-09-02 实证）；刻意不补动物园/海洋馆/植物园/公园（全年开放）、遗址公园用「遗址博物馆」复合词豁免；显式豁免机制核验（open_hours 声明「周二闭馆」→ 跳过 weekly 规则，首都博物馆错峰案例固化为测试）；排程联动核验存在无需改动（pipeline.py:570 + revise_service.py:589 已调 check_plan_dynamic_facts）；专项 18 passed（+5 新）、全套 1081 passed（--ignore test_frame_summary_copy.py）；分支 nightly/2026-11-13/2-task-monday-closure-coverage 两 commit（33435a6 feat + 323a2aa docs）待用户 review。技术备注：git branch -d/-D 触发审批拦截无法删除初始误建分支（指向 main 的 nightly/2026-11-13/2-task-monday-closure-coverage 已被 checkout -B 重置到 cc23416 最新 HEAD，无数据丢失）。",
+    "worker-5 完成 content-ai-fault-study-43（2026-11-13）：12 文 §六「2026-11 三更」补 43% 缺陷研究实证（六类模式表 672/466/13/169/261/4 起、周一 53% 闭馆错 60/113、早到 84% 差 1h 内、修复率 79.6% = 1,054/1,324、182/319 零残留、质检器 3/4 误报可拒绝）；对照表逐条核验代码（time_validation.py TimeGate / dynamic_facts._weekly_closed / day_optimizer.py / solver_service.py / weather_validation.py / agents.py CRITIC_PASS_SCORE=80）；诚实暴露缺口——重复站点无专责确定性查重器（研究模式 4）→ 新任务 task-repeat-stop-detector 入队 todo 文件与 checkpoint todo；publish-list ⑫ 卡片补三更注释；docs 改动无需跑测试；分支 nightly/2026-11-13/3-content-ai-fault-study-43 两 commit（e73380a + b8e9621）待用户 review。本夜 4 任务全完成，status 置 completed。"
   ],
   "branches": [
     "nightly/2026-11-13/0-competitive-analysis",
     "nightly/2026-11-13/1-task-share-target-eval",
-    "nightly/2026-11-13/2-task-monday-closure-coverage"
+    "nightly/2026-11-13/2-task-monday-closure-coverage",
+    "nightly/2026-11-13/3-content-ai-fault-study-43"
   ]
 }
