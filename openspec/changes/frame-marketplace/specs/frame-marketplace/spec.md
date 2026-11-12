@@ -51,12 +51,12 @@
 
 ### Requirement: 单日卡数据投影
 
-系统 SHALL 为 owner 提供指定日程的打卡卡数据投影，内容 MUST 仅包含当日 checked 站点（坐标/名称/天气）与日期信息；非 owner MUST 无法获取该投影。
+系统 SHALL 为 owner 提供指定日程的打卡卡数据投影，内容 MUST 仅包含当日 checked 站点（坐标/名称/类型/备注）与日期信息；非 owner MUST 无法获取该投影。系统 MUST NOT 在投影中编造天气等未持久化的动态事实。
 
 #### Scenario: owner 获取有打卡数据的单日投影
 
 - **WHEN** owner 请求一个存在 checked 站点的日程的数据投影
-- **THEN** 返回当日日期、checked 站点的坐标与名称与天气、站点备注与当日一句话总结，未打卡站点不出现在响应中
+- **THEN** 返回当日日期、checked 站点的坐标与名称与类型与备注（Stop.description）、当日一句话总结（TripDay.note），未打卡站点不出现在响应中
 
 #### Scenario: 当日无打卡数据
 

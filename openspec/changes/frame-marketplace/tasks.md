@@ -15,7 +15,7 @@
 
 ## 3. 数据投影 API（TDD）
 
-- [ ] 3.1 先写失败测试 `tests/test_frame_projection.py`：单日投影仅含 checked 站点（坐标/名称/天气/备注/当日 note）、空日返回空投影标识、非 owner 403/404、总结图投影聚合各日 + 全程统计且空日跳过；运行确认失败
+- [ ] 3.1 先写失败测试 `tests/test_frame_projection.py`：单日投影仅含 checked 站点（坐标/名称/类型/备注/当日 note）、空日返回空投影标识、非 owner 403/404、总结图投影聚合各日 + 全程统计且空日跳过；运行确认失败
 - [ ] 3.2 实现 `app/services/frame_projection_service.py` + GET /trips/{trip_id}/frames/{day_id}/data + GET /trips/{trip_id}/frames/summary/data；运行 3.1 确认通过
 
 ## 4. AI 配文服务（TDD，FakeLLM）

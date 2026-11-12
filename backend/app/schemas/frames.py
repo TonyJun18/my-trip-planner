@@ -60,3 +60,58 @@ class RedeemOut(BaseModel):
     redeemed: bool
     pack_slug: str
     entitlements: list[EntitlementOut]
+
+
+class FrameStopOut(BaseModel):
+    """投影中的打卡站点（坐标 + 趣事备注）。"""
+
+    stop_id: str
+    name: str
+    stop_type: str
+    lat: float | None = None
+    lng: float | None = None
+    description: str | None = None
+    order_index: int = 0
+
+
+class DayProjectionOut(BaseModel):
+    """单日打卡卡数据投影（empty=true 表示当日无打卡数据）。"""
+
+    trip_id: str
+    destination: str
+    day_id: str
+    day_number: int
+    date: str | None = None
+    day_note: str | None = None
+    empty: bool
+    stops: list[FrameStopOut]
+
+
+class SummaryDayOut(BaseModel):
+    """总结图中的一天（有打卡数据的日期）。"""
+
+    day_id: str
+    day_number: int
+    date: str | None = None
+    day_note: str | None = None
+    stops: list[FrameStopOut]
+
+
+class SummaryStatsOut(BaseModel):
+    """全程统计水印数据。"""
+
+    days_with_checkins: int
+    total_days: int
+    checked_stops: int
+
+
+class SummaryProjectionOut(BaseModel):
+    """整程总结图数据投影（空日跳过；全程无打卡 empty=true）。"""
+
+    trip_id: str
+    destination: str
+    start_date: str | None = None
+    end_date: str | None = None
+    empty: bool
+    stats: SummaryStatsOut
+    days: list[SummaryDayOut]

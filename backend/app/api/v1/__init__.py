@@ -29,6 +29,7 @@ from app.api.v1 import (
     trips_favorites,
     trips_favorite_spots,
     trips_flights,
+    trips_frames,
     trips_gallery,
     trips_journey,
     trips_passport,
@@ -96,6 +97,7 @@ api_router.include_router(xhs_agent.router, prefix="/xhs/agent", tags=["xhs-agen
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 # 旅拍相框市场（frame-marketplace）：目录/兑换/权益 + trips 前缀下的投影与配文
 api_router.include_router(frames.router, prefix="/frames", tags=["frames"])
+api_router.include_router(trips_frames.router, prefix="/trips", tags=["trips"])
 # 对话式行程助手（B 期）：会话/消息 REST + WS 流式
 # chat.router 内部已带 prefix="/chat"（含 WS 端点 /ws/chat/...），这里不再重复前缀
 api_router.include_router(chat.router, tags=["chat"])
