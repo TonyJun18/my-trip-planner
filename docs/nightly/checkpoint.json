@@ -1,26 +1,26 @@
 {
-  "night": "2026-11-12",
-  "status": "completed",
+  "night": "2026-11-13",
+  "status": "in_progress",
   "todo": [
-    "task-weather-probability-card",
-    "task-weather-wttr-en-keywords"
+    "competitive-analysis",
+    "task-share-target-eval",
+    "task-monday-closure-coverage",
+    "content-ai-fault-study-43"
   ],
   "completed": [
-    "task-weather-wttr-en-keywords",
-    "task-weather-probability-card"
+    "competitive-analysis"
   ],
-  "current_index": 2,
+  "current_index": 1,
   "issues": [
-    "night-start 重建（2026-11-12 凌晨）：11-11 23:31 初始化的 checkpoint 因 night=2026-11-11 ≠ 今天按手册重建为 2026-11-12，todo 从 todo 文件重建（两个未勾选行动项），completed/branches 为空无丢失。",
-    "执行序说明（worker-1）：todo[0] task-weather-probability-card（前端低优先级）留待后续 worker，本夜 worker 执行 todo[1] task-weather-wttr-en-keywords——其后端基础修复是前卡正确性前提（wttr 源 text_day 实为英文列表，概率透出需先修正确性）。",
-    "发现并修复（task-weather-wttr-en-keywords 顺带）：_weather_wttr 旧代码把 lang_zh 列表对象塞进 text_day，_is_rainy re.search 会对 list 抛 TypeError——真实运行经 _run_source 捕获记入 wttr 熔断，与「11-11 评估记录 lang_zh 返回英文列表」一致。已在分支修复。",
-    "路径偏差（继续有效）：手册第 0 节项目路径写 /Users/pengjun/Desktop/my-agent/my-trip-planner，实际仓库在 /Users/pengjun/Documents/my-agent/my-trip-planner，按实际路径执行（11-10 报告已记载）。",
-    "工作区无关改动（不触碰）：docs/code-map/ 与 skills/ 为白天新增 untracked 目录，不属于夜间任务，不提交不入分支。",
-    "worker-2（执行 task-weather-probability-card）登记：从 main 拉分支时发现 worker-1 的登记 commit（7feb8a7：todo 勾选 + checkpoint 更新）在其分支 nightly/2026-11-12/1-task-weather-wttr-en-keywords 未合并 main——main 上 checkpoint 仍为 11-11 版、todo wttr-en-keywords 仍 [ ]。处理：本分支 cherry-pick worker-1 代码修复 2a511f8 作基底（不碰其分支），todo 勾选与 checkpoint 由本 worker 从 worker-1 版基底补全写回，保证任一分支合入 main 后唯一事实源完整。",
-    "worker-2 完成 task-weather-probability-card：① _weather_wttr 对 hourly 各时段 chanceofrain 取当天最大值 → days[].rain_probability（缺失/非法 → None 诚实沉默），_weather_amap 显式 None（高德 v3 casts 无概率字段，schema 一致）；② weather_card 透出 rain_probability；③ 前端 TripDetailLiveToday.vue + ShareView.vue 天气卡「降雨概率 {p}% / Rain {p}%」i18n zh/en 各 1 键（无概率字段不渲染）；④ tests/test_weather_probability_card.py 9 例；专项 49 例全绿（含既有 23+18）、全套 1076 passed、前端 build 3.47s + check:i18n 1184 keys × 2。分支 nightly/2026-11-12/2-task-weather-probability-card（cherry-pick 5c3115e + 本批 commits）待用户 review。"
+    "路径偏差（沿用既有记载）：手册第 0 节项目路径写 /Users/pengjun/Desktop/my-agent/my-trip-planner，实际仓库在 /Users/pengjun/Documents/my-agent/my-trip-planner，按实际路径执行。",
+    "night-start 重建（2026-11-12 23:30）：checkpoint 于 11-12 08:32 已存在且 night=2026-11-12 但 status=completed（凌晨流水线已完成 2 个 weather 任务并出报告，含 issues/branches 历史）；按启动指令「status≠in_progress → 重建」重建为空 todo 检查点。",
+    "todo 文件扫描：night-build-todo.md 中无任何「- [ ] slug: ...」格式的可执行任务（全部 [ ] 行为备注追加/佐证/素材·不排期类，如 gallery-community-v3 佐证、booking-neutrality 佐证、原生壳/EXIF 素材、群体表态素材）；按指令回退 todo=[competitive-analysis]。",
+    "11-12/11-13 竞品分析未做过（competitive-analysis/ 目录无 2026-11-12.md，本夜 00:16 启动），深夜段首个 worker 需先做竞品分析。",
+    "worker-1 重建（2026-11-13 00:1x）：night-start 于 11-12 23:30 重建的 checkpoint night=2026-11-12 ≠ 今天（date +%F=2026-11-13），按手册 §3 重建为 2026-11-13；todo 文件复核仍无新可执行任务，维持 todo=[competitive-analysis]。",
+    "工作区状态（worker-1 登记）：HEAD 在白天分支 feature/frame-marketplace（frame-marketplace 工作未合并 main，不触碰）；checkpoint.json 的 night-start 未提交改动随分支切换保留，由本 worker 在夜间分支提交；untracked（docs/code-map/、skills/、backend/tests/test_frame_summary_copy.py、docs/nightly/reports/2026-11-12.md）为白天产物，不入夜间分支。",
+    "worker-1 完成竞品分析（2026-11-13）：产出 docs/nightly/competitive-analysis/2026-11-13.md——三大新信号：①「Reels 导入红海潮」（11 月 App Store 一周 8+ app 全押 TikTok/IG 视频导入：Rhyme/Travo/Scoop/Triparchi/Dream Trip/MapDreamy/Pictoura，Stardrift 中文稿列为新功能）；②MonkeyEatingMango 356 行程量化缺陷研究（43% 规划日带可验证缺陷 / 2735 天 / 61 国 / 周一承载 53% 闭馆错 / 交付前修复率 79.6% / 检查在模型外对照外部源）；③Meridian Dispatch BYO-AI 范式（Claude/ChatGPT/Grok connector + 行后 prose journal）。新行动项 3 条入队（task-share-target-eval / task-monday-closure-coverage / content-ai-fault-study-43）+ 素材登记 1 条。技术备注：web_extract 继续被 SSRF 防护 Block（用 curl 直抓 monkeyeatingmango/meridiandispatch/stardrift 正文成功）；python3 -c 解析触发审批拦截，已按 skill 换 grep/search_files 解析；仓库现状核验：manifest 无 share_target（grep=0）、五通道导入在案、dynamic_facts._weekly_closed 在案。分支 nightly/2026-11-13/0-competitive-analysis 待用户 review。"
   ],
   "branches": [
-    "nightly/2026-11-12/1-task-weather-wttr-en-keywords",
-    "nightly/2026-11-12/2-task-weather-probability-card"
+    "nightly/2026-11-13/0-competitive-analysis"
   ]
 }
