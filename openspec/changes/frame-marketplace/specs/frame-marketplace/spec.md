@@ -49,11 +49,6 @@
 - **WHEN** 用户提交一个已被吊销的码
 - **THEN** 返回 410，文案与 404/409 明确区分，便于用户对账
 
-#### Scenario: 兑换记录进事件流
-
-- **WHEN** 兑换成功
-- **THEN** 用户的行程事件流记录一条 frame_pack_redeemed 事件
-
 ### Requirement: 单日卡数据投影
 
 系统 SHALL 为 owner 提供指定日程的打卡卡数据投影，内容 MUST 仅包含当日 checked 站点（坐标/名称/天气）与日期信息；非 owner MUST 无法获取该投影。

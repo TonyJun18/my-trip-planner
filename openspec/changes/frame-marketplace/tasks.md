@@ -8,7 +8,7 @@
 
 ## 2. 兑换权益服务与 API（TDD：先写失败测试）
 
-- [ ] 2.1 先写失败测试 `tests/test_frame_entitlement.py`：有效码首次兑换、同一用户重放幂等 200、他人已用 409、码不存在 404、吊销 410、权益按用户隔离、事件流记录 frame_pack_redeemed；运行确认全部失败
+- [ ] 2.1 先写失败测试 `tests/test_frame_entitlement.py`：有效码首次兑换、同一用户重放幂等 200、他人已用 409、码不存在 404、吊销 410、权益按用户隔离；运行确认全部失败
 - [ ] 2.2 实现 `app/services/frame_entitlement_service.py`（SHA-256 比对、幂等写入、错误码语义）；运行 2.1 测试确认通过
 - [ ] 2.3 新路由 `app/api/v1/frames.py`：GET /frames/catalog（免登录，带 locked 标注）、GET /frames/entitlements、POST /frames/redeem；注册进 main 路由；验证：pytest 通过 + /docs 可见新端点
 - [ ] 2.4 兑换码生成脚本 `scripts/gen_codes.py`（明文输出即弃、哈希入库、支持指定包与数量）；验证：生成 10 个测试码 → 兑换 1 个成功 → 重放/他兑/错码语义符合 spec
