@@ -676,6 +676,8 @@ export default {
       hot: '防暑补水，避开正午暴晒',
     },
     weatherNoData: '暂无天气数据',
+    // ── 降水概率（task-weather-probability-card）：wttr 源透出，高德源不渲染 ──
+    weatherRainProb: '降雨概率 {p}%',
     // ── 分享令牌生命周期（TTL / 吊销 / 审计） ──
     shareSettings: '分享设置',
     galleryPublish: '发布到画廊',

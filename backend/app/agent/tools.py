@@ -593,6 +593,9 @@ async def _weather_amap(city: str, *, days: int = 3) -> dict[str, Any]:
             "temp_max": item.get("daytemp"),
             "temp_min": item.get("nighttemp"),
             "humidity": item.get("humidity"),
+            # 高德 v3 weatherInfo casts 无概率/降水毫米字段（11-11 一手实测字段表），
+            # 显式 None 保持 schema 一致——前端据此不渲染概率（诚实沉默，绝不编造）。
+            "rain_probability": None,
         })
     return {"city": city, "days": days_out, "count": len(days_out), "source": "amap"}
 
@@ -630,6 +633,18 @@ async def _weather_wttr(city: str, *, days: int = 3) -> dict[str, Any]:
             desc = hour.get("weatherDesc") or []
             if desc and isinstance(desc[0], dict):
                 text_day = desc[0].get("value")
+        # 降水概率（task-weather-probability-card）：wttr hourly 每 3 小时一条
+        # chanceofrain（11-11 实测 24 个），取当天最大值如实透出；字段缺失/
+        # 非法 → None（诚实沉默——概率一旦展示就必须来自真实数据源）。
+        rain_probs: list[int] = []
+        for h in hours:
+            raw = h.get("chanceofrain")
+            if raw is None:
+                continue
+            try:
+                rain_probs.append(int(raw))
+            except (TypeError, ValueError):
+                continue
         days_out.append({
             "date": item.get("date"),
             "text_day": text_day,
@@ -637,6 +652,7 @@ async def _weather_wttr(city: str, *, days: int = 3) -> dict[str, Any]:
             "temp_max": item.get("maxtempC"),
             "temp_min": item.get("mintempC"),
             "humidity": hour.get("humidity"),
+            "rain_probability": max(rain_probs) if rain_probs else None,
         })
     return {"city": city, "days": days_out, "count": len(days_out), "source": "wttr.in"}
 

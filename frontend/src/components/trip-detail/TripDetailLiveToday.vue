@@ -40,6 +40,13 @@ const weatherAdviceText = computed(() =>
     .filter(Boolean)
     .join(' · '),
 )
+// 降水概率（task-weather-probability-card）：wttr 源透出当天最大 chanceofrain
+// （{rain_probability}）；高德源无概率字段 → null → 前端不渲染（诚实沉默）。
+const weatherRainText = computed(() => {
+  const p = weather.value?.rain_probability
+  if (p == null) return ''
+  return t('tripDetail.weatherRainProb', { p })
+})
 </script>
 
 <template>
@@ -65,6 +72,7 @@ const weatherAdviceText = computed(() =>
       <span class="live-weather-text">
         {{ weather.text_day || $t('tripDetail.weatherNoData') }}
         <template v-if="weatherTemp"> · {{ weatherTemp }}</template>
+        <template v-if="weatherRainText"> · {{ weatherRainText }}</template>
       </span>
       <span class="live-weather-badge">{{ $t('tripDetail.weatherForecastBadge') }}</span>
       <span v-if="weatherAdviceText" class="live-weather-advice">{{ weatherAdviceText }}</span>

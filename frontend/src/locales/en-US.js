@@ -676,6 +676,8 @@ export default {
       hot: 'Hydrate and avoid midday sun',
     },
     weatherNoData: 'No weather data yet',
+    // ── Rain probability (task-weather-probability-card): wttr only, amap renders none ──
+    weatherRainProb: 'Rain {p}%',
     // ── Share token lifecycle (TTL / revoke / audit) ──
     shareSettings: 'Share Settings',
     galleryPublish: 'Publish to gallery',

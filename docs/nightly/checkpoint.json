@@ -1,22 +1,26 @@
 {
   "night": "2026-11-12",
-  "status": "in_progress",
+  "status": "completed",
   "todo": [
     "task-weather-probability-card",
     "task-weather-wttr-en-keywords"
   ],
   "completed": [
-    "task-weather-wttr-en-keywords"
+    "task-weather-wttr-en-keywords",
+    "task-weather-probability-card"
   ],
-  "current_index": 1,
+  "current_index": 2,
   "issues": [
     "night-start 重建（2026-11-12 凌晨）：11-11 23:31 初始化的 checkpoint 因 night=2026-11-11 ≠ 今天按手册重建为 2026-11-12，todo 从 todo 文件重建（两个未勾选行动项），completed/branches 为空无丢失。",
     "执行序说明（worker-1）：todo[0] task-weather-probability-card（前端低优先级）留待后续 worker，本夜 worker 执行 todo[1] task-weather-wttr-en-keywords——其后端基础修复是前卡正确性前提（wttr 源 text_day 实为英文列表，概率透出需先修正确性）。",
     "发现并修复（task-weather-wttr-en-keywords 顺带）：_weather_wttr 旧代码把 lang_zh 列表对象塞进 text_day，_is_rainy re.search 会对 list 抛 TypeError——真实运行经 _run_source 捕获记入 wttr 熔断，与「11-11 评估记录 lang_zh 返回英文列表」一致。已在分支修复。",
     "路径偏差（继续有效）：手册第 0 节项目路径写 /Users/pengjun/Desktop/my-agent/my-trip-planner，实际仓库在 /Users/pengjun/Documents/my-agent/my-trip-planner，按实际路径执行（11-10 报告已记载）。",
-    "工作区无关改动（不触碰）：docs/code-map/ 与 skills/ 为白天新增 untracked 目录，不属于夜间任务，不提交不入分支。"
+    "工作区无关改动（不触碰）：docs/code-map/ 与 skills/ 为白天新增 untracked 目录，不属于夜间任务，不提交不入分支。",
+    "worker-2（执行 task-weather-probability-card）登记：从 main 拉分支时发现 worker-1 的登记 commit（7feb8a7：todo 勾选 + checkpoint 更新）在其分支 nightly/2026-11-12/1-task-weather-wttr-en-keywords 未合并 main——main 上 checkpoint 仍为 11-11 版、todo wttr-en-keywords 仍 [ ]。处理：本分支 cherry-pick worker-1 代码修复 2a511f8 作基底（不碰其分支），todo 勾选与 checkpoint 由本 worker 从 worker-1 版基底补全写回，保证任一分支合入 main 后唯一事实源完整。",
+    "worker-2 完成 task-weather-probability-card：① _weather_wttr 对 hourly 各时段 chanceofrain 取当天最大值 → days[].rain_probability（缺失/非法 → None 诚实沉默），_weather_amap 显式 None（高德 v3 casts 无概率字段，schema 一致）；② weather_card 透出 rain_probability；③ 前端 TripDetailLiveToday.vue + ShareView.vue 天气卡「降雨概率 {p}% / Rain {p}%」i18n zh/en 各 1 键（无概率字段不渲染）；④ tests/test_weather_probability_card.py 9 例；专项 49 例全绿（含既有 23+18）、全套 1076 passed、前端 build 3.47s + check:i18n 1184 keys × 2。分支 nightly/2026-11-12/2-task-weather-probability-card（cherry-pick 5c3115e + 本批 commits）待用户 review。"
   ],
   "branches": [
-    "nightly/2026-11-12/1-task-weather-wttr-en-keywords"
+    "nightly/2026-11-12/1-task-weather-wttr-en-keywords",
+    "nightly/2026-11-12/2-task-weather-probability-card"
   ]
 }

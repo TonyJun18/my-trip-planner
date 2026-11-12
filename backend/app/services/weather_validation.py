@@ -241,7 +241,9 @@ def weather_card(plan: dict[str, Any], *, day_date: Any = None, locale: str = "z
     """行中「今日天气卡」摘要：消费 plan 的 weather 快照，供前端行中卡片展示。
 
     返回 None（无天气数据/无匹配日期）→ 前端不渲染天气卡（绝不伪造）。
-    返回结构：{"date", "text_day", "temp_min", "temp_max", "source", "summary"}
+    返回结构：{"date", "text_day", "temp_min", "temp_max", "rain_probability",
+              "source", "summary"}（rain_probability：wttr 源为当天最大
+              chanceofrain；高德源无概率字段 → None，前端不渲染概率）
     """
     locale = normalize_locale(locale)
     weather = plan.get("weather") or {}
@@ -259,6 +261,9 @@ def weather_card(plan: dict[str, Any], *, day_date: Any = None, locale: str = "z
         "temp_min": item.get("temp_min"),
         "temp_max": item.get("temp_max"),
         "source": weather.get("source"),
+        # 降水概率（task-weather-probability-card）：wttr 源如实透出当天最大
+        # chanceofrain；高德源无此字段 → None，前端据此不渲染概率（诚实沉默）。
+        "rain_probability": item.get("rain_probability"),
     }
     tmax = _temp_max(item)
     if _is_rainy(item.get("text_day")):
