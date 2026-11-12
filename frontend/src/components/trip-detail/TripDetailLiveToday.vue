@@ -13,7 +13,7 @@ const props = defineProps({
   typeLabel: { type: Object, required: true },
 })
 
-const emit = defineEmits(['check', 'skip', 'delay', 'add-expense'])
+const emit = defineEmits(['check', 'skip', 'delay', 'add-expense', 'frame-card'])
 const { t } = useI18n()
 
 const weather = computed(() => props.live?.weather || null)
@@ -108,6 +108,15 @@ const weatherRainText = computed(() => {
     <div class="live-footer">
       <el-button size="small" type="primary" plain @click="emit('add-expense')">
         💸 {{ $t('expense.add') }}
+      </el-button>
+      <el-button
+        size="small"
+        type="success"
+        plain
+        :disabled="!live.completed"
+        @click="emit('frame-card')"
+      >
+        🖼️ {{ $t('frames.dialog.title') }}
       </el-button>
       <el-button size="small" type="warning" plain :loading="liveOp === 'delay'" @click="emit('delay')">
         {{ $t('tripDetail.liveDelay') }}

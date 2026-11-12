@@ -1,6 +1,12 @@
 from app.models.base import Base
 from app.models.chat import ChatMessage, ChatSession
 from app.models.flight_deal import FlightDealSnapshot
+from app.models.framemarket import (
+    FrameEntitlement,
+    FramePack,
+    FrameTemplate,
+    RedemptionCode,
+)
 from app.models.profile import UserProfile
 from app.models.trip import (
     PlanTask,
@@ -27,7 +33,11 @@ __all__ = [
     "ChatMessage",
     "ChatSession",
     "FlightDealSnapshot",
+    "FrameEntitlement",
+    "FramePack",
+    "FrameTemplate",
     "PlanTask",
+    "RedemptionCode",
     "ShareToken",
     "Stop",
     "StopVote",

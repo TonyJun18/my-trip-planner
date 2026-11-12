@@ -7,6 +7,8 @@ const routes = [
   { path: '/share/:token', name: 'share', component: () => import('@/views/ShareView.vue'), meta: { public: true } },
   // 灵感画廊（公开：未登录也能逛，登录后才能复制成自己的行程）
   { path: '/gallery', name: 'gallery', component: () => import('@/views/GalleryView.vue'), meta: { public: true } },
+  // 模板商店（公开浏览；兑换需登录，路由守卫引导）
+  { path: '/frames', name: 'frames', component: () => import('@/views/FrameStoreView.vue'), meta: { public: true } },
   // 登录后页面
   { path: '/trips', name: 'trips', component: () => import('@/views/TripListView.vue') },
   { path: '/plan', name: 'plan', component: () => import('@/views/PlanWizard.vue') },
