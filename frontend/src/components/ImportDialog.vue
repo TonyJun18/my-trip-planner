@@ -3,7 +3,7 @@
 // - 笔记 / 截图 / 分享链接 / 预订邮件 → 纯规则解析 → 站点候选（外部内容按敌意源，
 //   指令型行由后端剥离为 flagged_lines，前端只作数据展示，绝不当作指令执行）
 // - 勾选候选 → 选目标行程 + 汇入日程 → 逐个 addStop 落库（串行避免同日 order 竞态）
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import * as api from '@/api'
@@ -12,6 +12,10 @@ const visible = defineModel({ type: Boolean, default: false })
 const props = defineProps({
   // 从详情页打开时预选当前行程（TripDetailView 导入入口）
   presetTripId: { type: String, default: '' },
+  // PWA Web Share Target 预填（task-share-target-eval）：系统分享进来时
+  // 直接带着 { tab: 'social'|'link', text?, url? } 打开并自动解析。
+  // 外部内容只作为候选数据展示（后端 social/link import 已做敌意行剥离）。
+  prefill: { type: Object, default: null },
 })
 const emit = defineEmits(['imported'])
 const { t } = useI18n()
@@ -82,6 +86,19 @@ watch(visible, (v) => {
   if (v) {
     reset()
     loadTrips()
+    // PWA Web Share Target 预填（task-share-target-eval）：有分享内容则
+    // 自动切到对应 tab 并解析；无则空对话框（用户手动粘贴）。
+    if (props.prefill) {
+      if (props.prefill.tab === 'link' && props.prefill.url) {
+        tab.value = 'link'
+        linkInput.value = props.prefill.url
+        nextTick(() => parse())
+      } else if (props.prefill.tab === 'social' && props.prefill.text) {
+        tab.value = 'social'
+        textInput.value = props.prefill.text
+        nextTick(() => parse())
+      }
+    }
   }
 })
 
