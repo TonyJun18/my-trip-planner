@@ -16,10 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.models import User
-from app.schemas.frames import DayProjectionOut, SummaryProjectionOut
-from app.services import frame_projection_service as projection
+from app.schemas.frames import CopyOut, CopyRequest, DayProjectionOut, SummaryProjectionOut
+from app.services import frame_copy_service, frame_projection_service as projection
 from app.services import trip_service
-
 router = APIRouter()
 
 
@@ -60,3 +59,25 @@ async def get_day_projection(
     if body is None:
         raise HTTPException(status_code=404, detail="日程不存在")
     return DayProjectionOut(**body)
+
+
+@router.post(
+    "/{trip_id}/frames/{day_id}/copy",
+    response_model=CopyOut,
+    summary="单日卡 AI 配文生成（owner；无自动发布副作用）",
+)
+async def generate_day_copy(
+    trip_id: str,
+    day_id: str,
+    data: CopyRequest,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    trip = await _get_own_trip(db, trip_id, user)
+    body = await projection.day_projection(db, trip, day_id)
+    if body is None:
+        raise HTTPException(status_code=404, detail="日程不存在")
+    out = await frame_copy_service.build_day_copy(
+        trip, body, channel=data.channel, provider=data.provider
+    )
+    return CopyOut(**out)

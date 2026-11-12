@@ -115,3 +115,23 @@ class SummaryProjectionOut(BaseModel):
     empty: bool
     stats: SummaryStatsOut
     days: list[SummaryDayOut]
+
+
+class CopyRequest(BaseModel):
+    """配文生成请求。"""
+
+    channel: Literal["xhs", "moments"] = "xhs"
+    provider: Literal["auto", "openai", "deepseek", "ollama"] = "auto"
+
+
+class CopyOut(BaseModel):
+    """配文生成结果（source 诚实标注；无自动发布副作用）。"""
+
+    trip_id: str
+    day_id: str | None = None
+    channel: str
+    empty: bool
+    title: str
+    body: str
+    topics: list[str] = []
+    source: Literal["llm", "template"]
