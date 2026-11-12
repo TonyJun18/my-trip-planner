@@ -1,21 +1,22 @@
 {
-  "night": "2026-11-11",
-  "status": "completed",
+  "night": "2026-11-12",
+  "status": "in_progress",
   "todo": [
-    "task-weather-probability-eval"
+    "task-weather-probability-card",
+    "task-weather-wttr-en-keywords"
   ],
   "completed": [
-    "task-weather-probability-eval"
+    "task-weather-wttr-en-keywords"
   ],
   "current_index": 1,
   "issues": [
-    "路径偏差（继续有效）：手册第0节项目路径写 /Users/pengjun/Desktop/my-agent/my-trip-planner，实际仓库在 /Users/pengjun/Documents/my-agent/my-trip-planner，按实际路径执行（11-10 报告已记载）。",
-    "未提交改动（本夜核验，白天产物不碰）：docs/code-map/ 与 docs/superpowers/ 与 openspec/changes/trip-detail-schedule-timeline/ 为白天新增目录（untracked），不属于夜间任务，不提交不入分支。",
-    "本夜评估新增发现（已登记 todo 行动项，未实现）：① wttr 降级路径 text_day 返回英文（lang_zh 实测 Smoke/Clear），RAIN_KEYWORDS 仅中文 → 雨天室内替代建议在降级路径会漏报（task-weather-wttr-en-keywords 中优先级候选）；② wttr 有 chanceofrain 但高德主力源无概率字段，「概率>60%阈值」维持关单（task-weather-probability-card 低优先级候选，透出不裁决）。",
-    "web_extract 对 lbs.amap.com / wttr.in 被 SSRF 误判 Blocked（与 11-09 同款），改用 curl 抓官方文档 + j1 实测 JSON，一手证据齐全。",
-    "worker-3 核验（11-11 01:45，本夜已 completed）：工作区存在未提交 backend 改动——新增 backend/app/services/schedule_service.py + backend/tests/test_schedule_service.py + backend/tests/test_trip_schedule_api.py，修改 trips_bookings.py / trips_crud.py / trips_share.py / schemas/trip.py / uv.lock（mtime 11-11 00:36~00:43）。疑似 trip-detail-schedule-timeline 白天开发遗留（openspec change 目录已记为白天产物），不属于本夜已登记任务；已解决：用户 11-11 白天 review 后已提交（feat(schedule) 1a78f53 + feat(frontend) ea80e1c + docs fc0fb7a），工作日历时间轴闭环。"
+    "night-start 重建（2026-11-12 凌晨）：11-11 23:31 初始化的 checkpoint 因 night=2026-11-11 ≠ 今天按手册重建为 2026-11-12，todo 从 todo 文件重建（两个未勾选行动项），completed/branches 为空无丢失。",
+    "执行序说明（worker-1）：todo[0] task-weather-probability-card（前端低优先级）留待后续 worker，本夜 worker 执行 todo[1] task-weather-wttr-en-keywords——其后端基础修复是前卡正确性前提（wttr 源 text_day 实为英文列表，概率透出需先修正确性）。",
+    "发现并修复（task-weather-wttr-en-keywords 顺带）：_weather_wttr 旧代码把 lang_zh 列表对象塞进 text_day，_is_rainy re.search 会对 list 抛 TypeError——真实运行经 _run_source 捕获记入 wttr 熔断，与「11-11 评估记录 lang_zh 返回英文列表」一致。已在分支修复。",
+    "路径偏差（继续有效）：手册第 0 节项目路径写 /Users/pengjun/Desktop/my-agent/my-trip-planner，实际仓库在 /Users/pengjun/Documents/my-agent/my-trip-planner，按实际路径执行（11-10 报告已记载）。",
+    "工作区无关改动（不触碰）：docs/code-map/ 与 skills/ 为白天新增 untracked 目录，不属于夜间任务，不提交不入分支。"
   ],
   "branches": [
-    "nightly/2026-11-11/0-task-weather-probability-eval"
+    "nightly/2026-11-12/1-task-weather-wttr-en-keywords"
   ]
 }
