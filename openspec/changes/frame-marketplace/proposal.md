@@ -10,7 +10,7 @@
 - 新增兑换码权益体系（RedemptionCode 存哈希 / FrameEntitlement 幂等权益）：外部平台售卖兑换码，站内兑换解锁模板包
 - 新增单日卡 / 整程总结图数据投影接口（只含 checked 站点，owner 限定）与 AI 配文生成接口（LLM 主路径 + 模板兜底，source 诚实标注；无自动发布副作用）
 - 前端新增 Canvas 相框渲染器（照片仅内存处理不上传、站点坐标手绘风格化轨迹、未购水印预览）、模板商店页（/frames）、单日卡生成器入口（今日视图 / 行程详情）
-当日一句话总结复用已有 `TripDay.note` 字段（无新字段）；站点趣事复用现有 `Stop.notes`
+当日一句话总结复用已有 `TripDay.note` 字段（无新字段）；站点趣事复用现有 `Stop.description`
 - 新增一次性兑换码生成脚本 `scripts/gen_codes.py`（明文不落库）
 
 ## Capabilities

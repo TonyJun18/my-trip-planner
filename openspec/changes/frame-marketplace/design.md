@@ -5,7 +5,7 @@
 行程规划主线完成后第一条创收路径（动机见 proposal.md）。现状约束：
 - 系统已有 owner 鉴权（`get_current_user`）、事件流（`TripEvent` + `event_service`）、journey 投影（`journey_service`）、LLM 双路径先例（`xhs_service` / `story_service`）、打卡数据（`Stop.checked`）
 - 无任何支付/订单/文件存储基础设施——一期用兑换码模式绕开支付闭环
-- 站点趣事复用 `Stop.notes`（受邀者已可编辑该字段）；当日一句话总结复用已有 `TripDay.note`（journey 投影已作 day 主题使用），不新增字段
+- 站点趣事复用 `Stop.description`（受邀者已可编辑该字段）；当日一句话总结复用已有 `TripDay.note`（journey 投影已作 day 主题使用），不新增字段
 - 完整业务设计（含已批准的方案对比）见 `docs/superpowers/specs/2026-11-12-frame-marketplace-design.md`
 
 ## Goals / Non-Goals
