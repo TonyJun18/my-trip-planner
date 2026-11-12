@@ -3,7 +3,7 @@
 ## 1. 数据模型与迁移（Phase 1 基础）
 
 - [ ] 1.1 新建 `app/models/framemarket.py`：FrameTemplate / FramePack / RedemptionCode（code_hash 唯一）/ FrameEntitlement（(user_id, pack_slug) 唯一约束），注册进 `app/models/__init__.py`；验证：pytest 收集无误
-- [ ] 1.2 alembic 迁移：4 张新表 + `trip_days.day_note`（可空）；验证：`uv run alembic upgrade head` 与 `downgrade -1` 往返成功
+- [ ] 1.2 alembic 迁移：4 张新表（当日一句话复用已有 `trip_days.note`，不新增字段）；验证：`uv run alembic upgrade head` 与 `downgrade -1` 往返成功
 - [ ] 1.3 种子数据迁移：2 套免费模板 + 2 个付费包各 3 套模板（slug/theme/layout_config/price_cents）；验证：upgrade 后 SQL 查询目录行数正确
 
 ## 2. 兑换权益服务与 API（TDD：先写失败测试）
@@ -15,7 +15,7 @@
 
 ## 3. 数据投影 API（TDD）
 
-- [ ] 3.1 先写失败测试 `tests/test_frame_projection.py`：单日投影仅含 checked 站点（坐标/名称/天气/备注/day_note）、空日返回空投影标识、非 owner 403/404、总结图投影聚合各日 + 全程统计且空日跳过；运行确认失败
+- [ ] 3.1 先写失败测试 `tests/test_frame_projection.py`：单日投影仅含 checked 站点（坐标/名称/天气/备注/当日 note）、空日返回空投影标识、非 owner 403/404、总结图投影聚合各日 + 全程统计且空日跳过；运行确认失败
 - [ ] 3.2 实现 `app/services/frame_projection_service.py` + GET /trips/{trip_id}/frames/{day_id}/data + GET /trips/{trip_id}/frames/summary/data；运行 3.1 确认通过
 
 ## 4. AI 配文服务（TDD，FakeLLM）
@@ -31,7 +31,7 @@
 ## 6. 前端页面与入口
 
 - [ ] 6.1 模板商店页 `FrameStoreView`（路由 /frames）：免费/付费分栏、示例小样、兑换码入口（错误文案区分 404/409/410）、未登录引导注册；验证：本地 dev 手动走通兑换→解锁→locked 标注刷新
-- [ ] 6.2 单日卡生成器弹层：选模板 → 本地选照片（File API 内存处理）→ 填/改趣事（Stop.notes / day_note）→ 实时预览 → 导出 PNG + 复制配文；入口在今日视图打卡完成态与行程详情每日一行，无打卡数据置灰提示；验证：手动走通全流程，Network 面板确认无照片上传请求
+- [ ] 6.2 单日卡生成器弹层：选模板 → 本地选照片（File API 内存处理）→ 填/改趣事（Stop.notes / TripDay.note，均已有字段）→ 实时预览 → 导出 PNG + 复制配文；入口在今日视图打卡完成态与行程详情每日一行，无打卡数据置灰提示；验证：手动走通全流程，Network 面板确认无照片上传请求
 - [ ] 6.3 i18n：新增键 zh/en 双语 + Element Plus locale 联动；验证：切换语言无缺键
 
 ## 7. 整程总结图（Phase 2）

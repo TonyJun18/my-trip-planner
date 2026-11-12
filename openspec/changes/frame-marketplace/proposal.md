@@ -10,7 +10,7 @@
 - 新增兑换码权益体系（RedemptionCode 存哈希 / FrameEntitlement 幂等权益）：外部平台售卖兑换码，站内兑换解锁模板包
 - 新增单日卡 / 整程总结图数据投影接口（只含 checked 站点，owner 限定）与 AI 配文生成接口（LLM 主路径 + 模板兜底，source 诚实标注；无自动发布副作用）
 - 前端新增 Canvas 相框渲染器（照片仅内存处理不上传、站点坐标手绘风格化轨迹、未购水印预览）、模板商店页（/frames）、单日卡生成器入口（今日视图 / 行程详情）
-- `TripDay` 新增可选 `day_note` 字段（当日一句话总结）；站点趣事复用现有 `Stop.notes`
+当日一句话总结复用已有 `TripDay.note` 字段（无新字段）；站点趣事复用现有 `Stop.notes`
 - 新增一次性兑换码生成脚本 `scripts/gen_codes.py`（明文不落库）
 
 ## Capabilities
@@ -21,11 +21,11 @@
 
 ### Modified Capabilities
 
-（无——现有 booking-ledger / booking-rhythm / favorite-spots 的需求不变；TripDay.day_note 是行程详情既有编辑模型的字段扩展，由本 capability 自身覆盖）
+（无——现有 booking-ledger / booking-rhythm / favorite-spots 的需求不变）
 
 ## Impact
 
-- **后端**：`app/models/framemarket.py`（新表）、`app/api/v1/frames.py`（新路由）、`app/services/frame_catalog_service.py` / `frame_entitlement_service.py` / `frame_copy_service.py`（新服务）、`TripDay.day_note` 字段迁移、`scripts/gen_codes.py`
+- **后端**：`app/models/framemarket.py`（新表）、`app/api/v1/frames.py`（新路由）、`app/services/frame_catalog_service.py` / `frame_entitlement_service.py` / `frame_copy_service.py`（新服务）、`scripts/gen_codes.py`
 - **前端**：`src/frames/`（渲染器/模板注册表/导出）、`FrameStoreView`、今日视图与行程详情新入口、i18n 键新增（zh/en）
 - **依赖**：无新增外部依赖（渲染纯 canvas，配文复用现有 LLM provider 管线）
 - **风险面**：兑换码安全（只存哈希）、权益越权（owner/user 隔离沿用现有模式）、现有 453 测试全绿为底线
