@@ -189,3 +189,87 @@ def test_en_locale():
     result = check_plan_dynamic_facts(plan, locale="en-US")
     assert result["issues"]
     assert "closed" in result["issues"][0]["message"].lower() or "故宫" in result["issues"][0]["message"]
+
+
+# ══════════════════════════════════════════════════════════════════
+# task-monday-closure-coverage（2026-11-13）：周一闭馆扩展类目审计
+# 补入：展览馆/陈列馆/博览馆（展馆惯例）、纪念馆/故居、
+#       图书馆、遗址博物馆。刻意不补动物园/海洋馆/植物园/公园。
+# ══════════════════════════════════════════════════════════════════
+
+# ── 扩展类目命中：纪念馆/故居/图书馆/遗址博物馆 · 周一 → warning ──
+def test_extended_weekly_categories_hit_on_monday():
+    plan = {
+        "days": [
+            _day(1, "2026-10-19", _stop("徐悲鸿纪念馆")),
+            _day(1, "2026-10-19", _stop("鲁迅故居")),
+            _day(1, "2026-10-19", _stop("市图书馆")),
+            _day(1, "2026-10-19", _stop("路县故城遗址博物馆")),
+        ]
+    }
+    result = check_plan_dynamic_facts(plan)
+    assert result["passed"] is False
+    hit_names = [i["message"] for i in result["issues"]]
+    assert any("徐悲鸿纪念馆" in m for m in hit_names)
+    assert any("鲁迅故居" in m for m in hit_names)
+    assert any("市图书馆" in m for m in hit_names)
+    assert any("路县故城遗址博物馆" in m for m in hit_names)
+
+
+# ── 扩展类目未命中：非周一 → 静默 ──
+def test_extended_weekly_categories_no_hit_on_sunday():
+    plan = {
+        "days": [
+            _day(1, "2026-10-25", _stop("徐悲鸿纪念馆")),
+            _day(1, "2026-10-25", _stop("鲁迅故居")),
+            _day(1, "2026-10-25", _stop("市图书馆")),
+        ]
+    }
+    result = check_plan_dynamic_facts(plan)
+    assert result["passed"] is True
+    assert result["issues"] == []
+
+
+# ── 显式特例豁免：open_hours 声明「周二闭馆」（首都博物馆 5-10 月错峰）
+#    → 不命中周一规则（_weekly_closed 识别任意闭馆日并短路所有 weekly 规则）──
+def test_explicit_tuesday_closed_overrides_monday_rules():
+    plan = {
+        "days": [
+            _day(1, "2026-10-19", _stop("首都博物馆", open_hours="09:00-20:00 (周二闭馆)")),
+        ]
+    }
+    result = check_plan_dynamic_facts(plan)
+    # 明确声明周二闭馆 → 规则库不再报「周一闭馆」（该馆本就周一开）
+    assert result["passed"] is True
+    assert result["issues"] == []
+
+
+# ── 展馆同义扩展：展览馆/陈列馆/博览馆 → 命中 ──
+def test_extended_hall_synonyms_hit():
+    plan = {
+        "days": [
+            _day(1, "2026-10-19", _stop("城市规划展览馆")),
+            _day(1, "2026-10-19", _stop("历史陈列馆")),
+            _day(1, "2026-10-19", _stop("丝绸博览馆")),
+        ]
+    }
+    result = check_plan_dynamic_facts(plan)
+    hit_names = [i["message"] for i in result["issues"]]
+    assert any("城市规划展览馆" in m for m in hit_names), "展览馆应命中周一闭馆"
+    assert any("历史陈列馆" in m for m in hit_names)
+    assert any("丝绸博览馆" in m for m in hit_names)
+
+
+# ── 刻意不误伤：动物园/海洋馆/植物园/遗址公园（全年开放）→ 静默 ──
+def test_always_open_categories_stay_silent():
+    plan = {
+        "days": [
+            _day(1, "2026-10-19", _stop("杭州动物园")),
+            _day(1, "2026-10-19", _stop("北京海洋馆")),
+            _day(1, "2026-10-19", _stop("国家植物园")),
+            _day(1, "2026-10-19", _stop("圆明园遗址公园")),
+        ]
+    }
+    result = check_plan_dynamic_facts(plan)
+    assert result["passed"] is True
+    assert result["issues"] == []
