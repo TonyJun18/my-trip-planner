@@ -1306,4 +1306,12 @@ export default {
     sourceRule: 'System inferred',
     sourceUser: 'You declared',
   },
+  shareTarget: {
+    title: 'Share to Suixing',
+    subtitle: 'Tap "Share" in TikTok / Instagram and pick Suixing to collect the content into your trips',
+    received: 'Share received, parsing…',
+    emptyTitle: 'This page receives shares from other apps',
+    emptyDesc: 'Tap "Share" in TikTok / Instagram / your browser and pick Suixing — the shared link or text appears here automatically. You can also paste manually.',
+    manualOpen: 'Paste content manually',
+  },
 }

@@ -1304,4 +1304,12 @@ export default {
     sourceRule: '系统推断',
     sourceUser: '你声明的',
   },
+  shareTarget: {
+    title: '分享到随行',
+    subtitle: '在 TikTok / Instagram 等 App 点「分享」，选择「随行」即可把内容收进行程',
+    received: '已收到分享内容，正在解析…',
+    emptyTitle: '这里接收来自其他 App 的分享',
+    emptyDesc: '在 TikTok / Instagram / 浏览器等 App 中点「分享」并选择「随行」，分享的链接或文本会自动出现在这里；也可以手动粘贴。',
+    manualOpen: '手动粘贴内容',
+  },
 }

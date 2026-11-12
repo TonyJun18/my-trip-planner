@@ -12,6 +12,9 @@ const routes = [
   { path: '/plan', name: 'plan', component: () => import('@/views/PlanWizard.vue') },
   { path: '/chat', name: 'chat', component: () => import('@/views/ChatView.vue') },
   { path: '/preferences', name: 'preferences', component: () => import('@/views/PreferencesView.vue') },
+  // PWA Web Share Target 接收页（task-share-target-eval）：系统分享 → GET /share-target?text=&url=
+  // 需登录（分享落地 → 预填导入）；未登录由守卫转 /login 并在登录后 redirect 回本页。
+  { path: '/share-target', name: 'share-target', component: () => import('@/views/ShareTargetView.vue') },
   { path: '/favorites', name: 'favorites', component: () => import('@/views/FavoritesView.vue') },
   {
     path: '/trips/:id',
