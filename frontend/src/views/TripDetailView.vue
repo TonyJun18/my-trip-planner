@@ -10,6 +10,7 @@ import * as api from '@/api'
 // 组件树见 docs/plans/2026-10-29-trip-detail-refactor-solution.md §1.1 / §2.1
 import TripDetailHeader from '@/components/trip-detail/TripDetailHeader.vue'
 import TripDetailLiveToday from '@/components/trip-detail/TripDetailLiveToday.vue'
+import FrameCardDialog from '@/components/frames/FrameCardDialog.vue'
 import TripDetailBudgetBar from '@/components/trip-detail/TripDetailBudgetBar.vue'
 import TripDetailMapCard from '@/components/trip-detail/TripDetailMapCard.vue'
 import TripDetailPlanTools from '@/components/trip-detail/TripDetailPlanTools.vue'
@@ -117,6 +118,17 @@ function onImported() {
 
 // ── 行中「记一笔」对话框（今日卡片入口；工具箱内也有独立面板，同一 API） ──
 const expenseDialogVisible = ref(false)
+
+// ── 旅拍相框（frame-marketplace）：今日视图打卡完成态生成打卡卡 ──
+const frameDialogVisible = ref(false)
+const frameDayId = ref('')
+function openFrameCard() {
+  const days = trip.value?.days || []
+  const day = days.find((d) => d.day_number === live.value?.day_number)
+  if (!day?.id) return
+  frameDayId.value = day.id
+  frameDialogVisible.value = true
+}
 
 // ── 离线降级（task-offline-degrade）：在线才加载地图瓦片，离线改「按日站点列表」 ──
 const online = ref(isOnline())
@@ -1025,6 +1037,7 @@ onBeforeUnmount(() => {
           @skip="doSkipStop"
           @delay="doDelayTrip"
           @add-expense="expenseDialogVisible = true"
+          @frame-card="openFrameCard"
         />
 
         <!-- 行中「记一笔」：预算口径用于记账后的超预算提示（超了才提示，不做常驻预警） -->
@@ -1035,6 +1048,14 @@ onBeforeUnmount(() => {
           :budget-total="Number(trip.budget) || 0"
           :spent-total="Number(tripSummaries?.journey?.expense_total) || 0"
           @added="onExpenseAdded"
+        />
+
+        <!-- 旅拍相框：单日打卡卡生成器（frame-marketplace） -->
+        <FrameCardDialog
+          v-if="trip"
+          v-model="frameDialogVisible"
+          :trip-id="trip.id"
+          :day-id="frameDayId"
         />
 
         <!-- 主路径：地图 + 逐日大纲（永不进 tab）+ 侧栏仪表盘 -->

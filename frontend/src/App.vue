@@ -85,6 +85,9 @@ function goHome() {
             <button class="nav-link" :class="{ active: $route.path === '/gallery' }" @click="router.push('/gallery')">
               {{ t('app.galleryNav') }}
             </button>
+            <button class="nav-link" :class="{ active: $route.path === '/frames' }" @click="router.push('/frames')">
+              🖼️ {{ t('app.framesNav') }}
+            </button>
             <button class="btn-primary" @click="router.push('/plan')">
               <el-icon style="margin-right: 6px"><MagicStick /></el-icon>{{ t('app.planTrip') }}
             </button>
