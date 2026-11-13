@@ -588,6 +588,11 @@ async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
 
     dyn_facts = check_plan_dynamic_facts({"days": new_days})
 
+    # 重复站点查重（RepeatGate）随修订重算：同一地点重复安排提示同步刷新
+    from app.services.repeat_detector import check_plan_repeat_gate
+
+    repeat_gate = check_plan_repeat_gate({"days": new_days})
+
     # 天气校验（WeatherGate）随修订重算：雨天/酷暑提示同步刷新
     # （plan.weather 快照在修订时不重取——预报时效短，修订只是站点级调整，
     #   沿用原快照；缺失则 WeatherGate 自然沉默）
@@ -641,6 +646,11 @@ async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
             "dynamic_facts": {
                 **{k: v for k, v in dyn_facts.items() if k != "issues"},
                 "issues": dyn_facts.get("issues") or [],
+                "basis": "rule_based",
+            },
+            "repeat_gate": {
+                **{k: v for k, v in repeat_gate.items() if k != "issues"},
+                "issues": repeat_gate.get("issues") or [],
                 "basis": "rule_based",
             },
             "weather_gate": {

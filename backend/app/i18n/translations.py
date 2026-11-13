@@ -113,6 +113,15 @@ MESSAGES: dict[str, dict[str, str]] = {
         "dynfacts.suggest.free.hit": "免费开放日人流量较大，建议提前预约",
         "dynfacts.suggest.holiday": "建议出行前核对官方节假日开放安排",
         "dynfacts.suggest.holiday.hit": "节假日窗口建议提前预约并核对开放时间",
+        # ── repeatgate 重复站点查重（task-repeat-stop-detector）──
+        "repeatgate.summary.pass": "重复站点校验通过（无重复安排）",
+        "repeatgate.summary.warn": "重复站点校验发现 {n} 个提示（重复安排）",
+        "repeatgate.msg.same_day": "第 {day} 天重复安排了「{name}」与「{other}」（同一地点）",
+        "repeatgate.msg.adjacent": "「{name}」（第 {day} 天）与「{other}」（第 {day2} 天）是同一地点，相邻两天重复安排",
+        "repeatgate.msg.far": "「{name}」（第 {day} 天）与「{other}」（第 {day2} 天）是同一地点，长行程远端重复",
+        "repeatgate.suggest.same_day": "同一天重复安排「{name}」，建议保留其一（合并游览或删掉重复项）",
+        "repeatgate.suggest.adjacent": "建议把「{name}」或「{other}」调整到更合适的一天，避免相邻两天往返同一地点",
+        "repeatgate.suggest.far": "长行程中「{name}」重复出现，建议删掉一次或换成邻近替代景点",
         # ── weather_gate 天气校验（task-weather-gate-eval）────
         "weathergate.summary.pass": "天气校验通过（预报正常）",
         "weathergate.summary.warn": "天气校验发现 {n} 个提示（雨天/酷暑）",
@@ -200,6 +209,9 @@ MESSAGES: dict[str, dict[str, str]] = {
         "plan.warning.dynfacts": "[日期特例] {message}{extra}",
         "plan.warning.dynfacts.sugg": "（{suggestion}）",
         "plan.trace.dynfacts.warn": "日期特例校验发现 {n} 个提示（周一闭馆/免费日/节假日，规则库估算）",
+        "plan.warning.repeatgate": "[重复站点] {message}{extra}",
+        "plan.warning.repeatgate.sugg": "（{suggestion}）",
+        "plan.trace.repeatgate.warn": "重复站点校验发现 {n} 个提示（同一地点重复安排，规则库估算）",
         # ── SolverGate（task-floattrip-borrow Story 4：确定性求解）──
         "plan.warning.solver": "确定性校验未通过：{n} 处硬约束未解决（已尽力修复，不静默当成功）",
         "plan.trace.solver.pass": "确定性校验通过（规则排序 + 时间/距离硬约束）",
@@ -397,6 +409,15 @@ MESSAGES: dict[str, dict[str, str]] = {
         "dynfacts.suggest.free.hit": "Free days draw crowds — book ahead",
         "dynfacts.suggest.holiday": "Check official holiday hours before you go",
         "dynfacts.suggest.holiday.hit": "Book ahead and confirm hours during the holiday window",
+        # ── repeatgate ─────────────────────────────────
+        "repeatgate.summary.pass": "Repeat-stop check passed (no duplicate stops)",
+        "repeatgate.summary.warn": "Repeat-stop check found {n} notes (duplicate stops)",
+        "repeatgate.msg.same_day": "Day {day} visits \"{name}\" and \"{other}\" — the same place twice",
+        "repeatgate.msg.adjacent": "\"{name}\" (Day {day}) and \"{other}\" (Day {day2}) are the same place, scheduled on consecutive days",
+        "repeatgate.msg.far": "\"{name}\" (Day {day}) and \"{other}\" (Day {day2}) are the same place, repeated far apart on a long trip",
+        "repeatgate.suggest.same_day": "Same stop appears twice on Day {day} — keep one (merge into one visit or drop the duplicate)",
+        "repeatgate.suggest.adjacent": "Move \"{name}\" or \"{other}\" to a better day to avoid visiting the same place on consecutive days",
+        "repeatgate.suggest.far": "\"{name}\" repeats on this long trip — drop one occurrence or swap in a nearby alternative",
         # ── weather_gate ─────────────────────────────────
         "weathergate.summary.pass": "Weather check passed (forecast normal)",
         "weathergate.summary.warn": "Weather check found {n} notes (rain / heat)",
@@ -484,6 +505,9 @@ MESSAGES: dict[str, dict[str, str]] = {
         "plan.warning.dynfacts": "[Date exception] {message}{extra}",
         "plan.warning.dynfacts.sugg": " ({suggestion})",
         "plan.trace.dynfacts.warn": "Date-exception check found {n} notes (Monday closures / free days / holidays, rule-based estimate)",
+        "plan.warning.repeatgate": "[Repeat stop] {message}{extra}",
+        "plan.warning.repeatgate.sugg": " ({suggestion})",
+        "plan.trace.repeatgate.warn": "Repeat-stop check found {n} notes (same place scheduled twice, rule-based estimate)",
         # ── SolverGate (task-floattrip-borrow Story 4: deterministic solve) ──
         "plan.warning.solver": "[Deterministic check] {n} hard constraint(s) unresolved (best-effort repair done, never silently passed)",
         "plan.trace.solver.pass": "Deterministic check passed (rule sort + time/distance hard constraints)",
