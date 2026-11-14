@@ -131,10 +131,19 @@ body {
   color: var(--danger);
 }
 
-/* 滚动条润色 */
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #ddd; border-radius: 5px; border: 2px solid var(--canvas); }
-::-webkit-scrollbar-track { background: transparent; }
+/* 滚动条润色：标准属性（scrollbar-color/scrollbar-width，Baseline 2024-12）为主，
+   旧 WebKit 伪元素降级包在 @supports not 里（Chrome<121 / Safari<18.2） */
+:root {
+  --scrollbar-thumb: #ddd;
+  --scrollbar-track: transparent;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 5px; border: 2px solid var(--canvas); }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
 
 /* ── 全局按钮体系（唯一来源：App/TripList/Landing/PlanWizard 各自的历史重复定义已收敛于此） ── */
 .btn-primary {
