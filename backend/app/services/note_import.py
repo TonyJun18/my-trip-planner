@@ -183,7 +183,8 @@ def _extract_duration(line: str) -> int | None:
 def _looks_like_poi_line(clean: str) -> bool:
     """判断清洗后的行是否像「站点条目」：
     - 太短（<2 字）或太长（>80 字且无攻略标记）都不是站名；
-    - 命中攻略语境标记 或 长度在 2-40 字且以常见地名结尾词收尾。
+    - 命中攻略语境标记 或 长度在 2-40 字且以常见地名结尾词收尾；
+    - 英文行：命中英文收尾词 或 逗号分隔的大写专名行（task-import-recall-en）。
     """
     if len(clean) < 2:
         return False
@@ -191,8 +192,48 @@ def _looks_like_poi_line(clean: str) -> bool:
         return True
     if len(clean) > 40:
         return False
+    # 英文行识别（英文文本通常无中文字符；先看是否含拉丁字母）
+    if re.search(r"[A-Za-z]", clean):
+        # 名称段 = 逗号前的部分（英文攻略行 "Sensoji Temple, must-see, 1 hour"
+        # 的名称是 "Sensoji Temple"）；收尾词锚定名称段行尾，负例
+        # "The market was great" 行尾是 great 不命中。
+        name_part = clean.split(",", 1)[0].strip()
+        if _EN_POI_END_RE.search(name_part):
+            return True
+        # 逗号分隔的大写专名行（Akihabara, anime shopping）
+        if _EN_TITLE_COMMA_RE.match(clean) and not _EN_STOP_WORDS_RE.match(clean):
+            return True
+        return False
     # 裸站名启发：以地名常用收尾词结尾（山/湖/寺/塔/街/馆/园/店/庄/村…）
     return bool(re.search(r"(山|湖|寺|塔|街|馆|园|店|庄|村|岛|湾|洞|谷|峰|桥|楼|城|滩|港|草原|古镇)$", clean))
+
+
+# ── 英文地名收尾词（task-import-recall-en，2026-11-14）──────────────
+# 英文攻略行级识别：与中文收尾词互补，命中即视为「站点条目」。
+# 匹配范围是「逗号前的名称部分」以收尾词结尾——英文攻略行格式为
+# "Sensoji Temple, must-see" / "Tokyo Tower, 900 yen"；负例
+# "The market was great" / "a park bench" 的名称部分不以收尾词结尾，
+# 不会误判。
+_EN_POI_END_RE = re.compile(
+    r"\b(Temple|Shrine|Park|Garden|Gardens|Market|Tower|Skytree|Crossing|Street|Museum|"
+    r"Castle|Beach|Bridge|Square|Gallery|Zoo|Aquarium|Cathedral|Palace|District|"
+    r"Forest|Island|Bay|Harbor|Harbour|Station|Centre|Center|Falls|Hill|Hills|"
+    r"Valley|Cafe|Restaurant|Hotel|Inn|Lane|Alley|Gate|Gates|Church|Chapel|Fort|"
+    r"Stadium|Theatre|Theater|Library|University|College|School|Tunnel|Pier|"
+    r"Docks|Quay|Botanical|Mountain|Peak|Lake|River|Coast|Seafront)$",
+    re.IGNORECASE,
+)
+# 英文专名行启发：逗号分隔的「大写专名, 描述」行——Akihabara, anime shopping
+# / Ginza, luxury shopping 这类无收尾词专名也识别为站点。描述可小写开头或
+# 数字开头（"2 hours"），但不能是句子主语（First/We/The…由 _EN_STOP_WORDS_RE 挡）。
+_EN_TITLE_COMMA_RE = re.compile(
+    r"^[A-Z][A-Za-z0-9'’\-\u00c0-\u024f]*(?:\s+[A-Z][A-Za-z0-9'’\-\u00c0-\u024f]*){0,3}"
+    r",\s+[a-z0-9]",
+)
+# 英文站名禁用特征：落在词表内但不以收尾词结尾的散文行。
+_EN_STOP_WORDS_RE = re.compile(
+    r"^(The|A|An|We|I|You|They|He|She|It|This|That|There|Here|After|Before|First|Then|Next)\b"
+)
 
 
 def parse_note(text: str) -> NoteImportResult:
