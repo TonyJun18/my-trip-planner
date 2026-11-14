@@ -1369,4 +1369,10 @@ export default {
     emptyDesc: '在 TikTok / Instagram / 浏览器等 App 中点「分享」并选择「随行」，分享的链接或文本会自动出现在这里；也可以手动粘贴。',
     manualOpen: '手动粘贴内容',
   },
+  mapNav: {
+    buttonHint: '打开当日导航',
+    amap: '高德地图',
+    tooMany: '站点超过 9 个，已降级为逐站链接（复制）',
+    copied: '已复制 {n} 个逐站导航链接',
+  },
 }

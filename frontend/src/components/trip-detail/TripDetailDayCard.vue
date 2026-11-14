@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MapLocation, MoreFilled, ArrowDown, EditPen, Delete, Wallet, Clock, Sort } from '@element-plus/icons-vue'
 import { useTripTypes } from '@/composables/useTripTypes'
+import DayNavButton from '@/components/trip-detail/DayNavButton.vue'
 
 // 逐日行程卡：Day 头（折叠开关 + 摘要 + 地图聚焦）+ 站点时间轴 + 站点操作
 //
@@ -155,6 +156,7 @@ function bookingBadgeText(b) {
       </button>
 
       <div class="day-actions">
+        <DayNavButton :stops="day.stops || []" />
         <el-tooltip :content="$t('tripDetail.mapFocusHint')" placement="top" :show-after="400">
           <el-button
             size="small"

@@ -1371,4 +1371,10 @@ export default {
     emptyDesc: 'Tap "Share" in TikTok / Instagram / your browser and pick Suixing — the shared link or text appears here automatically. You can also paste manually.',
     manualOpen: 'Paste content manually',
   },
+  mapNav: {
+    buttonHint: 'Open day navigation',
+    amap: 'Amap (CN)',
+    tooMany: 'More than 9 stops — degraded to per-stop links (copy)',
+    copied: 'Copied {n} per-stop navigation links',
+  },
 }
