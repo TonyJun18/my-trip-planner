@@ -15,7 +15,7 @@
 >   校验失败把错误摘要喂回 LLM 最多自纠正 3 次——LLM 输出不可信，schema 才可信
 > - **系统级容错**：LLM 调用统一指数退避重试 + 进程内熔断器（滑动窗口），保护下游 LLM 不被打爆
 > - **真实数据，不造假**：高德 POI/天气（未配置自动降级 Tavily + wttr.in），没有硬编码假数据
-> - **可测试性当一等公民**：FakeLLM 测试替身让 **453 个测试**不耗 token、不依赖网络
+> - **可测试性当一等公民**：FakeLLM 测试替身让 **1117 个测试**不耗 token、不依赖网络
 > - **全链路可观测**：异步规划任务 + 前端实时 T-A-O（Thought-Action-Observation）轨迹
 
 ## 界面速览
@@ -42,7 +42,7 @@
 ![它能帮你做什么](img/img_2.png)
 
 > 还有更多：一句话改行程（`AI 出 diff`）、自驾校验、打包清单、协作投票、行程事件流、小红书笔记生成。
-> 前端为桌面 Web 设计，支持中/英双语（vue-i18n 643+ 键）。
+> 前端为桌面 Web 设计，支持中/英双语（vue-i18n 1239+ 键）。
 
 ## 核心功能
 
@@ -200,6 +200,12 @@ owner 一键把已分享行程发布到精选（目的地/天数/预算/一句�
 
 按行程隔离的本地打包清单（5 套预设模板 + 自定义 + 勾选进度 + 清除已完成，纯前端零凭证）。
 
+### 🖼️ 旅拍相框市场（每日打卡卡 + 模板包）
+
+行中打卡后把当天 checked 站点投影成一张 3:4 旅拍卡：照片（**仅浏览器内存处理，绝不上传**）+ 站点坐标手绘轨迹（不嵌地图瓦片，规避 CORS 无法导出的问题）+ 当日主题/趣事 + AI 配文（LLM 主路径 → 模板兜底，`source` 诚实标注）；行程结束后可生成整程总结图（空日自动跳过）。
+模板分免费 2 套 + 付费 2 包（各 3 套），付费包用**兑换码买断**：码只存 SHA-256 哈希、权益 `(user_id, pack_slug)` 唯一约束幂等（重放 200 / 他人已用 409 / 不存在 404 / 吊销 410），未解锁模板预览带水印且禁止导出。
+发布动作始终由用户手动完成——接口没有任何自动发布副作用（`frames.py` / `trips_frames.py` / `frontend/src/frames/`）。
+
 ### 🤝 中立立场：规划不卖货
 
 2026 年，OTA 与巨头要么把独立规划工具收编（Expedia×Layla），要么自建 AI planner 把「规划入口」变成「自家货架入口」（Airbnb / Mindtrip / Booking / Trip.com / Hilton）。我们把预订做成**有意边界**，而不是待补的短板：
@@ -251,7 +257,7 @@ my-trip-planner/
 │   │   │   └── providers.py  #   LLM 提供商（deepseek/openai/ollama + 重试/熔断/兜底）
 │   │   └── api/v1/           # 路由（health/auth/trips/planner/profile/chat/share/ws/import/export/...）
 │   ├── alembic/              # 数据库迁移
-│   ├── tests/                # pytest 测试（453 个：FakeLLM 替身，覆盖协作/自驾/画像/编辑/恢复/时间校验/事件流/多城市/画廊等）
+│   ├── tests/                # pytest 测试（1117 个：FakeLLM 替身，覆盖协作/自驾/画像/编辑/恢复/时间校验/事件流/多城市/画廊等）
 │   ├── pyproject.toml        # uv 工程配置
 │   ├── .env / .env.example   # 环境变量
 │   └── uv.lock
@@ -417,6 +423,13 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 | POST | `/api/v1/trips/edit/{token}/live/stops/{stop_id}/check` | 打卡/取消打卡（受邀者，免登录） |
 | POST | `/api/v1/trips/edit/{token}/live/stops/{stop_id}/skip` | 跳过今日站点（受邀者，免登录） |
 | POST | `/api/v1/trips/edit/{token}/live/delay` | 迟到一键顺延（受邀者，免登录） |
+| GET | `/api/v1/frames/catalog` | 相框模板目录（免登录；付费模板带 `locked` 标注） |
+| GET | `/api/v1/frames/entitlements` | 我的已解锁模板包（需登录） |
+| POST | `/api/v1/frames/redeem` | 兑换码换权益（幂等；404/409/410 语义明确） |
+| GET | `/api/v1/trips/{trip_id}/frames/{day_id}/data` | 单日打卡卡数据投影（owner，仅 checked 站点；空日 `empty=true`） |
+| GET | `/api/v1/trips/{trip_id}/frames/summary/data` | 整程总结图数据投影（owner，空日跳过） |
+| POST | `/api/v1/trips/{trip_id}/frames/{day_id}/copy` | 单日卡 AI 配文（owner；LLM→模板降级，无发布副作用） |
+| POST | `/api/v1/trips/{trip_id}/frames/summary/copy` | 整程总结图 AI 配文（owner） |
 | WS | `/ws/planner/tasks/{task_id}` | 规划任务 T-A-O 实时轨迹 |
 | WS | `/ws/trips/{trip_id}/collab` | 行程协作实时同步（评论/投票/编辑） |
 

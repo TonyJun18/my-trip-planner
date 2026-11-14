@@ -258,6 +258,17 @@ export default {
     typeAttraction: 'Attraction',
     typeFood: 'Food',
     typeHotel: 'Hotel',
+    // BYO-AI draft round-trip (task-byo-ai-import-kit): 3-step guide + copyable prompt
+    tabByo: 'AI Draft',
+    byoStep1: 'Ask any AI (Claude / ChatGPT / Grok…) for a stop list in a fixed format',
+    byoStep2: 'Copy the prompt template below (it includes the format requirements) and send it to the AI',
+    byoStep3: 'Paste the AI answer below — it becomes candidates (nothing is merged until you check them)',
+    byoCopy: 'Copy prompt template',
+    byoCopied: 'Copied ✓',
+    byoCopyFail: 'Copy failed — please select and copy manually',
+    byoPlaceholder: 'Paste the AI-generated draft, e.g.\nWest Lake | attraction | 3h | Lakeside cycling\nLouwailou Restaurant | food | 1.5h | West Lake vinegar fish',
+    byoHint: 'Accepts "Name | Type | Duration | Note" or numbered / dashed lists; free-form prose automatically falls back to the "Note" parser. AI output is candidate-only and is never written to your trip directly.',
+    byoFallback: "This doesn't look like a structured stop list — switched to the \"Note\" parser automatically.",
   },
   planWizard: {
     pageTitle: 'Start your next journey',
@@ -1323,6 +1334,15 @@ export default {
       loadFailed: 'Failed to load card data',
     },
     channel: { xhs: 'RED (Xiaohongshu)', moments: 'Moments' },
+    summary: {
+      title: 'Create Trip Album Card',
+      entryTitle: 'Trip Album Card',
+      entrySub: 'Turn all your check-ins into one summary card — photos stay on your device.',
+      entryAction: 'Create album card',
+      emptyHint: 'No check-ins on this trip yet. Check in during the trip first.',
+      pickTemplate: 'Pick a template',
+      pickPhotos: 'Pick cover & photos',
+    },
   },
   // ── Trip story poster card ────────────────────────────
   poster: {
@@ -1361,5 +1381,11 @@ export default {
     emptyTitle: 'This page receives shares from other apps',
     emptyDesc: 'Tap "Share" in TikTok / Instagram / your browser and pick Suixing — the shared link or text appears here automatically. You can also paste manually.',
     manualOpen: 'Paste content manually',
+  },
+  mapNav: {
+    buttonHint: 'Open day navigation',
+    amap: 'Amap (CN)',
+    tooMany: 'More than 9 stops — degraded to per-stop links (copy)',
+    copied: 'Copied {n} per-stop navigation links',
   },
 }

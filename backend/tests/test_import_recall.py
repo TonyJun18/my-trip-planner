@@ -49,19 +49,31 @@ class TestNoteRecall:
         assert by_name["灵隐寺"].estimated_duration_minutes == 120
         assert by_name["千岛湖"].estimated_duration_minutes == 480
 
-    def test_note_en_recall_upper_bound(self):
-        """英文攻略 10 地点：召回 ≤ 0.3（已知差距：规则引擎仅中文地名收尾词）。
+    def test_note_en_recall_above_threshold(self):
+        """英文攻略 10 地点：召回 ≥ 0.8（task-import-recall-en 落地后下限）。
 
-        2026-11-10 实测 0/10——诚实记录，不作为「通过」指标；上限断言防
-        未来规则退化导致候选爆炸、误命中英文地名造成虚假召回。
-        英文地点规则落地后，把本断言升级为下限阈值。
+        2026-11-14 实现：英文地名收尾词表（Temple/Shrine/Park/Market/…）
+        + 逗号分隔大写专名行启发 → 基线 1.00。中文规则保持零改动。
         """
         r = parse_note(NOTE_EN)
         recall, hits, missed = recall_at(r.candidates, NOTE_EN_GROUND_TRUTH)
-        assert recall <= 0.3, (
-            f"英文攻略召回异常升高 {recall:.2f}（命中 {hits}）——"
-            "当前英文地名规则未实现，高召回意味着候选爆炸，请核查"
-        )
+        assert recall >= 0.8, f"英文攻略召回 {recall:.2f}，漏检：{missed}"
+
+    def test_note_en_negative_lines_no_candidates(self):
+        """英文负例：散文句子（无收尾词/句子主语开头）不产生候选。
+
+        防「为拉召回引入噪音」——market/park/temple 是常见英文词，
+        负例集保证收尾词启发不把散文句当站名。
+        """
+        for neg in (
+            "The market was great",
+            "a park bench",
+            "we took the train",
+            "After the temple we had lunch",
+            "First, we went to the tower",
+        ):
+            r = parse_note(neg)
+            assert not r.candidates, f"负例应无候选：[{neg}] -> {[c.name for c in r.candidates]}"
 
 
 class TestSocialRecall:
@@ -76,6 +88,28 @@ class TestSocialRecall:
         r = parse_social(SOCIAL_ZH)
         assert not any("xiaohongshu" in c.name for c in r.candidates)
         assert r.source_platform == "xiaohongshu"
+
+    def test_social_en_place_names(self):
+        """英文社交地址：收尾词命中，且剥掉口语动词前缀（task-import-recall-en）。"""
+        for frag, expected in (
+            ("Loved Sensoji Temple!", "Sensoji Temple"),
+            ("Shibuya Crossing was busy", "Shibuya Crossing"),
+            ("Tokyo Tower at night", "Tokyo Tower"),
+            ("Visited Tokyo Skytree", "Tokyo Skytree"),
+        ):
+            r = parse_social(frag)
+            names = [c.name for c in r.candidates]
+            assert expected in names, f"[{frag}] 应含 {expected}，实际 {names}"
+
+    def test_social_en_sentences_not_places(self):
+        """英文社交散文句不判为地点（收尾词误报挡板）。"""
+        for neg in (
+            "we took the train to the park",
+            "the market was great",
+            "After the temple we had lunch",
+        ):
+            r = parse_social(neg)
+            assert not r.candidates, f"英文散文句应无候选：[{neg}] -> {[c.name for c in r.candidates]}"
 
 
 class TestEmailRecall:

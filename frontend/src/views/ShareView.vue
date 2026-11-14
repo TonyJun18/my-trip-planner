@@ -9,6 +9,7 @@ import { readCachedJson, isOnline } from '@/utils/pwa'
 import { getGateToken, setGateToken, clearGateToken } from '@/utils/shareGate'
 import TripMap from '@/components/TripMap.vue'
 import JourneyTimeline from '@/components/JourneyTimeline.vue'
+import DayNavButton from '@/components/trip-detail/DayNavButton.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -820,6 +821,7 @@ function watchCollabFeed() {
               <div class="day-note">{{ day.note || $t('common.freeExplore') }}</div>
             </div>
           </div>
+          <DayNavButton :stops="day.stops || []" />
         </div>
 
         <!-- 站点时间轴 -->

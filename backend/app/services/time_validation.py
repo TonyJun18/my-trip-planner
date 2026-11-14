@@ -113,6 +113,11 @@ _OPEN_HOURS_RE = re.compile(r"(\d{1,2}):(\d{2})\s*[-~至]\s*(\d{1,2}):(\d{2})")
 
 # 闭馆缓冲（分钟）：到达时刻距闭馆不足此时长 → 告警「赶不上体验」
 CLOSING_BUFFER_MINUTES = 30
+# 早到缓冲（分钟）：到达时刻距开门早于此时长 → 告警「还没开门」
+# （task-early-arrival-check，2026-11-14：43% 缺陷研究模式 1「早到」381/672，
+#  为闭馆类缺陷最大单一未覆盖子模式；30min 阈值与闭馆缓冲同量级，有告警噪音
+#  风险登记：真实行程误报率 >30% 则回退阈值到 45min 并记评估）
+EARLY_ARRIVAL_BUFFER_MINUTES = 30
 # 单日过饱和阈值（与 Plan B Relaxed 同直觉，独立可调）
 MAX_STOPS_PER_DAY = 5
 MAX_PLAY_MINUTES_PER_DAY = 480  # 8 小时（景点本身游玩，不含交通）
@@ -415,7 +420,23 @@ def check_plan_time_gate(plan: dict[str, Any], locale: str = "zh-CN") -> dict[st
             arrival = _minutes(visit_start) if visit_start is not None else cursor
 
             if hours is not None:
-                close = _minutes(hours[1])
+                open_m, close = _minutes(hours[0]), _minutes(hours[1])
+                # ── 早到校验（task-early-arrival-check）：到达时刻早于开门 - 缓冲 → warning ──
+                if arrival < open_m - EARLY_ARRIVAL_BUFFER_MINUTES:
+                    issues.append({
+                        "severity": "warning",
+                        "category": "schedule",
+                        "message": (
+                            t(locale, "timegate.msg.arrive_early",
+                              name=stop.get("name") or t(locale, "timegate.stop.fallback"),
+                              arrive=f"{arrival // 60:02d}:{arrival % 60:02d}",
+                              open=f"{hours[0][0]:02d}:{hours[0][1]:02d}",
+                              early=open_m - arrival)
+                        ),
+                        "suggestion": t(locale, "timegate.suggest.arrive_early"),
+                        "day_number": day_no,
+                    })
+                # ── 闭馆校验：到达时刻 ≥ 闭馆 - 缓冲 → 告警「赶不上体验」──
                 if arrival >= close - CLOSING_BUFFER_MINUTES:
                     extra = (
                         t(locale, "timegate.msg.arrive_close.play", min=duration)

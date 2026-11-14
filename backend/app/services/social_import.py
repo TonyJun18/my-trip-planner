@@ -79,7 +79,27 @@ _POI_END_RE = re.compile(
     r"草原|古镇|美术馆|博物馆|公园|广场|景区|遗址|瀑布|海|沙滩|步道|"
     r"餐厅|饭店|小吃|咖啡|奶茶|菜馆|面馆|民宿|酒店|客栈|度假村|书局|书店|"
     r"夜市|市场|胡同|里弄|码头|车站|机场|动物园|植物园|大学|学院|"
-    r"中心|大厦|商场|小区|公寓|酒店式公寓|银泰)"
+    r"中心|大厦|商场|小区|公寓|酒店式公寓|银泰)|"
+    r"\b(Temple|Shrine|Park|Garden|Gardens|Market|Tower|Skytree|Crossing|Street|Museum|"
+    r"Castle|Beach|Bridge|Square|Gallery|Zoo|Aquarium|Cathedral|Palace|District|"
+    r"Forest|Island|Bay|Harbor|Harbour|Station|Centre|Center|Falls|Hill|Hills|"
+    r"Valley|Cafe|Restaurant|Hotel|Inn|Lane|Alley|Gate|Gates|Church|Chapel|Fort|"
+    r"Stadium|Theatre|Theater|Library|University|College|School|Tunnel|Pier|"
+    r"Docks|Quay|Botanical|Mountain|Peak|Lake|River|Coast|Seafront)\b"
+)
+# 英文句子词挡板（task-import-recall-en）：社交碎片对英文保守，避免
+# "we took the train to the park" 这类散文句子因收尾词误报地点。
+_EN_SENTENCE_START_RE = re.compile(
+    r"^(The|A|An|We|I|You|They|He|She|It|This|That|There|Here|After|Before|"
+    r"First|Then|Next|And|But|we|the|a|an|and|to|of|for|from|at|in|on)\b",
+    re.IGNORECASE,
+)
+# 英文口语动词前缀（task-import-recall-en）："Loved Sensoji Temple!" /
+# "Visited Tokyo Tower" 的名应只有地点本身——剥掉口语动词。
+_EN_VERB_PREFIX_RE = re.compile(
+    r"^(Loved|Love|Visited|Visit|Saw|See|Seen|Tried|Try|Checked|Check out|"
+    r"Went to|Been to|Explored|Explore|Enjoyed|Enjoy|Hit|Hitted|Stopped by)\s+",
+    re.IGNORECASE,
 )
 # 价格语剥离（与 note_import 同构）：必须带前缀词（人均/门票/…）或 ¥ 符号，
 # 避免裸数字被误剥。
@@ -105,6 +125,8 @@ def _clean_name(piece: str) -> str:
     name = re.sub(r"^的+", "", name)
     name = re.sub(r"^(这家|那家|一个|这家店)", "", name)
     name = re.sub(r"^[\u4e00-\u9fff]{1,6}?(?:边的|附近的|旁边的)", "", name)
+    # 英文口语动词前缀（Loved Sensoji Temple! → Sensoji Temple）
+    name = _EN_VERB_PREFIX_RE.sub("", name)
     # 截到最后一个地名收尾词：去掉「灵隐寺 一定要去」这类尾部口水
     ends = list(_POI_END_RE.finditer(name))
     if ends:
@@ -139,10 +161,14 @@ def _split_caption(text: str) -> list[str]:
 def _looks_like_place(fragment: str) -> bool:
     """判定一个文本碎片是否像「地点候选」：
     - 清洗后太短（<2 字）不算；太长（>40 字）不算；
-    - 以地名收尾词结尾（收尾词表命中即算）。
+    - 以地名收尾词结尾（收尾词表命中即算）；
+    - 英文句子词挡板：以从句/动词/介词开头的英文散文不判为地点
+      （task-import-recall-en 保守策略——社交英文碎片噪声高）。
     """
     frag = _clean_name(fragment)
     if len(frag) < 2 or len(frag) > MAX_NAME_LENGTH:
+        return False
+    if re.search(r"[A-Za-z]", frag) and _EN_SENTENCE_START_RE.match(frag):
         return False
     return bool(_POI_END_RE.search(frag))
 

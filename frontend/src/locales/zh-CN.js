@@ -258,6 +258,17 @@ export default {
     typeAttraction: '景点',
     typeFood: '美食',
     typeHotel: '住宿',
+    // BYO-AI 草稿回填（task-byo-ai-import-kit）：三步引导 + 可复制 prompt
+    tabByo: 'AI 草稿',
+    byoStep1: '在任意 AI（Claude / ChatGPT / Grok…）里让它按固定格式生成行程草稿',
+    byoStep2: '复制下面的提问模板（含格式要求）发给 AI',
+    byoStep3: '把 AI 的回答粘贴到下方，解析成候选（人工勾选后才会并入）',
+    byoCopy: '复制提问模板',
+    byoCopied: '已复制 ✓',
+    byoCopyFail: '复制失败，请手动选择复制',
+    byoPlaceholder: '粘贴 AI 生成的行程草稿，例如：\n西湖｜景点｜3h｜环湖骑行\n楼外楼｜美食｜1.5h｜西湖醋鱼',
+    byoHint: '支持「名称｜类型｜时长｜备注」或编号 / 短横线列表；散文（无结构）将自动改用「笔记」解析。AI 输出只作候选展示，绝不直接落库。',
+    byoFallback: '这段内容不像结构化的地点清单，已自动切换到「笔记」解析。',
   },
   planWizard: {
     pageTitle: '开启你的下一段旅程',
@@ -1321,6 +1332,15 @@ export default {
       loadFailed: '卡片数据加载失败',
     },
     channel: { xhs: '小红书', moments: '朋友圈' },
+    summary: {
+      title: '生成旅程相册图',
+      entryTitle: '旅程相册图',
+      entrySub: '把这趟行程的打卡点连成一张总结图——照片只在本地处理。',
+      entryAction: '生成相册图',
+      emptyHint: '这趟行程还没有打卡记录，先去行中打卡再回来生成吧。',
+      pickTemplate: '选模板',
+      pickPhotos: '选封面与照片',
+    },
   },
   // ── 旅程故事·长图海报卡 ──────────────────────────────
   poster: {
@@ -1359,5 +1379,11 @@ export default {
     emptyTitle: '这里接收来自其他 App 的分享',
     emptyDesc: '在 TikTok / Instagram / 浏览器等 App 中点「分享」并选择「随行」，分享的链接或文本会自动出现在这里；也可以手动粘贴。',
     manualOpen: '手动粘贴内容',
+  },
+  mapNav: {
+    buttonHint: '打开当日导航',
+    amap: '高德地图',
+    tooMany: '站点超过 9 个，已降级为逐站链接（复制）',
+    copied: '已复制 {n} 个逐站导航链接',
   },
 }
