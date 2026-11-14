@@ -48,6 +48,13 @@
 | 用户动作 | `task-share-target-android-e2e` | 有 Android 设备 | Android Chrome 安装 PWA 后实测 TikTok → 随行；非夜间任务 |
 | 观察 | `task-gallery-cold-start-2` | 真实发布 ≥20 条 | 内容量前置；届时再启 gallery-community-v3 |
 | **P0（to-C）** | **`task-launch-deploy`** | **2026-11-14 决裁：to-C 上线验证主线** | **香港轻量上线 + 空库 + 最小埋点 5 事件 + 14 天判定线（20/5/2）；详见 `docs/plans/2026-11-15-core-value-launch.md`；W1 启动时晋升 §1** |
+| P2 | `task-open-slot-eval` | 2026-11-15 竞品（Butter Agent open slots） | 开放时段占位（如「2-4pm 随意」）结构化表示；完整评估/证据见 docs/nightly/competitive-analysis/2026-11-15.md §3.1 |
+| P2 | `task-multicity-optimizer-eval` | 2026-11-15 竞品（Fortrip Transport Optimizer） | 城市级重排/交通组合优化动作；task-multi-city-segments 已有排程底座，缺城市级优化入口；证据见 competitive-analysis/2026-11-15.md §3.2 |
+| P2 | `task-price-watch-mini-eval` | 2026-11-15 竞品（Stardrift Pro 盯价 / Mindtrip PTA） | 零凭证中间档：对用户已录入预订金额做台账+变更提醒，不接外部实时价；维持 task-price-alert-eval 既有降级结论不动摇；证据见 §3.3 |
+| P2 | `task-paste-any-plan-eval` | 2026-11-15 竞品（Butter paste-a-plan） | 粘贴整段已有行程计划 → 天/时间/地点骨架识别 → 勾选并入；与 email-import 零凭证粘贴版同构；证据见 §3.4 |
+| P2 | `content-planning-after-generation` | 2026-11-15 竞品（三家新入局者全部主打规划后链路） | 文章 16《生成之后》：分水岭移到规划后链路；接 15 文《收购季》；证据见 §3.5 |
+
+> 2026-11-15 竞品分析（nightly/competitive-analysis/2026-11-15.md）新增 5 项候选（open-slot / multicity-optimizer / price-watch-mini / paste-any-plan / content-16）+ 备注不排期项（credits 经济、确认单图片 OCR、一键结清）。全部先入候选池，由用户/队列腾位后晋升 §1。
 
 > 2026-11-14 晚：`task-home-feed-live` / `task-gallery-like-mini` / `task-destination-page-eval`（后两项评估后经 grill-with-docs 决裁）已实现并入 feature/content-discovery-layer，见 §3。
 >
