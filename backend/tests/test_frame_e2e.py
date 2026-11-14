@@ -29,7 +29,8 @@ async def _seed_catalog(db):
             text(
                 "INSERT INTO frame_templates "
                 "(id, slug, name, tier, theme, layout_config, price_cents, active) "
-                "VALUES (:id, :slug, :name, :tier, :theme, CAST(:config AS JSONB), :price, true)"
+                "VALUES (:id, :slug, :name, :tier, :theme, CAST(:config AS JSONB), :price, true) "
+                "ON CONFLICT (slug) DO NOTHING"
             ),
             {"id": str(uuid.uuid4()), "slug": slug, "name": name, "tier": tier,
              "theme": theme, "config": config, "price": price},
@@ -41,7 +42,8 @@ async def _seed_catalog(db):
         await db.execute(
             text(
                 "INSERT INTO frame_packs (id, slug, name, template_slugs, price_cents, active) "
-                "VALUES (:id, :slug, :name, CAST(:slugs AS JSONB), 690, true)"
+                "VALUES (:id, :slug, :name, CAST(:slugs AS JSONB), 690, true) "
+                "ON CONFLICT (slug) DO NOTHING"
             ),
             {"id": str(uuid.uuid4()), "slug": slug, "name": slug, "slugs": pack_slugs},
         )
