@@ -258,6 +258,17 @@ export default {
     typeAttraction: '景点',
     typeFood: '美食',
     typeHotel: '住宿',
+    // BYO-AI 草稿回填（task-byo-ai-import-kit）：三步引导 + 可复制 prompt
+    tabByo: 'AI 草稿',
+    byoStep1: '在任意 AI（Claude / ChatGPT / Grok…）里让它按固定格式生成行程草稿',
+    byoStep2: '复制下面的提问模板（含格式要求）发给 AI',
+    byoStep3: '把 AI 的回答粘贴到下方，解析成候选（人工勾选后才会并入）',
+    byoCopy: '复制提问模板',
+    byoCopied: '已复制 ✓',
+    byoCopyFail: '复制失败，请手动选择复制',
+    byoPlaceholder: '粘贴 AI 生成的行程草稿，例如：\n西湖｜景点｜3h｜环湖骑行\n楼外楼｜美食｜1.5h｜西湖醋鱼',
+    byoHint: '支持「名称｜类型｜时长｜备注」或编号 / 短横线列表；散文（无结构）将自动改用「笔记」解析。AI 输出只作候选展示，绝不直接落库。',
+    byoFallback: '这段内容不像结构化的地点清单，已自动切换到「笔记」解析。',
   },
   planWizard: {
     pageTitle: '开启你的下一段旅程',

@@ -7,6 +7,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import * as api from '@/api'
+import { buildByoPrompt, parseByoDraft } from '@/utils/byoPrompt'
 
 const visible = defineModel({ type: Boolean, default: false })
 const props = defineProps({
@@ -18,11 +19,15 @@ const props = defineProps({
   prefill: { type: Object, default: null },
 })
 const emit = defineEmits(['imported'])
-const { t } = useI18n()
+const { t, locale: i18nLocale } = useI18n()
 
 const tab = ref('note')
 const textInput = ref('')
 const linkInput = ref('')
+// BYO-AI 草稿（task-byo-ai-import-kit）：用户在自己 AI 生成草稿 → 粘贴解析为候选
+const byoInput = ref('')
+const byoPromptCopied = ref(false)
+const byoPrompt = computed(() => buildByoPrompt(i18nLocale.value))
 // 批量截图导入（task-photo-batch-screenshot）：多选 → 串行 OCR → 合并去重
 const MAX_SCREENSHOTS = 12
 const screenshotFiles = ref([]) // [{ uid, raw, name }]
@@ -47,6 +52,7 @@ const dialogWidth = 'min(680px, 94vw)'
 const canParse = computed(() => {
   if (tab.value === 'screenshot') return screenshotFiles.value.length > 0
   if (tab.value === 'link') return linkInput.value.trim().length >= 6
+  if (tab.value === 'byo') return byoInput.value.trim().length > 0
   return textInput.value.trim().length > 0
 })
 const parseButtonText = computed(() =>
@@ -105,6 +111,8 @@ watch(visible, (v) => {
 function reset() {
   textInput.value = ''
   linkInput.value = ''
+  byoInput.value = ''
+  byoPromptCopied.value = false
   screenshotFiles.value = []
   parseProgress.value = { done: 0, total: 0 }
   candidates.value = []
@@ -221,6 +229,17 @@ async function parse() {
       res = await api.importEmail({ text: textInput.value })
     } else if (tab.value === 'social') {
       res = await api.importSocial({ text: textInput.value })
+    } else if (tab.value === 'byo') {
+      // BYO-AI 草稿：纯前端解析（零后端），散文降级走 note import 提示
+      const parsed = parseByoDraft(byoInput.value)
+      if (!parsed.length) {
+        ElMessage.warning(t('importDialog.byoFallback'))
+        tab.value = 'note'
+        textInput.value = byoInput.value
+        return
+      }
+      applyResult({ candidates: parsed, bookings: [], flagged_lines: [] })
+      return
     } else {
       res = await api.importNote({ text: textInput.value })
     }
@@ -229,6 +248,17 @@ async function parse() {
     /* api 拦截器已统一提示 */
   } finally {
     parsing.value = false
+  }
+}
+
+// BYO-AI：复制 prompt（带版本号）到剪贴板
+async function copyByoPrompt() {
+  try {
+    await navigator.clipboard.writeText(byoPrompt.value)
+    byoPromptCopied.value = true
+    setTimeout(() => (byoPromptCopied.value = false), 2000)
+  } catch {
+    ElMessage.warning(t('importDialog.byoCopyFail'))
   }
 }
 
@@ -357,8 +387,31 @@ async function commit() {
       <el-tab-pane :label="t('importDialog.tabLink')" name="link" />
       <el-tab-pane :label="t('importDialog.tabEmail')" name="email" />
       <el-tab-pane :label="t('importDialog.tabSocial')" name="social" />
+      <el-tab-pane :label="t('importDialog.tabByo')" name="byo" />
     </el-tabs>
 
+    <!-- BYO-AI 草稿（task-byo-ai-import-kit）：三步引导 + 可复制 prompt + 粘贴框 -->
+    <div v-if="tab === 'byo'" class="input-area">
+      <ol class="byo-steps">
+        <li>{{ t('importDialog.byoStep1') }}</li>
+        <li>
+          {{ t('importDialog.byoStep2') }}
+          <el-button size="small" plain class="byo-copy" :class="{ copied: byoPromptCopied }" @click="copyByoPrompt">
+            {{ byoPromptCopied ? t('importDialog.byoCopied') : t('importDialog.byoCopy') }}
+          </el-button>
+        </li>
+        <li>{{ t('importDialog.byoStep3') }}</li>
+      </ol>
+      <el-input
+        v-model="byoInput"
+        type="textarea"
+        :rows="8"
+        :placeholder="t('importDialog.byoPlaceholder')"
+        maxlength="20000"
+        show-word-limit
+      />
+      <p class="hint">{{ t('importDialog.byoHint') }}</p>
+    </div>
     <!-- 输入区 -->
     <div v-if="tab === 'note' || tab === 'email' || tab === 'social'" class="input-area">
       <el-input
@@ -539,6 +592,9 @@ async function commit() {
   white-space: nowrap;
 }
 .actions { margin: 4px 0 8px; }
+.byo-steps { margin: 0 0 10px; padding-left: 18px; font-size: 12.5px; line-height: 1.9; color: var(--ink-2); }
+.byo-copy { margin-left: 8px; }
+.byo-copy.copied { color: var(--success); border-color: var(--success); }
 
 .result-block {
   margin: 10px 0;
