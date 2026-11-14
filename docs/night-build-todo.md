@@ -1,3 +1,112 @@
+# 夜间开发任务清单（Night Build Todo）
+
+> 唯一事实源：夜间流水线只从本文件提取任务（`docs/night-build-manual.md` 铁律 1）。
+> 本文件分四层：§1 可执行队列 / §2 候选池 / §3 关闭与不排期 / §4 历史归档。
+> 审计与取舍证据：`docs/nightly/backlog-review-2026-11-14.md`。
+> 维护规则：§4 只允许补勾，不允许改写；新任务先进 §2，队列腾位后晋升 §1。
+
+## §0 使用说明与图例
+
+### 状态标记
+
+| 标记 | 语义 | 流水线行为 |
+|---|---|---|
+| `- [ ] task-slug:` | 可执行任务 | night-start 提取入队 |
+| `- [x]` | 已完成 | 跳过 |
+| `- [~]` | 已关闭 / 不排期 | 跳过；理由与重开条件见 §3 |
+| `- [ ]（备注）` / `- [ ]（素材·不排期）` | 佐证 / 素材 | 不提取（无 task slug） |
+
+### 任务卡契约（§1 每条必填 7 项）
+
+1. 类型 / 安全区（backend / frontend / docs；并行规则见手册 §3.5）
+2. 证据出处（文件 + 日期；禁止「竞品好像有」式立项）
+3. 做什么（文件 / 函数 / 端点，避免自由发挥）
+4. 可测验收（测试文件 + 断言 + 命令）
+5. 规模 / 夜间拆分（S=1 槽；M=2 槽；L 不得直接入队）
+6. 依赖
+7. 主要风险 / 关闭条件
+
+### 维护规则
+
+- §1 硬上限 6 条；当前 4 条。
+- 新任务必须先写「已核实不存在」证据；完成后必须补勾或移入 §3。
+- 每夜竞品分析新增任务只能进 §2 候选池，由用户或队列腾位后晋升。
+- `task-` slug 只出现在 §1（可执行）与 §3（已完成/已关闭），避免重复提取。
+
+## §1 可执行队列（4 / 6）
+
+- [ ] task-early-arrival-check: TimeGate 增「早于开门」到访校验（补功能，backend）——43% 缺陷研究里「早到」占闭馆类缺陷 56.7%（381/672），当前 `time_validation.check_plan_time_gate` 只校验 `arrival >= close - 30min`，没有 `arrival < open` 分支。
+  - 类型 / 安全区：补功能 / backend
+  - 证据：`docs/nightly/competitive-analysis/2026-11-13.md` §1.2（模式 1 共 672 起，其中早到 381 起 / 56.7%）；`backend/app/services/time_validation.py` 闭馆分支（约 L399-441）
+  - 做什么：①新增常量 `EARLY_ARRIVAL_BUFFER_MINUTES = 30`；②`check_plan_time_gate` 在闭馆检查前增加 `arrival < open - buffer` → `category=schedule` warning（message 含站点名 / 到达 / 开门 / 早到分钟）；③`backend/app/i18n/translations.py` 增 zh/en 两键 `timegate.msg.arrive_early` + `timegate.suggest.arrive_early`；④复用现有 warning → `plan.time_gate.issues` → 前端 TimeGate 面板 / property_qa 汇总，前端零改动
+  - 可测验收：`backend/tests/test_time_validation.py` 新增 4 例（早到 60min 告警 / 早到 15min 不告警 / 无营业时间沉默 / 显式 `open_hours` 覆盖类目规则）；`cd backend && .venv/bin/python -m pytest tests/test_time_validation.py -q` 全绿；全套 `pytest` 零失败
+  - 规模 / 拆分：S，1 个夜间槽
+  - 依赖：无
+  - 风险 / 关闭条件：告警噪音 → 30min 阈值、只对已知营业时间、显式优先；真实行程误报率 >30% 则回退阈值到 45min 并记评估
+
+- [ ] task-day-map-deeplink: 单日多点导航深链（补功能，frontend）——Dream Trip 把「单日导出 Google Maps」作为行中动作；我们只有 ICS 导出，日卡没有「一键导航」。
+  - 类型 / 安全区：补功能 / frontend
+  - 证据：`docs/nightly/competitive-analysis/2026-11-13.md` §1.1（Dream Trip：导出 calendar / 单日 Google Maps）；`grep -rn "google.com/maps|maps.apple|uri.amap.com" frontend/src backend/app` 为空
+  - 做什么：①新建 `frontend/src/utils/mapLinks.js` 纯函数：输入当日 stops（`lat/lng/name`），输出 Google / Apple / 高德链接；②Google 用 origin=首站、destination=末站、waypoints=中间站，最多 9 站，超限返回 `copyList`；③Apple / 高德为单点导航（按顺序「下一站」）；④`TripDetailDayCard.vue` 日头增「导航」下拉；ShareView 复用同组件自动生效；⑤i18n zh/en 4-5 键
+  - 可测验收：`frontend/src/utils/mapLinks.test.js`（vitest）覆盖 URL 编码、waypoints 顺序、9 站上限、缺坐标跳过、单站禁用；`cd frontend && npm test -- mapLinks` 通过；`npm run build` 通过；`npm run check:i18n` 双侧一致
+  - 规模 / 拆分：S，1 个夜间槽
+  - 依赖：无
+  - 风险 / 关闭条件：坐标体系差异（高德 GCJ-02 vs Google WGS84）与地区可达性 → 国内默认高德、海外默认 Google，不做坐标纠偏，文案注明「以地图实际路线为准」；若要求精准纠偏则拆独立评估
+
+- [ ] task-import-recall-en: 英文地名导入规则（补功能，backend）——英文攻略召回基线 0/10，当前测试只用 `≤0.3` 上限断言挡住候选爆炸。
+  - 类型 / 安全区：补功能 / backend
+  - 证据：`backend/tests/test_import_recall.py`（`test_note_en_recall_upper_bound`，基线见 `backend/tests/import_recall_samples.py`）；`docs/night-build-todo.md` 历史 L186；竞品 Dream Trip 支持 18 语言
+  - 做什么：①`note_import.py` / `social_import.py` 地名收尾词表补英文（Temple / Shrine / Park / Garden / Market / Tower / Crossing / Street / Museum / Castle / Beach / Bridge / Square / Gallery / Zoo / Aquarium / Cathedral / Palace / District…）；②行级启发：编号行 / 首字母大写短语 / 描述词截断（free / must-see / ticket / yen 等）；③中文规则保持不变
+  - 可测验收：`test_import_recall.py` 英文下限改 `≥0.8`（8/10）；中文攻略 `≥0.9` 不回归；`SOCIAL_ZH` / `EMAIL_ZH` 不回归；新增负例（"The market was great" / "a park bench" / "we took the train"）不产生候选；全套 `pytest` 零失败
+  - 规模 / 拆分：M，2 槽（①note 规则；②social + 负例 + 回归）
+  - 依赖：无
+  - 风险 / 关闭条件：为拉召回引入噪音 → 双向阈值 + 负例集 + 候选上限；英文召回达标但负例误报 >2 条则回退并记降级
+
+- [ ] task-byo-ai-import-kit: BYO-AI 草稿回填引导（补功能，frontend）——Meridian Dispatch 证明「规划在用户自己的 AI、行程在 app 内」是 2026 新范式；我们只有 app 内 AI，没有「AI 草稿回填」入口。
+  - 类型 / 安全区：补功能 / frontend
+  - 证据：`docs/nightly/competitive-analysis/2026-11-13.md` §1.3（Meridian Dispatch：Claude/ChatGPT/Grok connector + 1-tap import）；`frontend/src/components/ImportDialog.vue` 现有五通道均为「主动粘贴」
+  - 做什么：①`ImportDialog.vue` 新增「AI 草稿」tab：三步引导 + 可复制 prompt + 粘贴框；②新建 `frontend/src/utils/byoPrompt.js`：`buildByoPrompt(locale)`（带版本号，要求每行 `- 地点名｜类型｜建议时长｜备注`，禁止解释）+ `parseByoDraft(text)`（容错解析 pipe / 编号列表 / 普通 bullet，散文降级走 note import）；③候选必须人工勾选，**绝不自动落库**；④i18n zh/en 约 8 键
+  - 可测验收：`frontend/src/utils/byoPrompt.test.js`（vitest）覆盖 prompt 版本与格式、3 份 fixture（pipe / 编号 / 散文）解析结果、空输入与超长输入；`npm test -- byoPrompt` 通过；`npm run build` + `npm run check:i18n` 通过；现有 note_import 敌意源剥离测试不回归
+  - 规模 / 拆分：M，2 槽（①prompt + UI；②解析容错 + 测试 + i18n）
+  - 依赖：无（英文站点解析体验依赖 `task-import-recall-en`，但不阻塞中文主路径）
+  - 风险 / 关闭条件：LLM 输出漂移、支持成本 → prompt 版本化、候选确认、失败明确提示；连续 3 次真机测试候选命中 <50% 则降级为纯文案引导
+
+## §2 候选池（未入队；满足触发条件后再晋升）
+
+| 优先级 | slug | 触发条件 / 前置 | 说明 |
+|---|---|---|---|
+| P2 | `task-booking-ledger-minors` | 首批 review 后 | 金额持久化、`days_until` 进详情、`service_date` 可清空；「本地日期」需产品决策，单列 |
+| P2 | `task-trip-quality-report-a` | 首批 review 后 | 质检五类只读聚合面板（time / repeat / weather / dynamic_facts / quality），顺带给 repeat_gate 独立露出 |
+| P2 | `task-trip-quality-report-b` | a 完成后 | 质检报告导出 / 分享（PDF / 长图） |
+| P2 | `task-import-quota-eval` | 导入量或滥用上升 | 对标 Triparchi 免费档 10 imports；先评估漏斗影响 |
+| P2 | `task-schedule-overflow-cta` | 有真实过载行程样本 | 日卡 overflow 目前只有 tooltip，无「让 AI 压缩该日」动作 |
+| P2 | `task-manual-path-fix` | 下次流水线维护 | 手册 §0 仍写 Desktop 路径，实际在 Documents；无 Desktop 副本，低风险 |
+| 用户动作 | `task-share-target-android-e2e` | 有 Android 设备 | Android Chrome 安装 PWA 后实测 TikTok → 随行；非夜间任务 |
+| 观察 | `task-gallery-cold-start-2` | 真实发布 ≥20 条 | 内容量前置；届时再启 gallery-community-v3 |
+
+## §3 关闭与不排期决策记录
+
+> 每条必须含「决策 / 理由 / 重开条件」；`- [~]` 不会被 night-start 提取。
+
+- [~] task-video-parse: 视频内容解析（Reels / TikTok / YouTube）——决策：关闭；理由：需视频理解模型 + 平台反爬，违反零凭证边界，且 share_target 已覆盖「被动接收分享」漏斗；重开条件：有视频模型预算或平台开放 API。
+- [~] task-file-share: 文件（图片 / 视频）分享——决策：暂缓；理由：需 POST + multipart + 文件存储，超出当前「零凭证零存储」边界；重开条件：有对象存储并接受成本。
+- [~] task-photo-geotag: 行后照片归位 / 自动日记——决策：不排期；理由：需原生壳 + 系统媒体权限（Web 拿不到可靠 GPS，见 `task-photo-import-eval-2026-11-09.md`）；重开条件：引入 Capacitor 等原生壳。
+- [~] task-explored-streets: Explored 街道点亮——决策：不排期；理由：需持续定位，隐私 / 耗电 / 原生壳前置；重开条件：原生壳 + 定位权限方案。
+- [~] task-gallery-community-v3: 画廊社区化——决策：不排期；理由：内容量前置（当前仅 3 条 featured）；重开条件：真实发布 ≥20 条。
+- [~] task-dmo-white-label: DMO 白标 / B2B2C——决策：不追；理由：供给侧重资产，与「小而锋利的规划层」定位冲突；重开条件：有 DMO 合作意向。
+- [x] task-multi-currency-expense-frontend: 已完成——`frontend/src/components/AddExpenseDialog.vue` 已接线币种 / 汇率 / 规则汇率兜底；历史 L166「未接线」遗留关闭。
+- [x] task-property-qa-frontend: 已完成——`TripDetailQaCard.vue` + `api/modules/propertyQa.js` 已在 main（2026-11-10 补线）。
+- [x] task-favorite-spots-frontend: 已完成——`FavoritesView` 收集箱 + ImportDialog 存入收集箱已在 main（2026-11-10）。
+- [x] task-photo-batch-screenshot: 已完成——ImportDialog 多选 ≤12 张、串行 OCR、按站点名合并（2026-11-09）。
+- [x] task-trip-detail-schedule-timeline: 已完成——`schedule_service` + 三读路径注入 + 前端时刻流水线已在 main；OpenSpec change 于 2026-11-14 归档。
+
+## §4 历史归档（2026-10-02 ~ 2026-11-14，append-only）
+
+> 以下为治理前原文，保持顺序与内容不变；只允许补勾，不允许改写。
+> 历史中的 `- [ ]（备注）` / `- [ ]（素材·不排期）` 行不含 task slug，不会被 night-start 提取。
+
+---
+
 - [x] task-email-import: 预订后整理最小版——「粘贴预订确认邮件文本」→ 复用 note-import 结构化提取管线识别航班/酒店/活动条目（日期时间/名称/地址/确认码/金额）→ 候选勾选并入行程（iGo 邮件自动提取/TripNoted booking email 为 post-booking 范式；我们不接 Gmail OAuth 凭证级集成，做零凭证的粘贴文本版，与 note-import 敌意输入处理同构）（验收：粘贴典型航司/酒店确认邮件生成结构化条目 + 金额进预算视图 + 恶意注入文本按敌意输入处理 + 测试覆盖；排在 task-screenshot-import 之后）（2026-10-10 worker-6 补登记：主体已由 2026-10-04 commit 5a9d894 完成并合入 main——service app/services/email_import.py（纯规则解析零凭证零依赖，复用 note_import 敌意剥离 _INJECTION_RE 与 NoteStopCandidate 候选结构，待归属字段池处理前置行字段，活动/酒店条目生成可勾选站点候选）+ schemas/email_import.py（amount+currency 进预算视图）+ API POST /trips/email/import（登录必需、超长 422）+ 路由注册；tests/test_email_import.py 10 用例专项全绿，全套 314 测试绿；worker-6 核验后端通过，仅补登记。前端四通道 ImportDialog（含预订邮件 Tab）已在 nightly/2026-10-06/2-task-import-ui-wiring 分支实现（importEmail 封装 + 邮件 Tab + 预订条目展示 + build 通过）但未合入 main，todo 未勾选；待用户 review 合并该分支后前端即闭环）
 - [x] content-agentic-booking-endgame: 写一篇发布就绪文章《终局剧本：当 agentic 预订已经成交、独立工具已被收购——规划层还剩什么》（Mindtrip Flights 2026-05 Sabre+PayPal 对话内机票成交 / Expedia×Layla 2026-07 官宣 / Tripnotes 2023-12 关停 / Troupe 2026-06 倒闭为四信号，论证规划层「小而锋利」生存策略=可修订 diff+质检 trace+协作+诚实预算+输入自由，07/08 文姊妹篇收官）（验收：docs/articles/10-*.md 存在且内容完整，发布清单补卡片）（2026-10-10 worker-7 补登记：主体已由 2026-10-04 commit 90e6ed0 完成并经后续 merge 入 main（git branch --contains 含 main）——docs/articles/10-endgame-booking-agentic.md 全文（161 行，终局四幕时间线 + 预订层资本壁垒 + 五根支柱对应仓库实现 + 可复用模式表 + 终局检查清单）+ publish-list.md 文章⑩卡片与速查表；代码引用逐条核验与仓库实际一致（revise_service.revise_trip/_apply_diff/_recompute_budget、agents.py REVISE_CRITIC_SYSTEM_PROMPT/_revise_qa_loop、budget_service.estimate_hotel_cost、collab_service._belongs_to_trip、note_import.parse_note、email_import.parse_email 全部在案）；main todo 漏勾导致本夜重跑；worker-7 核验文章完整性（四信号齐全、五支柱对应实现真实存在）+ 发布清单⑩卡片在案，仅勾选登记，纯 docs 无 pytest/build 需求，无新代码改动）
 - [x] task-trip-collab-vote（验收升级）: 追加「渐进式推进」验收项——投票/确认达到 ≥50% 受邀成员即可标记「小组一致」，未响应成员不阻塞后续（TRIPTI.ai vs Troupe 教训：群组规划多数 commit 即锁定日期，不要求全员同意；JetBlue 旗下 Troupe 2026-06 确认倒闭）（验收：原验收 + 多数即推进、不响应不阻塞语义 + 测试覆盖）（2026-10-10 worker-8 补登记：主体已由 2026-09-29 完成入 main（见上 task-trip-collab-vote 补登记），验收升级已由 2026-10-04 worker-4 commit 89341ba 实现并合并 main——collab_service._consensus_threshold（ceil(规模/2)）+ _trip_group_size（max(travelers, 实际投票访客数)）渐进式共识、VoteOut.consensus 字段、list_stop_votes/cast_vote 输出 consensus、GET /votes 无 voter_key 缺 my_value 422 修复；本夜核验：89341ba 在 main、collab_service 6 处 consensus、schema consensus 字段、test_collab.py 覆盖、后端 314 测试全绿、前端 build 通过。遗留：ShareView consensus 徽标 UI（10-04 worker-4 记载 ShareView.vue 为并发会话脏文件未触碰）至今未实现，记入检查点 issues）
