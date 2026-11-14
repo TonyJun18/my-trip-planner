@@ -111,7 +111,17 @@ const PROVIDER_LABEL = {
 function bookingBadgeText(b) {
   const kind = t(`booking.kind.${b.kind}`)
   const provider = b.provider === 'manual' ? t('booking.provider.manual') : PROVIDER_LABEL[b.provider] || b.provider
-  return `${BOOKING_EMOJI[b.kind] || '🎫'} ${kind} · ${provider}`
+  const days = daysText(b)
+  return `${BOOKING_EMOJI[b.kind] || '🎫'} ${kind} · ${provider}${days ? ` · ${days}` : ''}`
+}
+
+// 倒计时（task-booking-ledger-minors：days_until 进日卡片，行前一眼看到「还有几天出发」）
+function daysText(b) {
+  const d = b.days_until
+  if (d === null || d === undefined) return ''
+  if (d > 0) return t('booking.daysUntil', { n: d })
+  if (d === 0) return t('booking.daysToday')
+  return t('booking.daysAgo', { n: -d })
 }
 </script>
 

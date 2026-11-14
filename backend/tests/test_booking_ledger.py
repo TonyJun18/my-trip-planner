@@ -99,6 +99,111 @@ class TestServiceDateFields:
         assert body["service_date"] == "2026-11-21"
         assert body["service_note"] == "改住 21 日"
 
+    # ── task-booking-ledger-minors：金额持久化 + service_date/note 可清空 ──
+    async def test_booking_status_persists_amount(self, client: AsyncClient, auth_user):
+        """确认回填时顺带登记金额 → 响应与列表均持久化。"""
+        _user, headers = auth_user
+        trip_id = await _api_trip(client, headers, title="金额持久化")
+        resp = await client.post(f"/api/v1/trips/{trip_id}/bookings", headers=headers, json={
+            "kind": "hotel", "provider": "ctrip", "title": "酒店",
+            "status": "pending", "reference": "email.import",
+        })
+        booking_id = resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/v1/trips/{trip_id}/bookings/{booking_id}/status",
+            headers=headers,
+            json={"status": "confirmed", "order_no": "BK20261101",
+                  "credential": "C888", "amount": 1288.5},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["status"] == "confirmed"
+        assert body["amount"] == 1288.5
+
+        resp = await client.get(f"/api/v1/trips/{trip_id}/bookings", headers=headers)
+        assert resp.status_code == 200, resp.text
+        items = resp.json()["items"]
+        assert items[0]["amount"] == 1288.5
+
+    async def test_booking_status_amount_absent_keeps_existing(self, client: AsyncClient, auth_user):
+        """未传 amount → 保留既有金额（不清空、不覆盖）。"""
+        _user, headers = auth_user
+        trip_id = await _api_trip(client, headers, title="金额保留")
+        resp = await client.post(f"/api/v1/trips/{trip_id}/bookings", headers=headers, json={
+            "kind": "train", "provider": "12306", "title": "G39",
+            "status": "pending", "reference": "email.import",
+            "service_date": "2026-11-20", "amount": 680.0,
+        })
+        booking_id = resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/v1/trips/{trip_id}/bookings/{booking_id}/status",
+            headers=headers,
+            json={"status": "confirmed", "order_no": "BK20261102", "credential": "C999"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["amount"] == 680.0
+
+    async def test_booking_service_date_clearable(self, client: AsyncClient, auth_user):
+        """service_date 显式传 null → 清空（model_fields_set 区分未传与传 null）。"""
+        _user, headers = auth_user
+        trip_id = await _api_trip(client, headers, title="日期可清空")
+        resp = await client.post(f"/api/v1/trips/{trip_id}/bookings", headers=headers, json={
+            "kind": "train", "provider": "12306", "title": "G39",
+            "status": "pending", "reference": "email.import",
+            "service_date": "2026-11-20", "service_note": "原始备注",
+        })
+        booking_id = resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/v1/trips/{trip_id}/bookings/{booking_id}/status",
+            headers=headers,
+            json={"status": "pending", "service_date": None},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["service_date"] is None
+        assert body["service_note"] == "原始备注"  # 未传的字段不动
+
+    async def test_booking_service_note_clearable(self, client: AsyncClient, auth_user):
+        """service_note 显式传 null → 清空。"""
+        _user, headers = auth_user
+        trip_id = await _api_trip(client, headers, title="备注可清空")
+        resp = await client.post(f"/api/v1/trips/{trip_id}/bookings", headers=headers, json={
+            "kind": "ticket", "provider": "ctrip", "title": "门票",
+            "status": "pending", "reference": "email.import",
+            "service_note": "要清的备注",
+        })
+        booking_id = resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/v1/trips/{trip_id}/bookings/{booking_id}/status",
+            headers=headers,
+            json={"status": "pending", "service_note": None},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["service_note"] is None
+
+    async def test_booking_amount_clearable(self, client: AsyncClient, auth_user):
+        """amount 显式传 null → 清空（误填修正）。"""
+        _user, headers = auth_user
+        trip_id = await _api_trip(client, headers, title="金额可清空")
+        resp = await client.post(f"/api/v1/trips/{trip_id}/bookings", headers=headers, json={
+            "kind": "hotel", "provider": "ctrip", "title": "酒店",
+            "status": "pending", "reference": "email.import",
+            "amount": 999.0,
+        })
+        booking_id = resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/v1/trips/{trip_id}/bookings/{booking_id}/status",
+            headers=headers,
+            json={"status": "pending", "amount": None},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["amount"] is None
+
 
 # ── Task 2：邮件归并端点（merge-email） ─────────────────────────
 async def _api_trip(client: AsyncClient, headers: dict, *, title: str) -> str:

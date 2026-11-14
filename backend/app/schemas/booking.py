@@ -62,7 +62,10 @@ class BookingOut(BaseModel):
 class BookingStatusIn(BaseModel):
     """更新预订状态（confirm / cancel）。
 
-    - service_date/service_note：顺带修正服务日期与备注（可选）。
+    - service_date/service_note：顺带修正服务日期与备注（可选）。显式传
+      ``null`` 表示**清空**（pydantic ``model_fields_set`` 可区分「未传」与
+      「显式清空」——task-booking-ledger-minors）。
+    - amount：顺带修正金额（回填确认时用户填写的实付金额，默认可不传）。
     """
 
     status: Literal["pending", "confirmed", "cancelled"] = "confirmed"
@@ -70,6 +73,7 @@ class BookingStatusIn(BaseModel):
     credential: str | None = Field(default=None, max_length=200)
     service_date: date | None = None
     service_note: str | None = Field(default=None, max_length=500)
+    amount: float | None = Field(default=None, ge=0)
 
 
 class EmailMergeItem(BaseModel):

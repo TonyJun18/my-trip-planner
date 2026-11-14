@@ -190,10 +190,14 @@ async def upsert_booking(
                 existing.reference = data.reference or existing.reference
                 existing.credential = data.credential or existing.credential
                 existing.amount = data.amount if data.amount is not None else existing.amount
-                if data.service_date is not None:
+                # 显式传 null 表示清空（task-booking-ledger-minors：修正误填）
+                fields_set = data.model_fields_set
+                if "service_date" in fields_set:
                     existing.service_date = data.service_date
-                if data.service_note is not None:
+                if "service_note" in fields_set:
                     existing.service_note = data.service_note
+                if "amount" in fields_set and data.amount is None:
+                    existing.amount = None
                 existing.updated_at = datetime.now(timezone.utc)
                 if data.status == "confirmed" and not existing.confirmed_at:
                     existing.confirmed_at = datetime.now(timezone.utc)
@@ -261,10 +265,15 @@ async def update_booking_status(
         booking.order_no = data.order_no
     if data.credential:
         booking.credential = data.credential
-    if data.service_date is not None:
+    # 显式传 null 表示清空（pydantic model_fields_set 区分「未传」与「传 null」）；
+    # 用于误填修正（task-booking-ledger-minors：service_date/note 可清空）。
+    fields_set = data.model_fields_set
+    if "service_date" in fields_set:
         booking.service_date = data.service_date
-    if data.service_note is not None:
+    if "service_note" in fields_set:
         booking.service_note = data.service_note
+    if "amount" in fields_set:
+        booking.amount = data.amount
     if new_status == "confirmed":
         booking.confirmed_at = booking.confirmed_at or datetime.now(timezone.utc)
         booking.cancelled_at = None

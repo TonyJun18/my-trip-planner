@@ -96,8 +96,8 @@
       </template>
     </div>
 
-    <!-- 回填凭证对话框 -->
-    <el-dialog v-model="confirmVisible" :title="t('booking.confirmTitle')" width="420px">
+    <!-- 回填凭证对话框（task-booking-ledger-minors：可顺带登记金额与服务日期） -->
+    <el-dialog v-model="confirmVisible" :title="t('booking.confirmTitle')" width="440px">
       <el-form label-position="top">
         <el-form-item :label="t('booking.orderNo')">
           <el-input v-model="confirmForm.order_no" :placeholder="t('booking.orderNoPh')" />
@@ -107,6 +107,18 @@
         </el-form-item>
         <el-form-item :label="t('booking.amount')">
           <el-input-number v-model="confirmForm.amount" :min="0" :precision="2" :controls="false" style="width: 100%" />
+        </el-form-item>
+        <el-form-item :label="t('booking.serviceDate')">
+          <el-date-picker
+            v-model="confirmForm.service_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            clearable
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item :label="t('booking.serviceNote')">
+          <el-input v-model="confirmForm.service_note" maxlength="500" :placeholder="t('booking.serviceNotePh')" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -138,7 +150,7 @@ const loading = ref(false)
 const confirming = ref(false)
 const confirmVisible = ref(false)
 const current = ref(null)
-const confirmForm = reactive({ order_no: '', credential: '', amount: null })
+const confirmForm = reactive({ order_no: '', credential: '', amount: null, service_date: '', service_note: '' })
 
 // 台账分组：待办（suggested+pending）→ 已确认 → 已取消（组内保持后端 service_date 排序）
 const groups = computed(() => {
@@ -218,7 +230,9 @@ function openConfirm(b) {
   current.value = b
   confirmForm.order_no = b.order_no || ''
   confirmForm.credential = ''
-  confirmForm.amount = null
+  confirmForm.amount = b.amount ?? null
+  confirmForm.service_date = b.service_date || ''
+  confirmForm.service_note = b.service_note || ''
   confirmVisible.value = true
 }
 
@@ -230,11 +244,16 @@ async function submitConfirm() {
   }
   confirming.value = true
   try {
-    await updateBookingStatus(props.tripId, current.value.id, {
+    const payload = {
       status: 'confirmed',
       order_no: confirmForm.order_no,
       credential: confirmForm.credential,
-    })
+    }
+    // 金额/服务日期/备注：仅显式提供才提交（null / 空串清空——后端用 model_fields_set 区分）
+    if (confirmForm.amount !== null && confirmForm.amount !== undefined) payload.amount = confirmForm.amount
+    if (confirmForm.service_date !== '') payload.service_date = confirmForm.service_date || null
+    if (confirmForm.service_note !== undefined) payload.service_note = confirmForm.service_note || null
+    await updateBookingStatus(props.tripId, current.value.id, payload)
     ElMessage.success(t('booking.confirmed'))
     confirmVisible.value = false
     await load()
