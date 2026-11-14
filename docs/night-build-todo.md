@@ -47,6 +47,10 @@
 | P2 | `task-schedule-overflow-cta` | 有真实过载行程样本 | 日卡 overflow 目前只有 tooltip，无「让 AI 压缩该日」动作 |
 | 用户动作 | `task-share-target-android-e2e` | 有 Android 设备 | Android Chrome 安装 PWA 后实测 TikTok → 随行；非夜间任务 |
 | 观察 | `task-gallery-cold-start-2` | 真实发布 ≥20 条 | 内容量前置；届时再启 gallery-community-v3 |
+| **P0（to-C）** | **`task-launch-deploy`** | **2026-11-14 决裁：to-C 上线验证主线** | **香港轻量上线 + 空库 + 最小埋点 5 事件 + 14 天判定线（20/5/2）；详见 `docs/plans/2026-11-15-core-value-launch.md`；W1 启动时晋升 §1** |
+| P1 | `task-home-feed-live` | 随时可做 | 首页推荐动态化（frontend）：LandingPage 灵感主区静态 showcase → 接 gallery hot top 6 真实数据；零后端，复用 `GET /trips/gallery?sort=hot` + ShareView 蓝本创建；无数据回落静态卡；详见 `docs/nightly/competitive-analysis/2026-11-14-travora-ota.md` §2① |
+| P2 | `task-gallery-like-mini` | 候选评估通过 | 画廊点赞（backend+frontend）：gallery_service 零互动字段；最小点赞计数 + 幂等，评估与 trip_ratings 关系；与 v3「内容量前置」衔接（基建可先行，社区化等内容量）；详见 `docs/nightly/competitive-analysis/2026-11-14-travora-ota.md` §2② |
+| P2 | `task-destination-page-eval` | 候选评估通过 | 目的地内容页（backend+frontend）：inspiration 23 目的地知识库 + docs/articles 14 篇内容资产无聚合消费页；评估轻量目的地页 → 一键预填规划；规模 M 拆两夜；详见 `docs/nightly/competitive-analysis/2026-11-14-travora-ota.md` §2③ |
 
 > 2026-11-14 白天晋升并完成：`task-manual-path-fix` / `task-booking-ledger-minors` /
 > `task-trip-quality-report-a` / `task-trip-quality-report-b` 已实现并入 main，见 §3。
