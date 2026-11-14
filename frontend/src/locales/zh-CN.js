@@ -1321,6 +1321,15 @@ export default {
       loadFailed: '卡片数据加载失败',
     },
     channel: { xhs: '小红书', moments: '朋友圈' },
+    summary: {
+      title: '生成旅程相册图',
+      entryTitle: '旅程相册图',
+      entrySub: '把这趟行程的打卡点连成一张总结图——照片只在本地处理。',
+      entryAction: '生成相册图',
+      emptyHint: '这趟行程还没有打卡记录，先去行中打卡再回来生成吧。',
+      pickTemplate: '选模板',
+      pickPhotos: '选封面与照片',
+    },
   },
   // ── 旅程故事·长图海报卡 ──────────────────────────────
   poster: {

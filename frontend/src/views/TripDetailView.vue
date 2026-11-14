@@ -11,6 +11,7 @@ import * as api from '@/api'
 import TripDetailHeader from '@/components/trip-detail/TripDetailHeader.vue'
 import TripDetailLiveToday from '@/components/trip-detail/TripDetailLiveToday.vue'
 import FrameCardDialog from '@/components/frames/FrameCardDialog.vue'
+import FrameSummaryDialog from '@/components/frames/FrameSummaryDialog.vue'
 import TripDetailBudgetBar from '@/components/trip-detail/TripDetailBudgetBar.vue'
 import TripDetailMapCard from '@/components/trip-detail/TripDetailMapCard.vue'
 import TripDetailPlanTools from '@/components/trip-detail/TripDetailPlanTools.vue'
@@ -129,6 +130,9 @@ function openFrameCard() {
   frameDayId.value = day.id
   frameDialogVisible.value = true
 }
+
+// 整程总结图（已结束时机）：聚合打卡数据生成旅程相册图
+const frameSummaryVisible = ref(false)
 
 // ── 离线降级（task-offline-degrade）：在线才加载地图瓦片，离线改「按日站点列表」 ──
 const online = ref(isOnline())
@@ -537,6 +541,7 @@ function onHeaderAction(key) {
     case 'checkin': scrollToToday(); break
     case 'track': openTrackTab(); break
     case 'export': doExportPdfAll(); break
+    case 'frames': frameSummaryVisible.value = true; break
     default: break
   }
 }
@@ -1058,6 +1063,13 @@ onBeforeUnmount(() => {
           :day-id="frameDayId"
         />
 
+        <!-- 旅拍相框：整程总结图生成器（已结束时机，聚合打卡数据） -->
+        <FrameSummaryDialog
+          v-if="trip"
+          v-model="frameSummaryVisible"
+          :trip-id="trip.id"
+        />
+
         <!-- 主路径：地图 + 逐日大纲（永不进 tab）+ 侧栏仪表盘 -->
         <div class="detail-layout">
           <div class="main-col">
@@ -1070,6 +1082,17 @@ onBeforeUnmount(() => {
               :basis="budget?.estimate_basis || {}"
               :travelers="Number(trip?.travelers) || 1"
             />
+
+            <!-- 已结束时机：整程总结图入口（聚合打卡数据生成旅程相册图） -->
+            <div v-if="phase === 'finished'" class="frame-summary-entry">
+              <div class="frame-summary-text">
+                <div class="frame-summary-title">🖼️ {{ t('frames.summary.entryTitle') }}</div>
+                <div class="frame-summary-sub">{{ t('frames.summary.entrySub') }}</div>
+              </div>
+              <el-button type="primary" plain size="small" @click="frameSummaryVisible = true">
+                {{ t('frames.summary.entryAction') }}
+              </el-button>
+            </div>
 
             <!-- 地图 -->
             <TripDetailMapCard
@@ -1366,4 +1389,18 @@ onBeforeUnmount(() => {
   .map-card { max-height: 320px; overflow: hidden; }
   .export-area { border: none; }
 }
+
+.frame-summary-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-7);
+}
+.frame-summary-title { font-weight: 600; font-size: 14px; }
+.frame-summary-sub { font-size: 12px; color: #888; margin-top: 2px; }
 </style>

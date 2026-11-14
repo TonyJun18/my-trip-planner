@@ -1323,6 +1323,15 @@ export default {
       loadFailed: 'Failed to load card data',
     },
     channel: { xhs: 'RED (Xiaohongshu)', moments: 'Moments' },
+    summary: {
+      title: 'Create Trip Album Card',
+      entryTitle: 'Trip Album Card',
+      entrySub: 'Turn all your check-ins into one summary card — photos stay on your device.',
+      entryAction: 'Create album card',
+      emptyHint: 'No check-ins on this trip yet. Check in during the trip first.',
+      pickTemplate: 'Pick a template',
+      pickPhotos: 'Pick cover & photos',
+    },
   },
   // ── Trip story poster card ────────────────────────────
   poster: {
