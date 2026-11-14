@@ -36,25 +36,30 @@
 ## §1 可执行队列（0 / 6）
 
 > 首批 4 个任务已全部完成并移入 §3（2026-11-14）。等待新任务经 §2 候选池晋升。
+> 2026-11-14 白天：§2 候选池 `task-manual-path-fix` / `task-booking-ledger-minors` /
+> `task-trip-quality-report-a/b` 四项继续晋升完成并移入 §3（见 §2 说明 + §3 记录）。
 
 ## §2 候选池（未入队；满足触发条件后再晋升）
 
 | 优先级 | slug | 触发条件 / 前置 | 说明 |
 |---|---|---|---|
-| P2 | `task-booking-ledger-minors` | 首批 review 后 | 金额持久化、`days_until` 进详情、`service_date` 可清空；「本地日期」需产品决策，单列 |
-| P2 | `task-trip-quality-report-a` | 首批 review 后 | 质检五类只读聚合面板（time / repeat / weather / dynamic_facts / quality），顺带给 repeat_gate 独立露出 |
-| P2 | `task-trip-quality-report-b` | a 完成后 | 质检报告导出 / 分享（PDF / 长图） |
 | P2 | `task-import-quota-eval` | 导入量或滥用上升 | 对标 Triparchi 免费档 10 imports；先评估漏斗影响 |
 | P2 | `task-schedule-overflow-cta` | 有真实过载行程样本 | 日卡 overflow 目前只有 tooltip，无「让 AI 压缩该日」动作 |
-| P2 | `task-manual-path-fix` | 下次流水线维护 | 手册 §0 仍写 Desktop 路径，实际在 Documents；无 Desktop 副本，低风险 |
 | 用户动作 | `task-share-target-android-e2e` | 有 Android 设备 | Android Chrome 安装 PWA 后实测 TikTok → 随行；非夜间任务 |
 | 观察 | `task-gallery-cold-start-2` | 真实发布 ≥20 条 | 内容量前置；届时再启 gallery-community-v3 |
+
+> 2026-11-14 白天晋升并完成：`task-manual-path-fix` / `task-booking-ledger-minors` /
+> `task-trip-quality-report-a` / `task-trip-quality-report-b` 已实现并入 main，见 §3。
 
 ## §3 关闭与不排期决策记录
 
 > 每条必须含「决策 / 理由 / 重开条件」；`- [~]` 不会被 night-start 提取。
 
 - [~] task-video-parse: 视频内容解析（Reels / TikTok / YouTube）——决策：关闭；理由：需视频理解模型 + 平台反爬，违反零凭证边界，且 share_target 已覆盖「被动接收分享」漏斗；重开条件：有视频模型预算或平台开放 API。
+- [x] task-manual-path-fix: 已完成——手册 §0 项目路径 Desktop→Documents（2026-11-06 迁移后同步）；commit `d8ffb4b`（2026-11-14 白天）。
+- [x] task-booking-ledger-minors: 已完成——①确认回填金额持久化（BookingStatusIn.amount + update_booking_status/upsert 落库）②service_date/service_note/amount 显式 null 可清空（pydantic model_fields_set 区分未传与清空，未传保留原值）③日卡片预订徽标 days_until 倒计时（daysUntil/daysToday/daysAgo）④BookingPanel 确认弹窗增服务日期/备注编辑；「本地日期」需产品决策（today 用 UTC）单列未做；commit `b4d0f1f`（2026-11-14 白天，专项 33 passed + 全套 1139 绿）。
+- [x] task-trip-quality-report-a: 已完成——质检五类只读聚合面板（quality/time_gate/repeat_gate/weather_gate/dynamic_facts）：`quality_report_service.build_quality_report` 纯函数（缺失 gate checked=false 绝不假装通过、issues ≤20、不含凭证）+ GET /trips/{id}/quality-report（owner）与 /trips/share/{token}/quality-report（免登录只读）+ QualityReportPanel.vue（标题/状态徽标/basis/score/issues）+ WS_PLAN_KEYS 增 qualityReport + planIssues 徽标纳入 repeat_gate；commit `368704b`（2026-11-14 白天，专项 9 例 + 全套 1139 绿）。
+- [x] task-trip-quality-report-b: 已完成——质检报告导出 / 分享：QualityReportPanel 自带导出 PDF/长图（复用 export.js html2canvas/jspdf，抓报告本体 DOM 不含凭证）+ ShareView 分享页免登录展示（edit 模式不显示）+ i18n qualityReport.* zh/en 各 23 键；与 a 同 commit `368704b`。
 - [~] task-file-share: 文件（图片 / 视频）分享——决策：暂缓；理由：需 POST + multipart + 文件存储，超出当前「零凭证零存储」边界；重开条件：有对象存储并接受成本。
 - [~] task-photo-geotag: 行后照片归位 / 自动日记——决策：不排期；理由：需原生壳 + 系统媒体权限（Web 拿不到可靠 GPS，见 `task-photo-import-eval-2026-11-09.md`）；重开条件：引入 Capacitor 等原生壳。
 - [~] task-explored-streets: Explored 街道点亮——决策：不排期；理由：需持续定位，隐私 / 耗电 / 原生壳前置；重开条件：原生壳 + 定位权限方案。
