@@ -34,3 +34,11 @@ export const publishToGallery = (tripId, data = {}) =>
   http.post(`/trips/${tripId}/gallery/publish`, data).then((r) => r.data)
 export const unpublishFromGallery = (tripId) =>
   http.delete(`/trips/${tripId}/gallery/publish`).then((r) => r.data)
+
+// ── 画廊点赞（ADR-0001 内容发现层：登录可点、幂等 toggle） ──
+// POST /trips/gallery/{trip_id}/like → {liked: true, like_count: N}
+// DELETE /trips/gallery/{trip_id}/like → {liked: false, like_count: N}
+export const likeGalleryTrip = (tripId) =>
+  http.post(`/trips/gallery/${tripId}/like`).then((r) => r.data)
+export const unlikeGalleryTrip = (tripId) =>
+  http.delete(`/trips/gallery/${tripId}/like`).then((r) => r.data)

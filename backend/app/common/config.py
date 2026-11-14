@@ -92,6 +92,11 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 天
     AUTH_TOKEN_PREFIX: str = "Bearer"
 
+    # ── 运营（ADR-0001 内容发现层） ──────────────────────────
+    STAFF_USER_IDS: str = ""
+    """运营白名单（逗号分隔的用户 ID）。登录时同步为 is_staff=True，
+    不建管理后台；空串表示无 staff。"""
+
     # ── Google OAuth（登录） ────────────────────────────────
     GOOGLE_CLIENT_ID: str | None = None
     """Google 控制台 Web 应用 OAuth Client ID（Google 登录：ID Token 校验 aud）。"""

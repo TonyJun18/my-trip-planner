@@ -1,6 +1,10 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { Location, User, Wallet, View, CopyDocument, Delete } from '@element-plus/icons-vue'
+import { useAuthStore } from '@/stores/auth'
+import * as api from '@/api'
 
 /**
  * 画廊卡片（task-gallery-v2）：列表与详情入口的统一卡片。
@@ -10,6 +14,7 @@ import { Location, User, Wallet, View, CopyDocument, Delete } from '@element-plu
  * - 显式两个动作：「看详情」（免登录可达的 /share/:token）与「以此为蓝本创建」，
  *   上一版整卡点击直接 clone，用户不知道会被复制什么
  * - 评分热度：有评分显示 ★ 均分 + 人数 + 去过人数，无评分诚实标注（不编造）
+ * - 画廊点赞（ADR-0001）：❤ 计数 + 登录 toggle；未登录点击引导登录
  */
 const props = defineProps({
   item: { type: Object, required: true },
@@ -18,6 +23,40 @@ const props = defineProps({
 })
 
 defineEmits(['open', 'clone', 'unpublish'])
+
+const router = useRouter()
+const auth = useAuthStore()
+
+// ── 点赞状态（本地管理，乐观更新；item.liked / item.like_count 来自后端列表） ──
+const liked = ref(Boolean(props.item?.liked))
+const likeCount = ref(Number(props.item?.like_count || 0))
+const likeBusy = ref(false)
+
+async function toggleLike() {
+  if (likeBusy.value) return
+  if (!auth.isLoggedIn) {
+    router.push(`/login?redirect=${encodeURIComponent(router.currentRoute.value.fullPath)}`)
+    return
+  }
+  likeBusy.value = true
+  // 乐观更新（失败回滚）
+  const prevLiked = liked.value
+  const prevCount = likeCount.value
+  liked.value = !prevLiked
+  likeCount.value = Math.max(0, prevCount + (liked.value ? 1 : -1))
+  try {
+    const body = liked.value
+      ? await api.likeGalleryTrip(props.item.trip_id)
+      : await api.unlikeGalleryTrip(props.item.trip_id)
+    likeCount.value = body.like_count ?? likeCount.value
+  } catch (e) {
+    liked.value = prevLiked
+    likeCount.value = prevCount
+    ElMessage.warning(e?.response?.data?.error?.message || '操作失败，请稍后再试')
+  } finally {
+    likeBusy.value = false
+  }
+}
 
 const HUES = [
   'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)',
@@ -60,6 +99,15 @@ const stars = computed(() => Math.round(props.item.rating_avg || 0))
         <span v-if="item.visited_count" class="g-visited">{{ $t('gallery.visited', { n: item.visited_count }) }}</span>
       </div>
       <div v-else class="g-rating g-rating-empty">{{ $t('gallery.noRating') }}</div>
+
+      <!-- 画廊点赞（ADR-0001）：❤ 计数 + 登录 toggle -->
+      <div class="g-like-row">
+        <button type="button" class="g-like" :class="{ on: liked }" :disabled="likeBusy"
+                :aria-pressed="liked" @click="toggleLike">
+          <span class="g-like-heart" :class="{ on: liked }">♥</span>
+          <span>{{ likeCount }}</span>
+        </button>
+      </div>
 
       <p v-if="item.blurb" class="g-blurb">{{ item.blurb }}</p>
 
@@ -138,6 +186,29 @@ const stars = computed(() => Math.round(props.item.rating_avg || 0))
 .g-rating-num { color: var(--ink-2); }
 .g-visited { color: var(--faint); }
 .g-rating-empty { color: var(--faint); }
+
+.g-like-row { display: flex; align-items: center; }
+.g-like {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: color 0.18s, border-color 0.18s, background 0.18s;
+}
+.g-like:hover { color: #e25555; border-color: rgba(226, 85, 85, 0.45); }
+.g-like.on { color: #e25555; border-color: rgba(226, 85, 85, 0.45); background: rgba(226, 85, 85, 0.06); }
+.g-like:disabled { opacity: 0.6; cursor: default; }
+.g-like-heart { font-size: 14px; line-height: 1; }
+.g-like-heart.on { color: #e25555; }
+.g-like:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 
 .g-blurb {
   margin: 0;

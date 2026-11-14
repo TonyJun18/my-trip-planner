@@ -48,10 +48,9 @@
 | 用户动作 | `task-share-target-android-e2e` | 有 Android 设备 | Android Chrome 安装 PWA 后实测 TikTok → 随行；非夜间任务 |
 | 观察 | `task-gallery-cold-start-2` | 真实发布 ≥20 条 | 内容量前置；届时再启 gallery-community-v3 |
 | **P0（to-C）** | **`task-launch-deploy`** | **2026-11-14 决裁：to-C 上线验证主线** | **香港轻量上线 + 空库 + 最小埋点 5 事件 + 14 天判定线（20/5/2）；详见 `docs/plans/2026-11-15-core-value-launch.md`；W1 启动时晋升 §1** |
-| P1 | `task-home-feed-live` | 随时可做 | 首页推荐动态化（frontend）：LandingPage 灵感主区静态 showcase → 接 gallery hot top 6 真实数据；零后端，复用 `GET /trips/gallery?sort=hot` + ShareView 蓝本创建；无数据回落静态卡；详见 `docs/nightly/competitive-analysis/2026-11-14-travora-ota.md` §2① |
-| P2 | `task-gallery-like-mini` | 候选评估通过 | 画廊点赞（backend+frontend）：gallery_service 零互动字段；最小点赞计数 + 幂等，评估与 trip_ratings 关系；与 v3「内容量前置」衔接（基建可先行，社区化等内容量）；详见 `docs/nightly/competitive-analysis/2026-11-14-travora-ota.md` §2② |
-| P2 | `task-destination-page-eval` | 候选评估通过 | 目的地内容页（backend+frontend）：inspiration 23 目的地知识库 + docs/articles 14 篇内容资产无聚合消费页；评估轻量目的地页 → 一键预填规划；规模 M 拆两夜；详见 `docs/nightly/competitive-analysis/2026-11-14-travora-ota.md` §2③ |
 
+> 2026-11-14 晚：`task-home-feed-live` / `task-gallery-like-mini` / `task-destination-page-eval`（后两项评估后经 grill-with-docs 决裁）已实现并入 feature/content-discovery-layer，见 §3。
+>
 > 2026-11-14 白天晋升并完成：`task-manual-path-fix` / `task-booking-ledger-minors` /
 > `task-trip-quality-report-a` / `task-trip-quality-report-b` 已实现并入 main，见 §3。
 
@@ -59,6 +58,9 @@
 
 > 每条必须含「决策 / 理由 / 重开条件」；`- [~]` 不会被 night-start 提取。
 
+- [x] task-home-feed-live: 已完成——LandingPage 灵感主区静态 showcase → 城市模板行（getCityTemplates 23 卡，cold-start 稳）+ 模板深链预填 `/plan?dest=杭州&budget=3000`（PlanWizard 补读 route.query，只预填 dest+budget、不臆造日期，登录回跳经守卫 redirect 保留 query）；底部真实画廊 teaser 保留两入口并存；commit 见 feature/content-discovery-layer（2026-11-14 晚，全套 1159 绿 + build 5.05s + i18n 1275×2）。
+- [x] task-gallery-like-mini: 已完成（经评估立项）——独立 `gallery_likes` 表（trip_id+user_id 唯一幂等 toggle、owner 不可自赞 403）+ POST/DELETE `/trips/gallery/{id}/like`（返回 {liked, like_count}）+ 画廊列表附加 like_count/liked（viewer 登录态）+ GalleryCard ❤ 按钮（乐观更新失败回滚、未登录引导登录、本地状态独立于评分）；不参与 hot 排序、与 ✓/★/去过三信号并排；测试 7 例 + 全套 1159 绿。
+- [x] task-destination-page-eval: 已完成（评估后不单独立页）——决策：不做独立目的地页；理由：画廊目的地筛选 + 城市模板已覆盖「目的地→规划」链条，增量不值得；重开条件：有目的地深度内容（攻略/百科）供给后再评估。
 - [~] task-video-parse: 视频内容解析（Reels / TikTok / YouTube）——决策：关闭；理由：需视频理解模型 + 平台反爬，违反零凭证边界，且 share_target 已覆盖「被动接收分享」漏斗；重开条件：有视频模型预算或平台开放 API。
 - [x] task-manual-path-fix: 已完成——手册 §0 项目路径 Desktop→Documents（2026-11-06 迁移后同步）；commit `d8ffb4b`（2026-11-14 白天）。
 - [x] task-booking-ledger-minors: 已完成——①确认回填金额持久化（BookingStatusIn.amount + update_booking_status/upsert 落库）②service_date/service_note/amount 显式 null 可清空（pydantic model_fields_set 区分未传与清空，未传保留原值）③日卡片预订徽标 days_until 倒计时（daysUntil/daysToday/daysAgo）④BookingPanel 确认弹窗增服务日期/备注编辑；「本地日期」需产品决策（today 用 UTC）单列未做；commit `b4d0f1f`（2026-11-14 白天，专项 33 passed + 全套 1139 绿）。
