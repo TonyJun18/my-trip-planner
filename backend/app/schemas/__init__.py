@@ -76,6 +76,7 @@ from app.schemas.journey import (
 from app.schemas.passport import BadgeOut, PassportOut
 from app.schemas.plan_b import PlanBOut, PlanBVariantOut
 from app.schemas.property_qa import PropertyQaFact, PropertyQaFactsOut, PropertyQaOut
+from app.schemas.quality_report import QualityGateOut, QualityReportOut
 from app.schemas.rating import RatingIn, RatingListOut, RatingOut, RatingSummaryOut
 from app.schemas.share import (
     LiveCheckIn,

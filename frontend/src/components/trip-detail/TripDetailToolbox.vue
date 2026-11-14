@@ -13,6 +13,7 @@ import FlightDealsCard from '@/components/trip-detail/FlightDealsCard.vue'
 import HotelRecommend from '@/components/HotelRecommend.vue'
 import TripEventFeed from '@/components/TripEventFeed.vue'
 import ExpensePanel from '@/components/ExpensePanel.vue'
+import QualityReportPanel from '@/components/QualityReportPanel.vue'
 
 // 内部子面板 ref（JourneyTimeline / PassportPanel / ExpensePanel），暴露给 orchestrator 刷新投影
 const journeyInner = ref(null)
@@ -84,7 +85,7 @@ function isHoisted(key) {
 <template>
   <div class="toolbox" :class="{ flat }">
   <!-- ═══ 工具箱：规划修订 ═══ -->
-  <div v-if="['revise', 'planb', 'timegate', 'quality'].some((k) => has(k) && !isHoisted(k))" class="toolbox-group" :class="{ first: flat }">
+  <div v-if="['revise', 'planb', 'timegate', 'quality', 'qualityReport'].some((k) => has(k) && !isHoisted(k))" class="toolbox-group" :class="{ first: flat }">
     <div v-if="!flat" class="toolbox-label"><el-icon style="margin-right: 5px"><MagicStick /></el-icon>{{ $t('tripDetail.toolboxPlan') }}</div>
     <div class="aux-area">
       <!-- AI 调整行程（若已被提到主路径则跳过，见 TripDetailPlanTools） -->
@@ -252,6 +253,20 @@ function isHoisted(key) {
         <template #title>{{ $t('quality.reportTitle') }}</template>
         <div class="aux-child detail-quality">
           <QualityCard :quality="quality" />
+        </div>
+      </CollapsibleSection>
+
+      <!-- 质检报告（task-trip-quality-report-a/b：五类只读聚合 + repeat_gate 独立露出 + 导出） -->
+      <CollapsibleSection
+        v-if="has('qualityReport')"
+        plain
+        :default-open="false"
+        :force-open="exportAll"
+        :storage-key="`tripDetail.aux.v2.qualityReport.${trip.id}`"
+      >
+        <template #title>{{ $t('qualityReport.title') }}</template>
+        <div class="aux-child detail-quality-report">
+          <QualityReportPanel :trip-id="trip.id" />
         </div>
       </CollapsibleSection>
     </div>

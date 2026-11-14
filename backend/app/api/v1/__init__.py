@@ -34,6 +34,7 @@ from app.api.v1 import (
     trips_journey,
     trips_passport,
     trips_property_qa,
+    trips_quality_report,
     trips_ratings,
     trips_share,
     trips_story,
@@ -60,6 +61,10 @@ api_router.include_router(trips_ratings.router, prefix="/trips", tags=["trips"])
 # property-qa：/{trip_id}/property-qa 三段路径，与 crud 二段不冲突；
 # 但保持字面量优先惯例，注册在 trips_crud 之前
 api_router.include_router(trips_property_qa.router, prefix="/trips", tags=["trips"])
+# quality-report：/{trip_id}/quality-report 三段路径 + /share/{token}/quality-report 字面量段。
+# 注册在 trips_crud 之前（字面量优先惯例）；/share/ 前缀由 trips_share 先注册，
+# 多一段精确匹配互不吞并（与 export 路由同模式）。
+api_router.include_router(trips_quality_report.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_favorites.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_favorite_spots.router, prefix="/trips", tags=["trips"])
 api_router.include_router(trips_escalations.router, prefix="/trips", tags=["trips"])

@@ -269,7 +269,7 @@ const collapseDaysV2 = useFlag('tripDetail.ia.v2.collapseDays')
 
 
 // ── 次级工作台：按时机收纳面板（tab + 全部工具开关）──────────
-const WS_PLAN_KEYS = ['revise', 'planb', 'timegate', 'quality', 'hotel']
+const WS_PLAN_KEYS = ['revise', 'planb', 'timegate', 'quality', 'qualityReport', 'hotel']
 const WS_PREP_KEYS = ['booking', 'hotel', 'servicing', 'flights', 'packing', 'events']
 const WS_LIVE_KEYS = ['journey', 'expense', 'passport', 'story']
 // 已结束：行程走完了，「追踪进度」仍有意义（回顾走到了哪），但事件流重新有价值（消费/打卡记录），
@@ -284,7 +284,8 @@ const wsPlanExtra = ref(false)
 const planIssues = computed(() => {
   const q = plan.value?.quality?.issues?.length || 0
   const g = plan.value?.time_gate?.issues?.length || 0
-  return q + g
+  const r = plan.value?.repeat_gate?.issues?.length || 0
+  return q + g + r
 })
 
 const journeyProgress = computed(() => {

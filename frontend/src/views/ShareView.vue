@@ -10,6 +10,7 @@ import { getGateToken, setGateToken, clearGateToken } from '@/utils/shareGate'
 import TripMap from '@/components/TripMap.vue'
 import JourneyTimeline from '@/components/JourneyTimeline.vue'
 import DayNavButton from '@/components/trip-detail/DayNavButton.vue'
+import QualityReportPanel from '@/components/QualityReportPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -809,6 +810,13 @@ function watchCollabFeed() {
         v-if="trip"
         :share-token="route.params.token"
         :hide-expense="true"
+      />
+
+      <!-- 质检报告（task-trip-quality-report-b：分享页免登录只读 · 五类 + 导出） -->
+      <QualityReportPanel
+        v-if="trip && !editMode"
+        :share-token="route.params.token"
+        class="share-quality-report"
       />
 
       <!-- 每日行程 -->
