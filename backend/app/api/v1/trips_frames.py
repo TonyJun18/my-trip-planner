@@ -62,6 +62,25 @@ async def get_day_projection(
 
 
 @router.post(
+    "/{trip_id}/frames/summary/copy",
+    response_model=CopyOut,
+    summary="整程总结图配文生成（owner；无自动发布副作用）",
+)
+async def generate_trip_copy(
+    trip_id: str,
+    data: CopyRequest,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    trip = await _get_own_trip(db, trip_id, user)
+    body = await projection.summary_projection(db, trip)
+    out = await frame_copy_service.build_trip_copy(
+        trip, body, channel=data.channel, provider=data.provider
+    )
+    return CopyOut(**out)
+
+
+@router.post(
     "/{trip_id}/frames/{day_id}/copy",
     response_model=CopyOut,
     summary="单日卡 AI 配文生成（owner；无自动发布副作用）",
