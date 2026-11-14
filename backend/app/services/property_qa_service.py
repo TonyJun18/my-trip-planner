@@ -156,9 +156,9 @@ def _budget_answer(trip: Trip, plan_data: dict[str, Any] | None, locale: str) ->
 
 
 def _warnings_answer(plan_data: dict[str, Any] | None, locale: str) -> dict[str, Any]:
-    """质检预警答案：汇总 time_gate / dynamic_facts / weather_gate 的 warning issues。"""
+    """质检预警答案：汇总 time_gate / dynamic_facts / repeat_gate / weather_gate 的 warning issues。"""
     warnings: list[dict[str, Any]] = []
-    for key in ("time_gate", "dynamic_facts", "weather_gate"):
+    for key in ("time_gate", "dynamic_facts", "repeat_gate", "weather_gate"):
         gate = (plan_data or {}).get(key) if isinstance(plan_data, dict) else None
         if not isinstance(gate, dict):
             continue

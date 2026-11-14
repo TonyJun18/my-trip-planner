@@ -620,6 +620,35 @@ class FinalizePlanStep(PipelineStep):
             "issues": weather_gate.get("issues") or [],
         })
 
+        # ── RepeatGate：重复站点确定性查重（task-repeat-stop-detector，2026-11-14）──
+        # 同一地点重复安排 → warning（同天/相邻天始终检测；远端重复仅长行程）。
+        # 与 TimeGate/DynamicFacts 同构：只报告不阻断，basis=rule_based 诚实标注。
+        from app.services.repeat_detector import check_plan_repeat_gate
+
+        repeat_gate = check_plan_repeat_gate(plan, locale=locale)
+        plan["repeat_gate"] = {
+            **{k: v for k, v in repeat_gate.items() if k != "issues"},
+            "issues": repeat_gate.get("issues") or [],
+            "basis": "rule_based",
+        }
+        for iss in repeat_gate.get("issues") or []:
+            plan.setdefault("warnings", []).append(
+                t(locale, "plan.warning.repeatgate", message=iss.get("message") or "",
+                  extra=(t(locale, "plan.warning.repeatgate.sugg", suggestion=iss.get("suggestion")) if iss.get("suggestion") else ""))
+            )
+        if repeat_gate.get("issues"):
+            _append_trace({
+                "agent": "RepeatGate",
+                "action": "check_repeats",
+                "observation": t(locale, "plan.trace.repeatgate.warn", n=repeat_gate.get("warning_count", 0)),
+                "status": "warning",
+            })
+        A._fire_artifact("repeat_gate", {
+            "passed": repeat_gate.get("passed"),
+            "warning_count": repeat_gate.get("warning_count", 0),
+            "issues": repeat_gate.get("issues") or [],
+        })
+
         # ── SolverGate：确定性求解（任务floattrip-borrow Story 4）──
         # LLM 候选 → 规则排序 + 时间/距离硬约束校验 + 有限修复。
         # 产出 plan.solver_meta（排序依据/校验结果/修复记录）；不通过 → warnings
