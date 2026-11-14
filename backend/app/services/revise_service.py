@@ -562,15 +562,23 @@ async def _enforce_driving_constraints(trip: Trip, *, locale: str = "zh-CN") -> 
 
 async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
     """修订后由代码重算 TripPlan.plan_data.budget（有快照则同步更新）。"""
-    from app.agent.tools import compute_budget
-    from app.services.driving_service import check_plan_driving
+    from app.services.budget_service import compute_budget
 
     all_stops = [
         {"name": s.name, "type": s.stop_type, "estimated_cost": float(s.estimated_cost or 0)}
         for d in trip.days
         for s in d.stops
     ]
-    budget = compute_budget(all_stops)
+    # 统一口径：与 API/分享页同源（budget_service.compute_budget 含站级兜底 +
+    # 住宿缺口 + 大交通 + 对账块），修订后预算不再缩水（此前走 tools 版纯求和，
+    # 丢住宿缺口与大交通，修订后预算与前端 GET /budget 不一致）。
+    try:
+        budget = compute_budget(trip, plan_data=_plan_snapshot(trip))
+    except Exception:
+        # 防御：快照异常时退回纯站级汇总（绝不让修订流程因预算测算挂掉）
+        from app.agent.tools import compute_budget as _tools_budget
+
+        budget = _tools_budget(all_stops)
 
     # 自驾报告随修订一并写回 plan 快照（前端可在修订响应 plan.driving 里看到里程/时长）
     from app.services.driving_service import check_plan_driving_async

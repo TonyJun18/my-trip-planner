@@ -235,7 +235,7 @@ class PlanAssembleStep(PipelineStep):
             planner_agent,
         )
         from app.i18n.translations import t
-        from app.services.budget_service import transport_round_trip_cost
+        from app.services import budget_service
         from app.services.driving_service import check_plan_driving_async
 
         request = ctx.request
@@ -288,16 +288,17 @@ class PlanAssembleStep(PipelineStep):
 
             candidate = planner["plan"]
 
-            # 预算校准前置：先以真实 stops 计算预算（覆盖 LLM 估值），再交给质检；
-            # 若采集阶段有大交通参考价，则把「往返参考价」并入 by_type.transport 与总额。
-            all_stops = [s for d in candidate.get("days", []) for s in d.get("stops", [])]
-            candidate["budget"] = agent_tools.compute_budget(all_stops)
-            transport_cost = transport_round_trip_cost(materials.get("transport"))
-            if transport_cost is not None:
-                candidate["budget"]["by_type"]["transport"] = transport_cost
-                candidate["budget"]["total_estimated"] = round(
-                    float(candidate["budget"].get("total_estimated") or 0.0) + transport_cost, 2
-                )
+            # 预算校准前置：全口径（站级兜底 + 住宿缺口 + 大交通 + 对账），
+            # 与详情页 GET /budget / 修订后 / 分享页一致（compute_full_budget）。
+            candidate["budget"] = budget_service.compute_full_budget(
+                days=candidate.get("days", []),
+                start_date=request.get("start_date"),
+                end_date=request.get("end_date"),
+                destination=request.get("destination"),
+                travelers=request.get("travelers", 1),
+                planned=request.get("budget"),
+                plan_data=materials.get("transport") and {"transport": materials.get("transport")} or None,
+            )
             candidate["hotels"] = _normalize_hotels(materials.get("hotels") or [])
 
             # 行程草案制品（每代都发；前端「编排阶段」实时展示天数/主题）

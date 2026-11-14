@@ -157,7 +157,8 @@ async def test_add_day_and_stop(client, auth_user):
 
     resp = await client.get(f"/api/v1/trips/{trip_id}/budget", headers=headers)
     assert resp.status_code == 200
-    assert resp.json()["total_estimated"] == 0
+    # 新口径（2026-11-14）：外滩 0 价 → 兜底估算 25；2 天行程无酒店站 → 住宿缺口 2 晚 × 上海基准 560
+    assert resp.json()["total_estimated"] == round(25 + 560 * 2, 2)
 
 
 # ── 异步 planner（FakeLLM 多 Agent 全链路） ────────────────
@@ -615,7 +616,8 @@ async def test_share_link_flow(client, auth_user):
     assert len(shared["days"]) == 1
     assert shared["days"][0]["stops"][0]["name"] == "西湖"
     assert "budget_summary" in shared
-    assert shared["budget_summary"]["total_estimated"] == 0
+    # 新口径（2026-11-14）：西湖 0 价 → 兜底 25；1 天行程无酒店站 → 住宿缺口 1 晚 × 杭州 430
+    assert shared["budget_summary"]["total_estimated"] == round(25 + 430, 2)
     assert shared["budget_summary"]["currency"] == "CNY"
 
     # TripOut 携带 share_token（前端可判断已分享）
@@ -651,13 +653,14 @@ async def test_share_budget_summary_per_person(client, auth_user):
     shared = (await client.get(f"/api/v1/trips/share/{token}")).json()
 
     summary = shared["budget_summary"]
-    assert summary["total_estimated"] == 300
-    assert summary["per_person_total"] == 100
-    assert summary["per_person_by_type"]["food"] == 100
-    assert summary["per_person_by_type"]["attraction"] == 0
-    # travelers=3，1 天 → 日均 300，人均日均 100
-    assert summary["daily_average"] == 300
-    assert summary["per_person_daily"] == 100
+    # 新口径（2026-11-14）：西湖 0 价 → 兜底 25；1 天无酒店站 → 住宿缺口 1 晚 × 杭州 430
+    assert summary["total_estimated"] == round(25 + 300 + 430, 2)
+    assert summary["per_person_total"] == round((25 + 300 + 430) / 3, 2)
+    assert summary["per_person_by_type"]["food"] == 100.0
+    assert summary["per_person_by_type"]["attraction"] == round(25 / 3, 2)
+    # travelers=3，1 天 → 日均 755，人均日均 = 755/3
+    assert summary["daily_average"] == round(25 + 300 + 430, 2)
+    assert summary["per_person_daily"] == round(round(25 + 300 + 430, 2) / 3, 2)
 
 
 async def test_share_requires_auth_and_valid_token(client):

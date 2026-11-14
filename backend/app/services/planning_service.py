@@ -312,7 +312,16 @@ async def _persist_trip(
         )
         db.add(day_record)
         await db.flush()
-        for idx, stop in enumerate(day.get("stops", []), start=1):
+        # 方案 A：落库前给 0 价站点补确定性参考估算（不覆盖真实价），
+        # 预算口径统一；同步带 estimate_sources 标注（诚实口径）。
+        day_stops = day.get("stops") or []
+        from app.services.budget_service import fill_stop_estimated_costs
+
+        fill_stop_estimated_costs(day_stops, city=trip.destination)
+        for idx, stop in enumerate(day_stops, start=1):
+            details = _stop_details(stop)
+            if stop.get("estimate_sources"):
+                details = {**(details or {}), "estimate_sources": stop["estimate_sources"]}
             db.add(
                 Stop(
                     day_id=day_record.id,
@@ -326,7 +335,7 @@ async def _persist_trip(
                     estimated_duration_minutes=stop.get("duration_minutes"),
                     # 保留来源元数据（前端地图/导出可用；将来可扩展富信息）
                     # is_transfer：多城市交通占位站标记（时间轴识别）
-                    details=_stop_details(stop),
+                    details=details,
                 )
             )
 

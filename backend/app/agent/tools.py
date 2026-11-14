@@ -658,14 +658,15 @@ async def _weather_wttr(city: str, *, days: int = 3) -> dict[str, Any]:
 
 
 def compute_budget(stops: list[dict[str, Any]]) -> dict[str, Any]:
-    """根据站点列表计算预算明细（纯计算）。"""
-    by_type: dict[str, float] = {}
-    total = 0.0
-    for stop in stops:
-        cost = float(stop.get("estimated_cost") or 0)
-        stype = stop.get("type", "attraction")
-        by_type[stype] = by_type.get(stype, 0.0) + cost
-        total += cost
+    """根据站点列表计算预算明细（纯计算）。
+
+    与 budget_service.compute_budget_stops 同口径：0 价站按类型/关键词
+    兜底估算计入（方案 A 统一口径），保证 tools/pipeline/revise 三处
+    修订后预算不缩水、与 API / 分享页一致。
+    """
+    from app.services.budget_service import compute_budget_stops
+
+    by_type, total = compute_budget_stops([{"stops": stops}])
     return {
         "total_estimated": round(total, 2),
         "by_type": {k: round(v, 2) for k, v in by_type.items()},

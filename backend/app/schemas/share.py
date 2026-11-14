@@ -150,6 +150,8 @@ class TripBudgetOut(BaseModel):
     per_person_by_type: dict[str, float] = Field(default_factory=dict)
     per_person_daily: float | None = None
     estimate_basis: dict | None = None
+    # 用户预算对账块（方案 C：planned / gap / daily_needed / status / note）
+    reconciliation: dict | None = None
 
 
 class SharedTripOut(TripOut):

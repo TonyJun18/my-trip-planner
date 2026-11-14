@@ -134,15 +134,21 @@ async def _preview_edit(
                 "hint": "修改后的站点组合超出自驾约束（超距/超时），请缩小范围或调整顺序后重试",
             }
 
-        # 预算试算：用副本的快照（_plan_snapshot 预算硬编码 0.0 → 用代码重算）
-        from app.agent.tools import compute_budget
+        # 预算试算：全口径（站级兜底 + 住宿缺口 + 大交通 + 对账），
+        # 与修订后 / 详情页一致（此前 tools 版纯求和会丢住宿缺口与大交通）
+        from app.services.budget_service import compute_budget
 
-        all_stops = [
-            {"name": s.name, "type": s.stop_type, "estimated_cost": float(s.estimated_cost or 0)}
-            for d in trip.days
-            for s in d.stops
-        ]
-        budget = compute_budget(all_stops)
+        try:
+            budget = compute_budget(trip, plan_data=_rs._plan_snapshot(trip))
+        except Exception:  # noqa: BLE001 — 试算失败退回纯站级，不阻断预览
+            from app.agent.tools import compute_budget as _tools_budget
+
+            all_stops = [
+                {"name": s.name, "type": s.stop_type, "estimated_cost": float(s.estimated_cost or 0)}
+                for d in trip.days
+                for s in d.stops
+            ]
+            budget = _tools_budget(all_stops)
 
         changed = _rs._describe_actions(diff, locale="zh-CN")
         updated_at = trip.updated_at.isoformat() if trip.updated_at else None

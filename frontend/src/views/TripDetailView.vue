@@ -1081,6 +1081,7 @@ onBeforeUnmount(() => {
               :spent="Number(tripSummaries?.journey?.expense_total) || 0"
               :by-type="budget?.by_type || {}"
               :basis="budget?.estimate_basis || {}"
+              :reconciliation="budget?.reconciliation || null"
               :travelers="Number(trip?.travelers) || 1"
             />
 

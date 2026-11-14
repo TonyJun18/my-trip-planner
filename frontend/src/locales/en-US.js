@@ -1231,6 +1231,7 @@ export default {
     food: 'Food',
     hotel: 'Hotel',
     transport: 'Round trip',
+    reconGap: 'Estimate is ¥{amount} below your budget (≈ ¥{daily}/day more expected; estimates are reference prices)',
   },
   // ── Expense tracking (task-multi-currency-expense-eval frontend) ──
   expense: {

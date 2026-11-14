@@ -7,6 +7,7 @@
 // - 实花：GET /trips/{id}/journey → expense_total（多币种已折算 CNY）
 // 口径诚实：按「含 / 不含」明确列出，来源与置信度原样透出，不做加工。
 import { computed, ref } from 'vue'
+import { Warning } from '@element-plus/icons-vue'
 
 const props = defineProps({
   budgetPlanned: { type: Number, default: 0 },
@@ -14,6 +15,7 @@ const props = defineProps({
   spent: { type: Number, default: 0 },
   byType: { type: Object, default: () => ({}) },
   basis: { type: Object, default: () => ({}) },
+  reconciliation: { type: Object, default: null },
   travelers: { type: Number, default: 1 },
 })
 
@@ -62,6 +64,22 @@ const basisNote = computed(() => {
   if (transport?.source) parts.push(`transport: ${transport.source}`)
   return parts.join(' · ')
 })
+
+// 预算对账（方案 C）：estimated 显著低于 planned 时提示缺口，不硬凑
+const recon = computed(() => props.reconciliation || null)
+const reconGap = computed(() => {
+  if (!recon.value?.gap || recon.value.status !== 'under') return 0
+  return Math.round(recon.value.gap)
+})
+const reconDaily = computed(() => {
+  if (!recon.value?.daily_needed || recon.value.status !== 'under') return 0
+  return Math.round(recon.value.daily_needed)
+})
+const showRecon = computed(() => {
+  // 仅当缺口显著（≥ 计划 15%）时提示，避免「只差几十块」的噪音
+  const planned = Number(props.budgetPlanned) || 0
+  return reconGap.value > 0 && planned > 0 && reconGap.value >= planned * 0.15
+})
 </script>
 
 <template>
@@ -99,6 +117,11 @@ const basisNote = computed(() => {
     <div v-if="hasPlanned" class="bb-track">
       <div class="bb-fill" :class="level" :style="{ width: barPercent + '%' }" />
       <div v-if="hasSpent && hasEstimated" class="bb-marker" :style="{ left: barPercent + '%' }" />
+    </div>
+
+    <div v-if="showRecon" class="bb-recon">
+      <el-icon class="bb-recon-ico"><Warning /></el-icon>
+      <span>{{ $t('budgetBar.reconGap', { amount: reconGap.toLocaleString(), daily: reconDaily.toLocaleString() }) }}</span>
     </div>
 
     <div v-if="expanded" class="bb-detail">
@@ -239,7 +262,22 @@ const basisNote = computed(() => {
   color: var(--muted);
   word-break: break-all;
 }
+.bb-recon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(224, 164, 88, 0.1);
+  color: #b45309;
+  font-size: 12.5px;
+}
+.bb-recon-ico {
+  flex-shrink: 0;
+}
 @media print {
   .bb-toggle { display: none; }
+  .bb-recon { display: none; }
 }
 </style>

@@ -1229,6 +1229,7 @@ export default {
     food: '餐饮',
     hotel: '住宿',
     transport: '往返交通',
+    reconGap: '当前估算比预算低 ¥{amount}，按预算口径日均还差 ¥{daily}（估算为参考价）',
   },
   // ── 费用记账（task-multi-currency-expense-eval 前端接线） ──
   expense: {

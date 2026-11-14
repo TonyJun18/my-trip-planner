@@ -82,15 +82,12 @@ def _sum_budget(days: list[dict[str, Any]]) -> dict[str, Any]:
     """按站点 estimated_cost 汇总预算（与 budget_service 同构）。
 
     返回 {total_estimated, by_type: {attraction, food, hotel}, currency}。
+    统一口径（方案 A）：0 价站按类型/关键词兜底估算计入，与主案/API 一致，
+    备选预算不再因站价缺失而偏小。
     """
-    by_type: dict[str, float] = {"attraction": 0.0, "food": 0.0, "hotel": 0.0}
-    total = 0.0
-    for day in days:
-        for stop in day.get("stops") or []:
-            cost = stop.get("estimated_cost") or 0.0
-            t = stop.get("stop_type") or "attraction"
-            by_type[t] = by_type.get(t, 0.0) + cost
-            total += cost
+    from app.services.budget_service import compute_budget_stops
+
+    by_type, total = compute_budget_stops(days)
     return {
         "total_estimated": round(total, 2),
         "by_type": {k: round(v, 2) for k, v in by_type.items()},

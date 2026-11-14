@@ -51,8 +51,8 @@ async def test_export_trip_owner(client: AsyncClient, auth_user):
     assert body["days"][0]["stops"][0]["name"] == "西湖"
     assert body["days"][0]["stops"][0]["estimated_cost"] == 100.0
 
-    # 预算汇总：站点合计（无 plan → 无大交通）
-    assert body["budget_summary"]["total_estimated"] == 100.0
+    # 预算汇总：站点 100 + 住宿缺口（2 天无酒店站 → 2 晚 × 杭州 430）
+    assert body["budget_summary"]["total_estimated"] == round(100.0 + 430 * 2, 2)
     assert body["budget_summary"]["by_type"]["attraction"] == 100.0
     # 无 AI plan → plan 为 None（手工行程也可导出）
     assert body["plan"] is None
@@ -89,7 +89,8 @@ async def test_export_shared_trip_by_token(client: AsyncClient, auth_user):
     body = resp.json()
     assert body["trip"]["id"] == trip_id
     assert body["days"][0]["stops"][0]["name"] == "西湖"
-    assert body["budget_summary"]["total_estimated"] == 100.0
+    # 分享导出预算与 owner 口径一致（站点 100 + 2 晚住宿缺口 860）
+    assert body["budget_summary"]["total_estimated"] == round(100.0 + 430 * 2, 2)
 
 
 @pytest.mark.asyncio
