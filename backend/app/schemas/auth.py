@@ -29,6 +29,8 @@ class UserMeOut(BaseModel):
     email: str | None = None
     phone: str | None = None
     display_name: str | None = None
+    # 运营标记（ADR-0001）：staff 可对任意公开行程标 featured；前端后期可据此显示运营入口
+    is_staff: bool = False
 
 
 class TokenOut(BaseModel):

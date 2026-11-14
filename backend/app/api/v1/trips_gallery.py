@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, get_optional_user
 from app.core.database import get_session
-from app.core.exceptions import UnauthorizedError
+from app.core.exceptions import PermissionDeniedError, UnauthorizedError
 from app.models import User
 from app.schemas import TripOut
 
@@ -45,6 +45,7 @@ async def list_gallery(
         sort=sort,
         destination=destination,
         owner=user.id if (mine and user) else None,
+        viewer_id=user.id if user else None,
     )
 
 
@@ -99,3 +100,46 @@ async def unpublish_gallery_trip(
 
     await gallery_service.unpublish_from_gallery(db, trip_id, owner=user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/gallery/{trip_id}/like", summary="点赞画廊行程（登录，幂等）")
+async def like_gallery_trip(
+    trip_id: str,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """登录用户点赞（owner 不可自赞）。返回 {liked, like_count}。"""
+    from app.services import gallery_service
+
+    return await gallery_service.like_trip(db, trip_id, user_id=user.id)
+
+
+@router.delete("/gallery/{trip_id}/like", summary="取消点赞画廊行程（登录，幂等）")
+async def unlike_gallery_trip(
+    trip_id: str,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """取消点赞（未赞过也幂等成功）。返回 {liked, like_count}。"""
+    from app.services import gallery_service
+
+    return await gallery_service.unlike_trip(db, trip_id, user_id=user.id)
+
+
+@router.post("/{trip_id}/gallery/feature", summary="运营精选（staff-only）")
+async def feature_gallery_trip(
+    trip_id: str,
+    payload: dict | None = None,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """staff 将任意公开行程标为画廊精选（ADR-0001；不建管理后台）。
+
+    非 staff 403；行程需存在；未分享自动创建 share_token。
+    """
+    from app.services import gallery_service
+
+    if not user.is_staff:
+        raise PermissionDeniedError("需要运营权限")
+    blurb = (payload or {}).get("blurb") if isinstance(payload, dict) else None
+    return await gallery_service.set_featured_by_staff(db, trip_id, blurb=blurb)

@@ -20,6 +20,7 @@ onMounted(() => {
   }
   if (auth.isLoggedIn) router.replace('/trips')
   loadGallery()
+  loadCityTemplates()
 })
 
 // 主 CTA：已登录直接进规划，未登录带去登录并回跳 /plan
@@ -62,6 +63,39 @@ const demoSteps = computed(() => [
   { no: '02', title: t('landing.demo2Title'), desc: t('landing.demo2Desc') },
   { no: '03', title: t('landing.demo3Title'), desc: t('landing.demo3Desc') },
 ])
+
+// ── 灵感区：城市模板（ADR-0001 内容发现层，替代静态 showcase） ──
+// 23 目的地规则知识库（basis=rule_based 诚实标注），冷启动稳；点击 → 深链预填规划
+const cityTemplates = ref([])
+const templatesLoading = ref(false)
+
+async function loadCityTemplates() {
+  templatesLoading.value = true
+  try {
+    const data = await api.getCityTemplates({ limit: 23 })
+    cityTemplates.value = data.items || []
+  } catch {
+    // 模板加载失败静默：门面页不因后端数据缺失而报错（保持空区，不显示静态兜底）
+    cityTemplates.value = []
+  } finally {
+    templatesLoading.value = false
+  }
+}
+
+// 模板预算档 → 表单预算元（与 PlanWizard tierPresetMap 对齐）
+const templateBudgetMap = { economy: 1500, comfort: 3000, quality: 6000, luxury: 12000 }
+function templateBudget(tpl) {
+  return templateBudgetMap[tpl.budget_tier] || 3000
+}
+
+// 模板卡 → 深链预填规划（登录后跳 /plan，未登录带去登录并回跳）
+function openTemplate(tpl) {
+  const dest = encodeURIComponent(String(tpl.destination || ''))
+  const budget = templateBudget(tpl)
+  const target = `/plan?dest=${dest}&budget=${budget}`
+  if (auth.isLoggedIn) router.push(target)
+  else router.push(`/login?redirect=${encodeURIComponent(target)}`)
+}
 
 // ── 灵感画廊 teaser（完整画廊在 /gallery） ──
 const galleryItems = ref([])
@@ -243,16 +277,17 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <!-- ── 灵感区（示例行程） ── -->
-    <section class="section section-tint reveal" id="inspiration">
+    <!-- ── 灵感区（城市模板：23 目的地规则知识库，点击深链预填规划） ── -->
+    <section v-if="cityTemplates.length" class="section section-tint reveal" id="inspiration">
       <h2 class="section-title">{{ t('landing.inspTitle') }}</h2>
       <p class="section-sub">{{ t('landing.inspSub') }}</p>
       <div class="insp-grid">
-        <article class="insp-card reveal" v-for="(trip, i) in showcaseTrips" :key="trip.key" :style="{ '--delay': (i % 3) * 70 + 'ms' }" @click="startPlanning">
-          <div class="insp-cover" :style="{ background: trip.hue }">
-            <span class="insp-emoji">{{ trip.emoji }}</span>
-            <span class="insp-name">{{ cityName(trip.key) }}</span>
-            <span class="insp-meta">{{ trip.days }} {{ t('common.days') }} · ¥{{ trip.budget }}</span>
+        <article class="insp-card reveal" v-for="(tpl, i) in cityTemplates" :key="tpl.destination"
+                 :style="{ '--delay': (i % 3) * 70 + 'ms' }" @click="openTemplate(tpl)">
+          <div class="insp-cover">
+            <span class="insp-emoji">{{ tpl.tags?.[0] === 'nature' ? '🏔️' : tpl.tags?.[0] === 'food' ? '🍜' : tpl.tags?.[0] === 'history' ? '🏛️' : '🌏' }}</span>
+            <span class="insp-name">{{ tpl.destination }}</span>
+            <span class="insp-meta">{{ tpl.days }} {{ t('common.days') }} · ¥{{ templateBudget(tpl) }}</span>
           </div>
           <div class="insp-body">
             <span class="insp-go">{{ t('landing.inspCta') }} →</span>

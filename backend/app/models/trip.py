@@ -310,6 +310,24 @@ class TripRating(Base):
     )
 
 
+class GalleryLike(Base):
+    """画廊点赞（ADR-0001 内容发现层：Travora 社区互动的最小切口）。
+
+    - 登录用户对画廊行程点赞（布尔信号，非 1-5 星评分）；同 user + trip 唯一，幂等 toggle。
+    - 独立于 trip_ratings（评分/visited）：点赞是二元互动，语义不污染评分聚合；
+      不参与 hot 排序（hot 仍为评分人数→均分→更新时间）。
+    - owner 不可自赞（自赞无社区意义）；staff 运营不额外处理。
+    """
+
+    __tablename__ = "gallery_likes"
+    __table_args__ = (UniqueConstraint("user_id", "trip_id", name="uq_gallery_likes_user_trip"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class TripBooking(Base):
     """预订条目（task-booking-outlink：行程内「可预订」建议 + 凭证回填）。
 

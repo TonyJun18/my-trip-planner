@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import * as api from '@/api'
@@ -10,6 +10,7 @@ import QualityCard from '@/components/QualityCard.vue'
 import TripServicing from '@/components/TripServicing.vue'
 
 const router = useRouter()
+const route = useRoute()
 const { t, locale } = useI18n()
 
 // 热门城市：显示名走 i18n（cities.*），点击时映射回中文契约值（后端地理编码用）
@@ -448,7 +449,21 @@ async function pollTask(taskId) {
 
 onMounted(() => {
   loadQuota()
+  applyDeepLinkPrefill()
 })
+
+// 模板深链预填（ADR-0001 内容发现层）：/plan?dest=杭州&budget=3000
+// 守卫把 fullPath 放在 redirect query，登录回跳会原样带回来。
+// 只预填目的地 + 预算元；天数/日期不预填（模板无真实日期，避免臆造出行窗口）。
+function applyDeepLinkPrefill() {
+  const dest = (route.query.dest || '').toString().trim()
+  const budgetRaw = (route.query.budget || '').toString().trim()
+  if (dest) form.destination = dest
+  if (budgetRaw && /^\d+$/.test(budgetRaw)) {
+    const v = Number(budgetRaw)
+    if (v > 0 && v <= 1000000) form.budget = v
+  }
+}
 
 onBeforeUnmount(() => {
   cleanupWs()

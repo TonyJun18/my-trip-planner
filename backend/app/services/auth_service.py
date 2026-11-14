@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError, UnauthorizedError
+from app.common.config import settings
 from app.core.security import (
     create_access_token,
     decode_access_token,
@@ -42,6 +43,18 @@ def _validate_phone(phone: str) -> bool:
 def _normalize_phone(phone: str) -> str:
     phone = phone.strip().replace(" ", "").replace("-", "")
     return phone
+
+
+def sync_staff_flag(user: User) -> None:
+    """按 env STAFF_USER_IDS 白名单同步用户 is_staff（ADR-0001 运营能力）。
+
+    - 白名单命中 → is_staff=True（幂等）；未命中 → 保持 False。
+    - 不建管理后台；改 env 后重启即生效；登录路径统一调用。
+    """
+    whitelist = {uid.strip() for uid in settings.STAFF_USER_IDS.split(",") if uid.strip()}
+    staff = user.id in whitelist
+    if user.is_staff != staff:
+        user.is_staff = staff
 
 
 async def register(db: AsyncSession, data: RegisterIn) -> TokenOut:
@@ -86,11 +99,14 @@ async def register(db: AsyncSession, data: RegisterIn) -> TokenOut:
         raise AuthError("该邮箱或手机号已注册")
     await db.refresh(user)
 
+    sync_staff_flag(user)
+
     token = create_access_token(user.id)
     return TokenOut(
         access_token=token,
         token_type="bearer",
-        user=UserMeOut(id=user.id, email=user.email, phone=user.phone, display_name=user.display_name),
+        user=UserMeOut(id=user.id, email=user.email, phone=user.phone, display_name=user.display_name,
+                       is_staff=user.is_staff),
     )
 
 
@@ -111,11 +127,14 @@ async def login(db: AsyncSession, data: LoginIn) -> TokenOut:
     if user is None or not user.password_hash or not verify_password(data.password, user.password_hash):
         raise UnauthorizedError("账号或密码错误", code="bad_credentials")
 
+    sync_staff_flag(user)
+
     token = create_access_token(user.id)
     return TokenOut(
         access_token=token,
         token_type="bearer",
-        user=UserMeOut(id=user.id, email=user.email, phone=user.phone, display_name=user.display_name),
+        user=UserMeOut(id=user.id, email=user.email, phone=user.phone, display_name=user.display_name,
+                       is_staff=user.is_staff),
     )
 
 
@@ -133,4 +152,5 @@ def to_me_out(user: User) -> UserMeOut:
         email=user.email,
         phone=user.phone,
         display_name=user.display_name,
+        is_staff=user.is_staff,
     )

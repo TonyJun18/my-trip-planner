@@ -19,8 +19,8 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import NotFoundError
-from app.models import Stop, Trip, TripDay, TripRating
+from app.core.exceptions import NotFoundError, PermissionDeniedError
+from app.models import GalleryLike, Stop, Trip, TripDay, TripRating
 from app.services._common import TRIP_LOADS as _TRIP_LOADS
 from app.services.inspiration_service import DESTINATIONS
 
@@ -72,10 +72,14 @@ def _gallery_summary(trip: Trip) -> dict[str, Any]:
         "share_token": trip.share_token,
         "updated_at": trip.updated_at.isoformat() if trip.updated_at else None,
         "source": "user",
+        "is_featured": True,
         # 评分热度（task-trip-rating-signal）：默认无评分；由 list_gallery 填充
         "rating_count": 0,
         "rating_avg": None,
         "visited_count": 0,
+        # 画廊点赞（ADR-0001）：默认 0；由 list_gallery 填充
+        "like_count": 0,
+        "liked": False,
     }
 
 
@@ -110,6 +114,7 @@ async def list_gallery(
     sort: str = "new",
     destination: str | None = None,
     owner: str | None = None,
+    viewer_id: str | None = None,
 ) -> dict[str, Any]:
     """公开画廊列表（已发布 + 有分享令牌）。
 
@@ -119,6 +124,7 @@ async def list_gallery(
     - ``sort``：``new`` 最近更新 / ``hot`` 评分热度（人数 → 均分 → 更新时间）
     - ``destination``：目的地模糊匹配（画廊筛选条）
     - ``owner``：只列某个 owner 的发布（「我发布的」；由 API 层从登录态取）
+    - ``viewer_id``：当前浏览者（登录时传），用于附加「我是否赞过」（liked）
     """
     limit = max(1, min(int(limit or 20), MAX_GALLERY_LIMIT))
     offset = max(0, int(offset or 0))
@@ -171,6 +177,23 @@ async def list_gallery(
 
     trips = (await db.execute(stmt)).scalars().all()
     summaries = await _attach_rating_summaries(db, [_gallery_summary(t) for t in trips])
+    # 附加点赞数（独立于评分，不参与 hot 排序；失败不影响列表）
+    like_map = await like_summaries(db, [s["trip_id"] for s in summaries])
+    for s in summaries:
+        s["like_count"] = like_map.get(s["trip_id"], 0)
+    # 附加「我是否赞过」（viewer 登录时）：画廊卡 ❤ 状态
+    if viewer_id and summaries:
+        liked_rows = (
+            await db.execute(
+                select(GalleryLike.trip_id).where(
+                    GalleryLike.trip_id.in_([s["trip_id"] for s in summaries]),
+                    GalleryLike.user_id == viewer_id,
+                )
+            )
+        ).scalars().all()
+        liked_ids = set(liked_rows)
+        for s in summaries:
+            s["liked"] = s["trip_id"] in liked_ids
     return {"items": summaries, "total": total, "limit": limit, "offset": offset}
 
 
@@ -252,3 +275,100 @@ async def clone_trip(db: AsyncSession, source_id: str, *, new_owner: str) -> Tri
     # 重新 eager-load（TripOut 序列化需要 days/stops；避免异步上下文外懒加载）
     stmt2 = select(Trip).options(*_TRIP_LOADS).where(Trip.id == copy.id)
     return (await db.execute(stmt2)).scalar_one()
+
+
+async def _require_featured_trip(db: AsyncSession, trip_id: str) -> Trip:
+    """点赞目标必须存在且已发布到画廊（featured + share_token）。"""
+    stmt = select(Trip).where(Trip.id == trip_id)
+    trip = (await db.execute(stmt)).scalar_one_or_none()
+    if trip is None or not trip.is_featured or not trip.share_token:
+        raise NotFoundError("行程不存在或未发布到画廊")
+    return trip
+
+
+async def like_trip(db: AsyncSession, trip_id: str, *, user_id: str) -> dict[str, Any]:
+    """登录用户点赞画廊行程（幂等 toggle）。
+
+    - owner 不可自赞（自赞无社区意义，403）。
+    - 返回 {liked: True, like_count: N}；重复点赞不再新增（同 user+trip 唯一）。
+    """
+    trip = await _require_featured_trip(db, trip_id)
+    if trip.owner == user_id:
+        raise PermissionDeniedError("不能给自己的行程点赞")
+
+    existing = (
+        await db.execute(
+            select(GalleryLike).where(GalleryLike.trip_id == trip_id, GalleryLike.user_id == user_id)
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(GalleryLike(trip_id=trip_id, user_id=user_id))
+        await db.commit()
+
+    count = int(
+        (await db.execute(
+            select(func.count(GalleryLike.id)).where(GalleryLike.trip_id == trip_id)
+        )).scalar_one() or 0
+    )
+    return {"liked": True, "like_count": count}
+
+
+async def unlike_trip(db: AsyncSession, trip_id: str, *, user_id: str) -> dict[str, Any]:
+    """取消点赞（幂等：未赞过也返回成功，like_count 不变）。"""
+    await _require_featured_trip(db, trip_id)
+    existing = (
+        await db.execute(
+            select(GalleryLike).where(GalleryLike.trip_id == trip_id, GalleryLike.user_id == user_id)
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        await db.delete(existing)
+        await db.commit()
+    count = int(
+        (await db.execute(
+            select(func.count(GalleryLike.id)).where(GalleryLike.trip_id == trip_id)
+        )).scalar_one() or 0
+    )
+    return {"liked": False, "like_count": count}
+
+
+async def like_summaries(db: AsyncSession, trip_ids: list[str]) -> dict[str, int]:
+    """批量统计点赞数（画廊列表附加用；失败不影响主流程）。"""
+    if not trip_ids:
+        return {}
+    try:
+        rows = (
+            await db.execute(
+                select(GalleryLike.trip_id, func.count(GalleryLike.id))
+                .where(GalleryLike.trip_id.in_(trip_ids))
+                .group_by(GalleryLike.trip_id)
+            )
+        ).all()
+        return {tid: int(cnt) for tid, cnt in rows}
+    except Exception:  # noqa: BLE001 — 尽力而为，失败返回空
+        return {}
+
+
+async def set_featured_by_staff(db: AsyncSession, trip_id: str, *, blurb: str | None = None) -> dict[str, Any]:
+    """staff 将任意公开行程标为画廊精选（ADR-0001 运营能力）。
+
+    - 目标行程必须存在且已分享（share_token 非空）；未分享则自动创建分享令牌。
+    - 不要求 owner 自助 publish：staff 可直接 feature 任意公开行程。
+    - 幂等：重复调用只更新 blurb。
+    """
+    from app.services import trip_service
+
+    trip = (
+        await db.execute(select(Trip).options(*_TRIP_LOADS).where(Trip.id == trip_id))
+    ).scalar_one_or_none()
+    if trip is None:
+        raise NotFoundError("行程不存在")
+    if not trip.share_token:
+        # 自动确保分享令牌存在（staff 精选需要公开可消费）
+        await trip_service.create_share_token(db, trip_id, owner=trip.owner)
+        await db.refresh(trip)
+    trip.is_featured = True
+    trip.gallery_blurb = (blurb or "").strip()[:200] or trip.gallery_blurb
+    await db.commit()
+    await db.refresh(trip)
+    return _gallery_summary(trip)

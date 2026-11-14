@@ -146,6 +146,9 @@ async def _find_or_create_user(db: AsyncSession, info: dict) -> User:
 
 
 def _to_token_out(user: User) -> TokenOut:
+    from app.services.auth_service import sync_staff_flag
+
+    sync_staff_flag(user)
     token = create_access_token(user.id)
     return TokenOut(
         access_token=token,
@@ -155,6 +158,7 @@ def _to_token_out(user: User) -> TokenOut:
             email=user.email,
             phone=user.phone,
             display_name=user.display_name,
+            is_staff=user.is_staff,
         ),
     )
 
