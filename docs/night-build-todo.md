@@ -28,48 +28,14 @@
 
 ### 维护规则
 
-- §1 硬上限 6 条；当前 4 条。
+- §1 硬上限 6 条；当前 0 条，等待新任务经 §2 候选池晋升。
 - 新任务必须先写「已核实不存在」证据；完成后必须补勾或移入 §3。
 - 每夜竞品分析新增任务只能进 §2 候选池，由用户或队列腾位后晋升。
 - `task-` slug 只出现在 §1（可执行）与 §3（已完成/已关闭），避免重复提取。
 
-## §1 可执行队列（4 / 6）
+## §1 可执行队列（0 / 6）
 
-- [ ] task-early-arrival-check: TimeGate 增「早于开门」到访校验（补功能，backend）——43% 缺陷研究里「早到」占闭馆类缺陷 56.7%（381/672），当前 `time_validation.check_plan_time_gate` 只校验 `arrival >= close - 30min`，没有 `arrival < open` 分支。
-  - 类型 / 安全区：补功能 / backend
-  - 证据：`docs/nightly/competitive-analysis/2026-11-13.md` §1.2（模式 1 共 672 起，其中早到 381 起 / 56.7%）；`backend/app/services/time_validation.py` 闭馆分支（约 L399-441）
-  - 做什么：①新增常量 `EARLY_ARRIVAL_BUFFER_MINUTES = 30`；②`check_plan_time_gate` 在闭馆检查前增加 `arrival < open - buffer` → `category=schedule` warning（message 含站点名 / 到达 / 开门 / 早到分钟）；③`backend/app/i18n/translations.py` 增 zh/en 两键 `timegate.msg.arrive_early` + `timegate.suggest.arrive_early`；④复用现有 warning → `plan.time_gate.issues` → 前端 TimeGate 面板 / property_qa 汇总，前端零改动
-  - 可测验收：`backend/tests/test_time_validation.py` 新增 4 例（早到 60min 告警 / 早到 15min 不告警 / 无营业时间沉默 / 显式 `open_hours` 覆盖类目规则）；`cd backend && .venv/bin/python -m pytest tests/test_time_validation.py -q` 全绿；全套 `pytest` 零失败
-  - 规模 / 拆分：S，1 个夜间槽
-  - 依赖：无
-  - 风险 / 关闭条件：告警噪音 → 30min 阈值、只对已知营业时间、显式优先；真实行程误报率 >30% 则回退阈值到 45min 并记评估
-
-- [ ] task-day-map-deeplink: 单日多点导航深链（补功能，frontend）——Dream Trip 把「单日导出 Google Maps」作为行中动作；我们只有 ICS 导出，日卡没有「一键导航」。
-  - 类型 / 安全区：补功能 / frontend
-  - 证据：`docs/nightly/competitive-analysis/2026-11-13.md` §1.1（Dream Trip：导出 calendar / 单日 Google Maps）；`grep -rn "google.com/maps|maps.apple|uri.amap.com" frontend/src backend/app` 为空
-  - 做什么：①新建 `frontend/src/utils/mapLinks.js` 纯函数：输入当日 stops（`lat/lng/name`），输出 Google / Apple / 高德链接；②Google 用 origin=首站、destination=末站、waypoints=中间站，最多 9 站，超限返回 `copyList`；③Apple / 高德为单点导航（按顺序「下一站」）；④`TripDetailDayCard.vue` 日头增「导航」下拉；ShareView 复用同组件自动生效；⑤i18n zh/en 4-5 键
-  - 可测验收：`frontend/src/utils/mapLinks.test.js`（vitest）覆盖 URL 编码、waypoints 顺序、9 站上限、缺坐标跳过、单站禁用；`cd frontend && npm test -- mapLinks` 通过；`npm run build` 通过；`npm run check:i18n` 双侧一致
-  - 规模 / 拆分：S，1 个夜间槽
-  - 依赖：无
-  - 风险 / 关闭条件：坐标体系差异（高德 GCJ-02 vs Google WGS84）与地区可达性 → 国内默认高德、海外默认 Google，不做坐标纠偏，文案注明「以地图实际路线为准」；若要求精准纠偏则拆独立评估
-
-- [ ] task-import-recall-en: 英文地名导入规则（补功能，backend）——英文攻略召回基线 0/10，当前测试只用 `≤0.3` 上限断言挡住候选爆炸。
-  - 类型 / 安全区：补功能 / backend
-  - 证据：`backend/tests/test_import_recall.py`（`test_note_en_recall_upper_bound`，基线见 `backend/tests/import_recall_samples.py`）；`docs/night-build-todo.md` 历史 L186；竞品 Dream Trip 支持 18 语言
-  - 做什么：①`note_import.py` / `social_import.py` 地名收尾词表补英文（Temple / Shrine / Park / Garden / Market / Tower / Crossing / Street / Museum / Castle / Beach / Bridge / Square / Gallery / Zoo / Aquarium / Cathedral / Palace / District…）；②行级启发：编号行 / 首字母大写短语 / 描述词截断（free / must-see / ticket / yen 等）；③中文规则保持不变
-  - 可测验收：`test_import_recall.py` 英文下限改 `≥0.8`（8/10）；中文攻略 `≥0.9` 不回归；`SOCIAL_ZH` / `EMAIL_ZH` 不回归；新增负例（"The market was great" / "a park bench" / "we took the train"）不产生候选；全套 `pytest` 零失败
-  - 规模 / 拆分：M，2 槽（①note 规则；②social + 负例 + 回归）
-  - 依赖：无
-  - 风险 / 关闭条件：为拉召回引入噪音 → 双向阈值 + 负例集 + 候选上限；英文召回达标但负例误报 >2 条则回退并记降级
-
-- [ ] task-byo-ai-import-kit: BYO-AI 草稿回填引导（补功能，frontend）——Meridian Dispatch 证明「规划在用户自己的 AI、行程在 app 内」是 2026 新范式；我们只有 app 内 AI，没有「AI 草稿回填」入口。
-  - 类型 / 安全区：补功能 / frontend
-  - 证据：`docs/nightly/competitive-analysis/2026-11-13.md` §1.3（Meridian Dispatch：Claude/ChatGPT/Grok connector + 1-tap import）；`frontend/src/components/ImportDialog.vue` 现有五通道均为「主动粘贴」
-  - 做什么：①`ImportDialog.vue` 新增「AI 草稿」tab：三步引导 + 可复制 prompt + 粘贴框；②新建 `frontend/src/utils/byoPrompt.js`：`buildByoPrompt(locale)`（带版本号，要求每行 `- 地点名｜类型｜建议时长｜备注`，禁止解释）+ `parseByoDraft(text)`（容错解析 pipe / 编号列表 / 普通 bullet，散文降级走 note import）；③候选必须人工勾选，**绝不自动落库**；④i18n zh/en 约 8 键
-  - 可测验收：`frontend/src/utils/byoPrompt.test.js`（vitest）覆盖 prompt 版本与格式、3 份 fixture（pipe / 编号 / 散文）解析结果、空输入与超长输入；`npm test -- byoPrompt` 通过；`npm run build` + `npm run check:i18n` 通过；现有 note_import 敌意源剥离测试不回归
-  - 规模 / 拆分：M，2 槽（①prompt + UI；②解析容错 + 测试 + i18n）
-  - 依赖：无（英文站点解析体验依赖 `task-import-recall-en`，但不阻塞中文主路径）
-  - 风险 / 关闭条件：LLM 输出漂移、支持成本 → prompt 版本化、候选确认、失败明确提示；连续 3 次真机测试候选命中 <50% 则降级为纯文案引导
+> 首批 4 个任务已全部完成并移入 §3（2026-11-14）。等待新任务经 §2 候选池晋升。
 
 ## §2 候选池（未入队；满足触发条件后再晋升）
 
@@ -99,6 +65,10 @@
 - [x] task-favorite-spots-frontend: 已完成——`FavoritesView` 收集箱 + ImportDialog 存入收集箱已在 main（2026-11-10）。
 - [x] task-photo-batch-screenshot: 已完成——ImportDialog 多选 ≤12 张、串行 OCR、按站点名合并（2026-11-09）。
 - [x] task-trip-detail-schedule-timeline: 已完成——`schedule_service` + 三读路径注入 + 前端时刻流水线已在 main；OpenSpec change 于 2026-11-14 归档。
+- [x] task-early-arrival-check: 已完成——`time_validation.py` 增 `EARLY_ARRIVAL_BUFFER_MINUTES=30` + `arrival<open` 分支告警 + zh/en i18n + 4 例测试；commit `2b1eda9`（2026-11-14，全套 1125 绿）。
+- [x] task-day-map-deeplink: 已完成——`frontend/src/utils/mapLinks.js` 单日多点导航深链（Google waypoints≤9 / Apple·高德单点）+ `DayNavButton.vue` + DayCard/ShareView 双接线 + i18n 4 键；commit `357f489`（2026-11-14，16 测试绿 + build 通过）。
+- [x] task-import-recall-en: 已完成——`note_import.py`/`social_import.py` 英文地名收尾词表 + 逗号专名行启发 + 动词前缀剥离 + 句子挡板；英文召回 ≥0.8 下限断言（10 例新测试）；commit `1878d35`（2026-11-14，全套 1125 绿）。
+- [x] task-byo-ai-import-kit: 已完成——`frontend/src/utils/byoPrompt.js`（版本化 prompt + pipe/编号/散文容错解析 + 去重）+ ImportDialog「AI 草稿」tab（三步引导 + 复制模板 + 散文降级 note）+ i18n 9 键×2；commit `d36c5a4`（2026-11-14，16 测试绿 + build + i18n 检查通过）。
 
 ## §4 历史归档（2026-10-02 ~ 2026-11-14，append-only）
 
