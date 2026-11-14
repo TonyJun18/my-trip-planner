@@ -5,7 +5,7 @@
 
 ## 0. 项目信息
 
-- 项目路径：`/Users/pengjun/Desktop/my-agent/my-trip-planner`
+- 项目路径：`/Users/pengjun/Documents/my-agent/my-trip-planner`（2026-11-06 已从 `~/Desktop/my-agent` 迁移，本行同步修正）
 - 技术栈：FastAPI + LangGraph + SQLAlchemy(async) + Vue3 + PostgreSQL
 - 后端目录：`backend/`（测试：`cd backend && .venv/bin/python -m pytest`）
 - 前端目录：`frontend/`
