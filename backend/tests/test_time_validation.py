@@ -404,3 +404,60 @@ def test_meal_early_breakfast_boundary():
     result2 = check_plan_time_gate(plan2)
     meal2 = [i for i in result2["issues"] if "不在" in i["message"]]
     assert meal2, "06:30 过早应提示"
+
+
+# ── 早到校验（task-early-arrival-check）：到达时刻早于开门 - 缓冲 → warning ──
+# 基准：attraction 类 09:00-18:00；早到缓冲 30min；到达 08:00 早于开门 60min → 告警
+def test_early_arrival_warns():
+    plan = {
+        "days": [
+            _day(1, _stop("故宫博物院", visit_start="08:00", estimated_duration_minutes=180))
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    assert result["passed"] is False
+    early = [i for i in result["issues"] if "开门" in i["message"] or "open" in i["message"].lower()]
+    assert early, "早到应产生提示"
+    assert "故宫博物院" in early[0]["message"]
+    assert "09:00" in early[0]["message"]
+    assert early[0]["severity"] == "warning"
+    assert early[0]["category"] == "schedule"
+    assert early[0]["day_number"] == 1
+
+
+# 早到缓冲边界：到达 08:31（早于开门 29min）→ 不告警
+def test_early_arrival_buffer_boundary_no_warning():
+    plan = {
+        "days": [
+            _day(1, _stop("故宫博物院", visit_start="08:31", estimated_duration_minutes=180))
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    assert result["passed"] is True
+    assert all("开门" not in i["message"] and "open" not in i["message"].lower() for i in result["issues"])
+
+
+# 无营业时间（未知 stop_type）→ 早到校验沉默
+def test_early_arrival_unknown_type_silent():
+    plan = {
+        "days": [
+            _day(1, _stop("某个奇怪地点", stop_type="unknown_type", visit_start="08:00",
+                          estimated_duration_minutes=60))
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    assert result["passed"] is True
+    assert all("开门" not in i["message"] and "open" not in i["message"].lower() for i in result["issues"])
+
+
+# 显式 open_hours 优先：08:00 到达 07:00 开门的站点 → 不告警
+def test_early_arrival_explicit_open_hours_overrides_basis():
+    plan = {
+        "days": [
+            _day(1, _stop("清晨市场", stop_type="attraction", visit_start="08:00",
+                          estimated_duration_minutes=60, open_hours="07:00-14:00"))
+        ]
+    }
+    result = check_plan_time_gate(plan)
+    assert result["passed"] is True
+    assert all("开门" not in i["message"] and "open" not in i["message"].lower() for i in result["issues"])
