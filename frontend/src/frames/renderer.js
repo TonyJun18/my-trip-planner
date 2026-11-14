@@ -121,6 +121,108 @@ export function drawLockWatermark(ctx, { w = CANVAS_W, h = CANVAS_H } = {}) {
 }
 
 /**
+ * 渲染整程总结图（Phase 2）。
+ * 布局：封面头图 + 按日小区块 + 全程轨迹串联 + 统计水印。
+ * @param {HTMLCanvasElement} canvas
+ * @param {{slug: string, layout_config?: object, locked?: boolean}} template
+ * @param {{summary: object, photos: (ImageBitmap|null)[]}} data
+ *   summary: /frames/summary/data 投影 {destination, start_date, end_date, stats, days}
+ */
+export function renderSummaryCard(canvas, template, data) {
+  const cfg = resolveTemplate(template.slug, data.catalogTemplate || template).layout_config;
+  const palette = cfg.palette;
+  const ctx = canvas.getContext("2d");
+  canvas.width = CANVAS_W;
+  canvas.height = CANVAS_H;
+
+  ctx.fillStyle = palette.bg;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  const margin = 72;
+  const summary = data.summary || {};
+  const days = summary.days || [];
+
+  // 标题区
+  ctx.fillStyle = palette.accent;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = "bold 56px " + fontStack(cfg.font);
+  ctx.fillText(summary.destination || "", margin, margin + 56);
+  ctx.font = "28px " + fontStack(cfg.font);
+  ctx.fillStyle = palette.muted;
+  const range = [summary.start_date, summary.end_date].filter(Boolean).join(" – ");
+  if (range) ctx.fillText(range, margin, margin + 100);
+
+  // 统计水印
+  const stats = summary.stats || {};
+  ctx.font = "600 30px " + fontStack(cfg.font);
+  ctx.fillStyle = palette.accent;
+  ctx.fillText(
+    `${stats.days_with_checkins || 0} 天 · ${stats.checked_stops || 0} 站`,
+    CANVAS_W - margin - ctx.measureText(`${stats.days_with_checkins || 0} 天 · ${stats.checked_stops || 0} 站`).width,
+    margin + 56,
+  );
+
+  // 封面头图（第一张照片）
+  const coverY = margin + 140;
+  const coverH = 420;
+  const cover = (data.photos || [])[0];
+  if (cover) {
+    drawCover(ctx, cover, margin, coverY, CANVAS_W - margin * 2, coverH);
+  } else {
+    ctx.fillStyle = palette.muted + "33";
+    ctx.fillRect(margin, coverY, CANVAS_W - margin * 2, coverH);
+    ctx.fillStyle = palette.muted;
+    ctx.font = "30px " + fontStack(cfg.font);
+    ctx.textAlign = "center";
+    ctx.fillText("＋ 选择封面照片", CANVAS_W / 2, coverY + coverH / 2);
+    ctx.textAlign = "left";
+  }
+
+  // 按日小区块（每行 3 天，最多 2 行）
+  const gridY = coverY + coverH + 40;
+  const gridH = 360;
+  const shownDays = days.slice(0, 6);
+  const daySlots = computeSlots(Math.max(shownDays.length, 1), {
+    w: CANVAS_W - margin * 2,
+    h: gridH,
+  }, { gap: 20 });
+  const restPhotos = (data.photos || []).slice(1);
+  shownDays.forEach((day, i) => {
+    const rect = daySlots[i];
+    const x = margin + rect.x;
+    const y = gridY + rect.y;
+    const photo = restPhotos[i];
+    if (photo) {
+      drawSlot(ctx, cfg.slot_style, palette, photo, { x, y, w: rect.w, h: rect.h });
+    } else {
+      ctx.fillStyle = palette.muted + "22";
+      ctx.fillRect(x, y, rect.w, rect.h);
+    }
+    // 日标签
+    ctx.fillStyle = palette.accent;
+    ctx.font = "bold 22px " + fontStack(cfg.font);
+    const labelW = ctx.measureText(`D${day.day_number}`).width + 20;
+    ctx.fillRect(x, y, labelW, 34);
+    ctx.fillStyle = palette.bg;
+    ctx.fillText(`D${day.day_number}`, x + 10, y + 25);
+  });
+
+  // 全程轨迹串联（所有日的 checked 站点按序）
+  const allStops = days.flatMap((d) => d.stops || []);
+  const routeArea = { x: margin, y: gridY + gridH + 30, w: CANVAS_W - margin * 2, h: 300 };
+  drawRoute(ctx, cfg.route_style, palette, projectRoute(allStops, routeArea, { padding: 30 }), routeArea);
+
+  // 底部说明
+  ctx.fillStyle = palette.muted;
+  ctx.font = "22px " + fontStack(cfg.font);
+  ctx.fillText("照片仅在本地浏览器处理，未上传服务器", margin, CANVAS_H - margin + 10);
+
+  if (data.locked) drawLockWatermark(ctx);
+  return canvas;
+}
+
+/**
  * 渲染单日打卡卡。
  * @param {HTMLCanvasElement} canvas
  * @param {{slug: string, layout_config?: object, locked?: boolean}} template 模板（目录条目或注册表项）
