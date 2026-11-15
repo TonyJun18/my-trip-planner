@@ -72,7 +72,9 @@ class Trip(Base):
         back_populates="trip", cascade="all, delete-orphan", order_by="TripDay.day_number"
     )
     plans: Mapped[list[TripPlan]] = relationship(
-        back_populates="trip", order_by="TripPlan.created_at.desc()"
+        back_populates="trip",
+        cascade="all, delete-orphan",
+        order_by="TripPlan.created_at.desc()",
     )
 
     @property
