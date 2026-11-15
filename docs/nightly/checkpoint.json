@@ -1,25 +1,21 @@
 {
-  "night": "2026-11-14",
+  "night": "2026-11-15",
   "status": "completed_with_issues",
   "todo": [
-    "task-repeat-stop-detector"
+    "competitive-analysis"
   ],
   "completed": [
-    "task-share-target-eval",
-    "task-repeat-stop-detector"
+    "competitive-analysis"
   ],
-  "current_index": 2,
+  "current_index": 1,
   "issues": [
-    "路径偏差（沿用既有记载）：手册第 0 节项目路径写 /Users/pengjun/Desktop/my-agent/my-trip-planner，实际仓库在 /Users/pengjun/Documents/my-agent/my-trip-planner（mdfind 确认），按实际路径执行。",
-    "night-start 重建（2026-11-13 23:30）：checkpoint night=2026-11-13 但 status=completed（凌晨流水线已完成 4 任务：competitive-analysis / task-share-target-eval / task-monday-closure-coverage / content-ai-fault-study-43 并出报告，分支 4 支在案）；按启动指令「status≠in_progress → 重建」重建为新一夜检查点。",
-    "todo 提取：night-build-todo.md 中「- [ ] slug: ...」格式可执行任务 2 条——task-share-target-eval（凌晨已完成但 todo 文件漏勾，分支 nightly/2026-11-13/1-task-share-target-eval 在案，worker 可核验补勾登记）/ task-repeat-stop-detector（11-13 worker-5 新任务入队）；其余 [ ] 行为备注追加/佐证/素材·不排期类不入队。本夜竞品分析已完成（competitive-analysis/2026-11-13.md 在案），按铁律 2「除非本夜已经做过」不重做。",
-    "worker-1 重建（2026-11-14 00:23）：checkpoint night=2026-11-13 ≠ 当天（date +%F=2026-11-14），按手册第 3 节跨夜重建。沿用 11-13 23:30 night-start 任务编排（todo 源不变：核验补勾 + repeat-stop-detector；竞品分析 11-13 已做不重排）。todo[0] task-share-target-eval 核验补勾完成（主体已在 main merge 55b7bf8，前端 build 3.48s 通过，零新代码），移入 completed、current_index=1；分支 nightly/2026-11-14/0-task-share-target-eval 待用户 review。工作区未跟踪文件（docs/code-map/、skills/、docs/nightly/reports/2026-11-12.md、2026-11-13.md、backend/tests/test_frame_summary_copy.py）为白天产物未触碰。",
-    "main 既有测试失败 2 例（2026-11-14 00:23 回归，与本夜改动无关）：tests/test_frame_projection.py::test_day_projection_only_contains_checked_stops + test_summary_projection_aggregates_checked_days_skips_empty——白天合并的 feature/frame-marketplace（30a0fec frame 投影）测试 fixture 建行程未把日期设为行中（trip_phase=upcoming），调 /live/stops/{id}/check 被 trip_not_live 400 拒绝；全套基线 1097 passed + 2 failed（--ignore=test_frame_summary_copy.py 沿用 11-13 先例）。留给白天修复（改 fixture 日期或测试语义），非夜间任务范畴。",
-    "worker-2 完成 task-repeat-stop-detector（2026-11-14 01:0x）：新增 backend/app/services/repeat_detector.py（RepeatGate 纯函数规则库无 LLM）——同天/相邻天重复始终检测（覆盖研究 57% 主战场）、远端重复（间隔 ≥2 天）仅长行程（≥10 天）提示（长行程放大）、同 POI 别名识别（归一化去空白小写 + 子串，单字前缀不合并防误伤）、刻意跳过酒店住宿/交通占位（is_transfer/名称含「交通占位」）、三连排同地点只报 1 次；接入 pipeline（生成链路 repeat_gate + warnings + trace + artifact）、revise_service（修订重算注入快照）、property_qa（QA 预警汇总）；i18n zh/en 各 11 键。测试：专项 14 例全绿、i18n 22 例全绿、全套回归 1111 passed + 2 failed（main 既有 frame_projection 失败与本夜无关，--ignore=tests/test_frame_summary_copy.py 排除白天 WIP）。分支 nightly/2026-11-14/1-task-repeat-stop-detector 两 commit（8189a6c feat 核心 + 9940405 feat 集成）待用户 review。todo 文件已勾选。",
-    "白天收口（2026-11-14）：§2 候选池四项晋升完成并直接并入 main——task-manual-path-fix（commit d8ffb4b 手册路径 Desktop→Documents）/ task-booking-ledger-minors（b4d0f1f 金额持久化 + service_date/note/amount 可清空 + 日卡倒计时）/ task-trip-quality-report-a（368704b 五类质检聚合面板 + repeat_gate 独立露出）/ task-trip-quality-report-b（368704b 报告导出 PDF/长图 + ShareView 免登录展示）。验证：全套 1139 passed（基线 1125 + 14 新增）、前端 build 4.27s、i18n 1274×2、专项 33+9 全绿。night-build-todo.md §2 移除四项并注明、§3 补 4 条 [x] 记录。遗留：main 既有 frame_projection 2 例失败（fixture 日期未设行中）仍待修复；booking today 用 UTC（本地午夜差一天）单列等产品决策。"
+    "night-start 重建（2026-11-15）：checkpoint night=2026-11-14 ≠ 当天（date +%F=2026-11-15，前夜 23:30 night-start 重建的 11-14 检查点未及完成即跨夜），按手册第 3 节跨夜重建为 2026-11-15。",
+    "todo 提取：night-build-todo.md §1 无可执行队列（0/6），grep 无「- [ ] slug: ...」格式可执行任务（7 条 [ ] 行为备注追加/佐证/素材·不排期，不入队）；按启动契约 fallback todo=[competitive-analysis]。11-14 已有 Travora OTA 专项拆解（22:49 在案）、11-13 常规竞品分析已做，本夜 11-15 常规竞品分析重新执行（最新一轮检索 2026-11-15）。",
+    "main 既有测试失败 2 例（tests/test_frame_projection.py 两例，fixture 日期未设行中）：白天是否已修复未核验；本夜为纯 docs 任务（竞品分析），无 pytest/build 需求，不影响。",
+    "工作区未跟踪文件（.playwright-cli/、docs/code-map/、docs/plans/2026-11-15-core-value-launch.md、skills/）为白天产物，按铁律不触碰不提交。",
+    "worker-1 完成（2026-11-15 00:2x）：todo[0] competitive-analysis 执行完成——产出 docs/nightly/competitive-analysis/2026-11-15.md（新入局者三连：Butter Agent 开放时段+群组+分摊 / Stardrift 多城+导入+盯价 / Fortrip 验证优化；功能矩阵 12 行 + 5 项行动项 + 备注不排期项）；行动项追加进 night-build-todo.md §2 候选池（5 项 P2 + content-16，表格格式不入 §1 队列）；分支 nightly/2026-11-15/0-competitive-analysis commit 8c4ce15（2 files +84）；纯 docs 无 pytest/build 需求；checkpoint.json 与白天产物未提交（状态文件不入库）。本夜任务 1/1 完成，无下一个任务。"
   ],
   "branches": [
-    "nightly/2026-11-14/0-task-share-target-eval",
-    "nightly/2026-11-14/1-task-repeat-stop-detector"
+    "nightly/2026-11-15/0-competitive-analysis"
   ]
 }
