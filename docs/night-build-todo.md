@@ -55,6 +55,8 @@
 | P2 | `content-planning-after-generation` | 2026-11-15 竞品（三家新入局者全部主打规划后链路） | 文章 16《生成之后》：分水岭移到规划后链路；接 15 文《收购季》；证据见 §3.5 |
 
 > 2026-11-15 竞品分析（nightly/competitive-analysis/2026-11-15.md）新增 5 项候选（open-slot / multicity-optimizer / price-watch-mini / paste-any-plan / content-16）+ 备注不排期项（credits 经济、确认单图片 OCR、一键结清）。全部先入候选池，由用户/队列腾位后晋升 §1。
+>
+> 2026-11-15 白天：`content-planning-after-generation` 已完成（16 文 + 发布卡片，纯 docs 不受 Q11 冻结约束），见 §3。
 
 > 2026-11-14 晚：`task-home-feed-live` / `task-gallery-like-mini` / `task-destination-page-eval`（后两项评估后经 grill-with-docs 决裁）已实现并入 feature/content-discovery-layer，见 §3。
 >
@@ -73,6 +75,7 @@
 - [x] task-booking-ledger-minors: 已完成——①确认回填金额持久化（BookingStatusIn.amount + update_booking_status/upsert 落库）②service_date/service_note/amount 显式 null 可清空（pydantic model_fields_set 区分未传与清空，未传保留原值）③日卡片预订徽标 days_until 倒计时（daysUntil/daysToday/daysAgo）④BookingPanel 确认弹窗增服务日期/备注编辑；「本地日期」需产品决策（today 用 UTC）单列未做；commit `b4d0f1f`（2026-11-14 白天，专项 33 passed + 全套 1139 绿）。
 - [x] task-trip-quality-report-a: 已完成——质检五类只读聚合面板（quality/time_gate/repeat_gate/weather_gate/dynamic_facts）：`quality_report_service.build_quality_report` 纯函数（缺失 gate checked=false 绝不假装通过、issues ≤20、不含凭证）+ GET /trips/{id}/quality-report（owner）与 /trips/share/{token}/quality-report（免登录只读）+ QualityReportPanel.vue（标题/状态徽标/basis/score/issues）+ WS_PLAN_KEYS 增 qualityReport + planIssues 徽标纳入 repeat_gate；commit `368704b`（2026-11-14 白天，专项 9 例 + 全套 1139 绿）。
 - [x] task-trip-quality-report-b: 已完成——质检报告导出 / 分享：QualityReportPanel 自带导出 PDF/长图（复用 export.js html2canvas/jspdf，抓报告本体 DOM 不含凭证）+ ShareView 分享页免登录展示（edit 模式不显示）+ i18n qualityReport.* zh/en 各 23 键；与 a 同 commit `368704b`。
+- [x] content-planning-after-generation: 已完成——docs/articles/16-after-generation.md《生成之后：AI 行程规划的分水岭，已经移到规划后链路》（新入局者三连 Butter/Stardrift/Fortrip + 功能矩阵对照 + 真差距「可感知」+ 四差距候选处置（冻结期内不排期）+ 给独立开发者判断；代码引用逐条核验与仓库一致：TravelCriticAgent/time_validation/dynamic_facts/repeat_detector/weather_validation/collab_service._consensus_threshold/expense_service.compute_balance/multi_city.py+pipeline.apply_multi_city/五通道导入/export_service.build_trip_export+build_trip_ics/booking_rhythm.compute_booking_rhythm）+ publish-list.md ⑯ 卡片 + 速查表 14-16；纯 docs 无 pytest/build 需求；commit `<hash>`（2026-11-15 白天）。§2 候选池已加注完成。
 - [~] task-file-share: 文件（图片 / 视频）分享——决策：暂缓；理由：需 POST + multipart + 文件存储，超出当前「零凭证零存储」边界；重开条件：有对象存储并接受成本。
 - [~] task-photo-geotag: 行后照片归位 / 自动日记——决策：不排期；理由：需原生壳 + 系统媒体权限（Web 拿不到可靠 GPS，见 `task-photo-import-eval-2026-11-09.md`）；重开条件：引入 Capacitor 等原生壳。
 - [~] task-explored-streets: Explored 街道点亮——决策：不排期；理由：需持续定位，隐私 / 耗电 / 原生壳前置；重开条件：原生壳 + 定位权限方案。
