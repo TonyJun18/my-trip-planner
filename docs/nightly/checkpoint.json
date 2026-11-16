@@ -13,5 +13,7 @@
     "todo 提取：night-build-todo.md §1 可执行队列为空（0/6，含原文说明），无「- [ ] slug:」格式可执行任务；按启动契约 fallback todo=[competitive-analysis]（11-15/11-16 同款先例，每夜一轮常规竞品分析）。",
     "工作区遗留未跟踪文件（非本任务产物，不动不提交，留待用户 review）：docs/nightly/reports/2026-11-15.md、docs/plans/2026-11-15-core-value-launch.md、docs/code-map/、skills/、.playwright-cli/。"
   ],
-  "branches": []
+  "branches": [
+    "nightly/2026-11-17/0-competitive-analysis"
+  ]
 }
