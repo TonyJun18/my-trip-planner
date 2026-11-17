@@ -53,6 +53,10 @@
 | P2 | `task-price-watch-mini-eval` | 2026-11-15 竞品（Stardrift Pro 盯价 / Mindtrip PTA） | 零凭证中间档：对用户已录入预订金额做台账+变更提醒，不接外部实时价；维持 task-price-alert-eval 既有降级结论不动摇；证据见 §3.3 |
 | P2 | `task-paste-any-plan-eval` | 2026-11-15 竞品（Butter paste-a-plan） | 粘贴整段已有行程计划 → 天/时间/地点骨架识别 → 勾选并入；与 email-import 零凭证粘贴版同构；证据见 §3.4 |
 | P2 | `content-planning-after-generation` | 2026-11-15 竞品（三家新入局者全部主打规划后链路） | 文章 16《生成之后》：分水岭移到规划后链路；接 15 文《收购季》；证据见 §3.5 |
+| P2 | `task-geo-anchor-sanity-eval` | 2026-11-17 竞品（Roamy/Rhyme 地理翻车差评群） | 目的地地理锚定 + 离群站点检测（dest 中心锚 + haversine 阈值 → plan warning，basis=rule_based）；证据见 competitive-analysis/2026-11-17.md §3.1 |
+| P2 | `task-decision-drop-reason-eval` | 2026-11-17 竞品（SearchSpot decision-first） | 候选淘汰理由透出（250→50→12→4 + 为什么被淘汰）；证据见 §3.2 |
+| P2 | `task-hotel-switch-conflict-eval` | 2026-11-17 竞品（Rhyme 同日换酒店差评） | 同日双酒店 overlap 表达与冲突检查；证据见 §3.3 |
+| P2 | `content-acquisition-season-2` | 2026-11-17 竞品（OpenAI acqui-hire Odessia + Expedia $676M） | 文章 17《收购季第二波》：并购从收编品牌到收编能力；接 15/16 文；证据见 §3.4 |
 
 > 2026-11-15 竞品分析（nightly/competitive-analysis/2026-11-15.md）新增 5 项候选（open-slot / multicity-optimizer / price-watch-mini / paste-any-plan / content-16）+ 备注不排期项（credits 经济、确认单图片 OCR、一键结清）。全部先入候选池，由用户/队列腾位后晋升 §1。
 >

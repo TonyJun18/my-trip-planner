@@ -1,5 +1,5 @@
 {
-  "night": "2026-11-15",
+  "night": "2026-11-17",
   "status": "completed_with_issues",
   "todo": [
     "competitive-analysis"
@@ -9,13 +9,11 @@
   ],
   "current_index": 1,
   "issues": [
-    "night-start 重建（2026-11-15）：checkpoint night=2026-11-14 ≠ 当天（date +%F=2026-11-15，前夜 23:30 night-start 重建的 11-14 检查点未及完成即跨夜），按手册第 3 节跨夜重建为 2026-11-15。",
-    "todo 提取：night-build-todo.md §1 无可执行队列（0/6），grep 无「- [ ] slug: ...」格式可执行任务（7 条 [ ] 行为备注追加/佐证/素材·不排期，不入队）；按启动契约 fallback todo=[competitive-analysis]。11-14 已有 Travora OTA 专项拆解（22:49 在案）、11-13 常规竞品分析已做，本夜 11-15 常规竞品分析重新执行（最新一轮检索 2026-11-15）。",
-    "main 既有测试失败 2 例（tests/test_frame_projection.py 两例，fixture 日期未设行中）：白天是否已修复未核验；本夜为纯 docs 任务（竞品分析），无 pytest/build 需求，不影响。",
-    "工作区未跟踪文件（.playwright-cli/、docs/code-map/、docs/plans/2026-11-15-core-value-launch.md、skills/）为白天产物，按铁律不触碰不提交。",
-    "worker-1 完成（2026-11-15 00:2x）：todo[0] competitive-analysis 执行完成——产出 docs/nightly/competitive-analysis/2026-11-15.md（新入局者三连：Butter Agent 开放时段+群组+分摊 / Stardrift 多城+导入+盯价 / Fortrip 验证优化；功能矩阵 12 行 + 5 项行动项 + 备注不排期项）；行动项追加进 night-build-todo.md §2 候选池（5 项 P2 + content-16，表格格式不入 §1 队列）；分支 nightly/2026-11-15/0-competitive-analysis commit 8c4ce15（2 files +84）；纯 docs 无 pytest/build 需求；checkpoint.json 与白天产物未提交（状态文件不入库）。本夜任务 1/1 完成，无下一个任务。"
+    "night-start 重建（2026-11-17）：checkpoint night=2026-11-16 ≠ 当天（date +%F=2026-11-17，11-16 夜检查点已重建到 2026-11-16 但任务未执行、改动未提交即被搁置——工作区残留 M checkpoint.json 与多个未跟踪文件），按手册第 3 节跨夜重建为 2026-11-17。",
+    "todo 提取：night-build-todo.md §1 可执行队列为空（0/6，含原文说明），无「- [ ] slug:」格式可执行任务；按启动契约 fallback todo=[competitive-analysis]（11-15/11-16 同款先例，每夜一轮常规竞品分析）。",
+    "工作区遗留未跟踪文件（非本任务产物，不动不提交，留待用户 review）：docs/nightly/reports/2026-11-15.md、docs/plans/2026-11-15-core-value-launch.md、docs/code-map/、skills/、.playwright-cli/。"
   ],
   "branches": [
-    "nightly/2026-11-15/0-competitive-analysis"
+    "nightly/2026-11-17/0-competitive-analysis"
   ]
 }
