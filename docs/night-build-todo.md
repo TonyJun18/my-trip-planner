@@ -56,7 +56,8 @@
 | P2 | `task-geo-anchor-sanity-eval` | 2026-11-17 竞品（Roamy/Rhyme 地理翻车差评群） | 目的地地理锚定 + 离群站点检测（dest 中心锚 + haversine 阈值 → plan warning，basis=rule_based）；证据见 competitive-analysis/2026-11-17.md §3.1 |
 | P2 | `task-decision-drop-reason-eval` | 2026-11-17 竞品（SearchSpot decision-first） | 候选淘汰理由透出（250→50→12→4 + 为什么被淘汰）；证据见 §3.2 |
 | P2 | `task-hotel-switch-conflict-eval` | 2026-11-17 竞品（Rhyme 同日换酒店差评） | 同日双酒店 overlap 表达与冲突检查；证据见 §3.3 |
-| P2 | `content-acquisition-season-2` | 2026-11-17 竞品（OpenAI acqui-hire Odessia + Expedia $676M） | 文章 17《收购季第二波》：并购从收编品牌到收编能力；接 15/16 文；证据见 §3.4 |
+| P2 | `content-acquisition-season-2` | 2026-11-17 竞品（OpenAI acqui-hire Odessia + Expedia $676M）+ 2026-11-18 证据升级（Layla 收购后产品两转向 + 官方对比文市场三分层 Plan-only/Partial booking/Booked with human + 营销口径打架 5M 用户 vs 1.1M+ trips） | 文章 17《收购季第二波》：并购从收编品牌到收编能力；接 15/16 文；证据见 competitive-analysis/2026-11-17.md §3.4 + 2026-11-18.md §三 G2 |
+| P2 | `task-dietary-filter-chips-eval` | 2026-11-18 竞品（Wonderplan Halal/Vegan/素食结构化表单过滤器，comparisonmath） | 结构化饮食偏好 chips（素食/清真/海鲜忌口等）→ 复用 prompts.py L148-150 既有口味偏好 freeform 转换，PlanWizard 预填为关键词；零后端大改；证据见 competitive-analysis/2026-11-18.md §三 G1 |
 
 > 2026-11-15 竞品分析（nightly/competitive-analysis/2026-11-15.md）新增 5 项候选（open-slot / multicity-optimizer / price-watch-mini / paste-any-plan / content-16）+ 备注不排期项（credits 经济、确认单图片 OCR、一键结清）。全部先入候选池，由用户/队列腾位后晋升 §1。
 >
