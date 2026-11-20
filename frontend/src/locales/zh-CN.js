@@ -1203,6 +1203,13 @@ export default {
     phaseUpcoming: '未开窗',
     phaseClosing: '临近截止',
     rhythmBasisNote: '规则推算（{basis}），放票/预售信息以官方渠道为准',
+    // ── 免费取消截止（task-free-cancel-deadline-eval） ──
+    cancelDeadline: '免费取消截止',
+    cancelDeadlinePh: '如 2026-12-01（以预订条款为准）',
+    cancelDeadlineDays: '免费取消截止：{n} 天后',
+    cancelDeadlineToday: '免费取消截止：今天',
+    cancelDeadlineOverdue: '免费取消已过期 {n} 天',
+    cancelDeadlineBasis: '以预订条款为准',
   },
   // ── 离线地图降级（task-offline-degrade：瓦片需联网 → 按日站点列表） ──
   mapOffline: {

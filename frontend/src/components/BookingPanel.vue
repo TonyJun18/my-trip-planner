@@ -51,6 +51,15 @@
               {{ t('booking.serviceDate') }}: {{ b.service_date }}
               <span v-if="b.service_note" class="booking-service-note">· {{ b.service_note }}</span>
             </div>
+            <!-- 免费取消截止倒计时（task-free-cancel-deadline-eval；无截止日不渲染） -->
+            <div
+              v-if="b.cancel_deadline_days !== null && b.cancel_deadline_days !== undefined"
+              class="booking-item-cancel-deadline"
+              :class="{ urgent: b.cancel_deadline_days >= 0 && b.cancel_deadline_days <= 3, overdue: b.cancel_deadline_days < 0 }"
+            >
+              {{ cancelDeadlineText(b) }}
+              <span class="cancel-basis">{{ t('booking.cancelDeadlineBasis') }}</span>
+            </div>
             <div v-if="b.amount" class="booking-item-price">
               {{ t('booking.amountText', { amount: b.amount, currency: b.currency }) }}
             </div>
@@ -120,6 +129,16 @@
         <el-form-item :label="t('booking.serviceNote')">
           <el-input v-model="confirmForm.service_note" maxlength="500" :placeholder="t('booking.serviceNotePh')" />
         </el-form-item>
+        <el-form-item :label="t('booking.cancelDeadline')">
+          <el-date-picker
+            v-model="confirmForm.free_cancel_deadline"
+            type="date"
+            value-format="YYYY-MM-DD"
+            clearable
+            style="width: 100%"
+            :placeholder="t('booking.cancelDeadlinePh')"
+          />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="confirmVisible = false">{{ t('booking.cancelText') }}</el-button>
@@ -150,7 +169,7 @@ const loading = ref(false)
 const confirming = ref(false)
 const confirmVisible = ref(false)
 const current = ref(null)
-const confirmForm = reactive({ order_no: '', credential: '', amount: null, service_date: '', service_note: '' })
+const confirmForm = reactive({ order_no: '', credential: '', amount: null, service_date: '', service_note: '', free_cancel_deadline: '' })
 
 // 台账分组：待办（suggested+pending）→ 已确认 → 已取消（组内保持后端 service_date 排序）
 const groups = computed(() => {
@@ -194,6 +213,14 @@ function daysText(b) {
   if (d === 0) return t('booking.daysToday')
   return t('booking.daysAgo', { n: -d })
 }
+// 免费取消截止倒计时文本（task-free-cancel-deadline-eval）：未来/今天/已过期三态
+function cancelDeadlineText(b) {
+  const d = b.cancel_deadline_days
+  if (d === null || d === undefined) return ''
+  if (d > 0) return t('booking.cancelDeadlineDays', { n: d })
+  if (d === 0) return t('booking.cancelDeadlineToday')
+  return t('booking.cancelDeadlineOverdue', { n: -d })
+}
 function phaseLabel(p) {
   return { open: t('booking.phaseOpen'), upcoming: t('booking.phaseUpcoming'), closing: t('booking.phaseClosing') }[p] || p
 }
@@ -233,6 +260,7 @@ function openConfirm(b) {
   confirmForm.amount = b.amount ?? null
   confirmForm.service_date = b.service_date || ''
   confirmForm.service_note = b.service_note || ''
+  confirmForm.free_cancel_deadline = b.free_cancel_deadline || ''
   confirmVisible.value = true
 }
 
@@ -253,6 +281,7 @@ async function submitConfirm() {
     if (confirmForm.amount !== null && confirmForm.amount !== undefined) payload.amount = confirmForm.amount
     if (confirmForm.service_date !== '') payload.service_date = confirmForm.service_date || null
     if (confirmForm.service_note !== undefined) payload.service_note = confirmForm.service_note || null
+    if (confirmForm.free_cancel_deadline !== '') payload.free_cancel_deadline = confirmForm.free_cancel_deadline || null
     await updateBookingStatus(props.tripId, current.value.id, payload)
     ElMessage.success(t('booking.confirmed'))
     confirmVisible.value = false
@@ -391,6 +420,24 @@ onMounted(load)
 }
 .booking-countdown.overdue {
   color: var(--el-text-color-secondary);
+}
+/* 免费取消截止倒计时（task-free-cancel-deadline-eval） */
+.booking-item-cancel-deadline {
+  font-size: 12px;
+  color: var(--el-color-warning);
+  margin-top: 2px;
+}
+.booking-item-cancel-deadline.urgent {
+  color: var(--el-color-danger);
+  font-weight: 600;
+}
+.booking-item-cancel-deadline.overdue {
+  color: var(--el-text-color-secondary);
+}
+.cancel-basis {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  margin-left: 4px;
 }
 .booking-item-title {
   font-weight: 500;

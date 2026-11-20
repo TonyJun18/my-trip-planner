@@ -1205,6 +1205,13 @@ export default {
     phaseUpcoming: 'Not open yet',
     phaseClosing: 'Closing soon',
     rhythmBasisNote: 'Rule-based estimate ({basis}); release/presale info is subject to official channels',
+    // ── Free cancellation deadline (task-free-cancel-deadline-eval) ──
+    cancelDeadline: 'Free cancellation deadline',
+    cancelDeadlinePh: 'e.g. 2026-12-01 (subject to booking terms)',
+    cancelDeadlineDays: 'Free cancellation ends in {n} days',
+    cancelDeadlineToday: 'Free cancellation ends today',
+    cancelDeadlineOverdue: 'Free cancellation ended {n} days ago',
+    cancelDeadlineBasis: 'Subject to booking terms',
   },
   // ── Offline map fallback (tiles need network → ordered stop list) ──
   mapOffline: {
