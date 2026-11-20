@@ -59,6 +59,7 @@ async def list_trip_bookings(
     for b in items:
         out = BookingOut.model_validate(b)
         out.days_until = booking_service.booking_days_until(b)
+        out.cancel_deadline_days = booking_service.booking_cancel_deadline_days(b)
         outs.append(out)
     return BookingListOut(
         items=outs,

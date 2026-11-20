@@ -196,6 +196,8 @@ async def upsert_booking(
                     existing.service_date = data.service_date
                 if "service_note" in fields_set:
                     existing.service_note = data.service_note
+                if "free_cancel_deadline" in fields_set:
+                    existing.free_cancel_deadline = data.free_cancel_deadline
                 if "amount" in fields_set and data.amount is None:
                     existing.amount = None
                 existing.updated_at = datetime.now(timezone.utc)
@@ -220,6 +222,7 @@ async def upsert_booking(
         reference=data.reference,
         service_date=data.service_date,
         service_note=data.service_note,
+        free_cancel_deadline=data.free_cancel_deadline,
         amount=data.amount,
         currency=data.currency or "CNY",
         confirmed_at=datetime.now(timezone.utc) if data.status == "confirmed" else None,
@@ -272,6 +275,8 @@ async def update_booking_status(
         booking.service_date = data.service_date
     if "service_note" in fields_set:
         booking.service_note = data.service_note
+    if "free_cancel_deadline" in fields_set:
+        booking.free_cancel_deadline = data.free_cancel_deadline
     if "amount" in fields_set:
         booking.amount = data.amount
     if new_status == "confirmed":
@@ -332,6 +337,65 @@ def _days_until(service_date: date | None, *, today: date | None = None) -> int 
 def booking_days_until(booking: TripBooking, *, today: date | None = None) -> int | None:
     """公开入口：条目倒计时（响应构造用）。"""
     return _days_until(booking.service_date, today=today)
+
+
+def _cancel_deadline_days(deadline: date | None, *, today: date | None = None) -> int | None:
+    """免费取消截止倒计时：未来为正、当天 0、已过为负、无截止日 None。"""
+    if deadline is None:
+        return None
+    return (deadline - (today or datetime.now(timezone.utc).date())).days
+
+
+def booking_cancel_deadline_days(
+    booking: TripBooking, *, today: date | None = None
+) -> int | None:
+    """公开入口：免费取消截止倒计时（响应构造用）。"""
+    return _cancel_deadline_days(booking.free_cancel_deadline, today=today)
+
+
+# ── 免费取消截止提醒（task-free-cancel-deadline-eval） ──────────
+# 窗口：截止前 3 天内触发（(today, today+3]）。
+CANCEL_DEADLINE_REMIND_DAYS = 3
+
+
+def scan_cancel_deadline_reminders(
+    bookings: list[TripBooking],
+    *,
+    today: date | None = None,
+    already_reminded: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """确定性扫描：找出「免费取消即将截止」的条目（纯函数，零 LLM 零网络）。
+
+    规则（basis=rule_based，诚实口径）：
+    - 窗口 = (today, today+3]：今天不算（当天是最后一天，不产生提醒事件）；
+    - 仅 status in (pending, confirmed) 且未取消的条目；
+    - 已截止（deadline ≤ today）→ 绝不产出（过期不补记）；
+    - 无 deadline → 绝不产出（不编造）；
+    - already_reminded：已提醒过的 booking_id 集合（幂等，同窗口不重复）；
+    - 输出 [{booking_id, title, deadline, days_left}]，供调用方落事件。
+    """
+    base = today or datetime.now(timezone.utc).date()
+    reminded = already_reminded or set()
+    out: list[dict[str, Any]] = []
+    for b in bookings:
+        if b.status not in ("pending", "confirmed"):
+            continue
+        if b.free_cancel_deadline is None:
+            continue
+        days_left = (b.free_cancel_deadline - base).days
+        if days_left <= 0 or days_left > CANCEL_DEADLINE_REMIND_DAYS:
+            continue
+        if b.id in reminded:
+            continue
+        out.append(
+            {
+                "booking_id": b.id,
+                "title": b.title or b.kind,
+                "deadline": b.free_cancel_deadline.isoformat(),
+                "days_left": days_left,
+            }
+        )
+    return out
 
 
 async def list_bookings_by_trip_id(db: AsyncSession, trip_id: str) -> list[TripBooking]:

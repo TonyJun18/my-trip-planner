@@ -27,6 +27,7 @@ logger = get_logger(__name__)
 EVENT_TYPES = (
     "revise", "check", "skip", "delay", "comment", "vote", "edit", "share",
     "chat_edit",
+    "booking.confirmed", "booking.cancelled", "booking.cancel_deadline",
 )
 
 

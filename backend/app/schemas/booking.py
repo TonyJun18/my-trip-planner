@@ -29,6 +29,7 @@ class BookingIn(BaseModel):
     )
     service_date: date | None = None
     service_note: str | None = Field(default=None, max_length=500)
+    free_cancel_deadline: date | None = None
     amount: float | None = Field(default=None, ge=0)
     currency: str = "CNY"
 
@@ -50,9 +51,11 @@ class BookingOut(BaseModel):
     reference: str = "plan.generated"
     service_date: date | None = None
     service_note: str | None = None
+    free_cancel_deadline: date | None = None
     amount: float | None = None
     currency: str = "CNY"
     days_until: int | None = None  # 台账倒计时（响应构造时计算，非 ORM 字段）
+    cancel_deadline_days: int | None = None  # 免费取消截止倒计时（响应构造时计算，非 ORM 字段）
     created_at: datetime
     updated_at: datetime | None = None
     confirmed_at: datetime | None = None
@@ -73,6 +76,7 @@ class BookingStatusIn(BaseModel):
     credential: str | None = Field(default=None, max_length=200)
     service_date: date | None = None
     service_note: str | None = Field(default=None, max_length=500)
+    free_cancel_deadline: date | None = None
     amount: float | None = Field(default=None, ge=0)
 
 

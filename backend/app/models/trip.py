@@ -360,6 +360,9 @@ class TripBooking(Base):
     # 台账一级排序与倒计时键；不参与状态机判定（与凭证防线无关）。
     service_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     service_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 免费取消截止日（task-free-cancel-deadline-eval）：用户回填确认单时录入。
+    # 台账倒计时键 + 截止前提醒（basis=rule_based）；不参与状态机判定（与凭证防线无关）。
+    free_cancel_deadline: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     currency: Mapped[str] = mapped_column(String(10), default="CNY", nullable=False)
     probe_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
