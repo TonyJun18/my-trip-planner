@@ -33,11 +33,64 @@
 - 每夜竞品分析新增任务只能进 §2 候选池，由用户或队列腾位后晋升。
 - `task-` slug 只出现在 §1（可执行）与 §3（已完成/已关闭），避免重复提取。
 
-## §1 可执行队列（0 / 6）
+## §1 可执行队列（6 / 6）
 
-> 首批 4 个任务已全部完成并移入 §3（2026-11-14）。等待新任务经 §2 候选池晋升。
-> 2026-11-14 白天：§2 候选池 `task-manual-path-fix` / `task-booking-ledger-minors` /
-> `task-trip-quality-report-a/b` 四项继续晋升完成并移入 §3（见 §2 说明 + §3 记录）。
+> 2026-11-20：由 §2 候选池晋升 6 条（验证顺序：P0 上线主线 → Everway 行前链 → 地理真实性 → 决策透明 → 结构化输入；详见 docs/nightly/competitive-needs-to-verify-2026-11-20.md）。
+> 执行方式：每条「评估 → 可行最小版+测试 / 不可行降级关单」，评估记录入 docs/nightly/evaluations/，完成后移入 §3。
+
+### 1. task-launch-deploy（P0 to-C 上线验证主线）
+- **类型 / 安全区**：docs+backend+frontend / 上线部署
+- **证据出处**：2026-11-14 决裁：to-C 上线验证主线；`docs/plans/2026-11-15-core-value-launch.md`
+- **做什么**：香港轻量上线 + 空库 + 最小埋点 5 事件 + 14 天判定线（20/5/2）
+- **可测验收**：上线可达 + 埋点 5 事件落库 + 判定线取数
+- **规模 / 夜间拆分**：L（**不直接入队本夜，W1 启动时晋升**）
+- **依赖**：docker-compose 部署栈已就绪
+- **主要风险 / 关闭条件**：to-C 发布是独立主线，不参与本夜竞品需求验证
+
+### 2. task-free-cancel-deadline-eval（候选评估·backend）
+- **类型 / 安全区**：backend / 行前整理链（Everway 线）
+- **证据出处**：`docs/nightly/competitive-analysis/2026-11-20.md` §三 G1（Everway「reminds before free cancellation ends」，PH 11 月中旬）
+- **做什么**：TripBooking 增 `free_cancel_deadline`（可选，回填确认单时录入）→ bookings 列表/节奏卡 days_until 倒计时（复用 11-12 台账倒计时模式）+ 截止前 N 天行程内事件提醒（复用 trip_events 链路）
+- **可测验收**：评估记录；可行则最小版 + 测试（录入/倒计时/到期不产出/不编造四路径）
+- **规模 / 夜间拆分**：M（可 2 夜）
+- **依赖**：TripBooking 状态机、booking_rhythm、trip_events 均在案
+- **主要风险 / 关闭条件**：零凭证约束；不可行记降级关单（维持现有「入住前 7 天建议复核」静态规则）
+
+### 3. task-confirmation-batch-import-eval（候选评估·backend）
+- **类型 / 安全区**：backend / 行前整理链（Everway 线）
+- **证据出处**：`docs/nightly/competitive-analysis/2026-11-20.md` §三 G2（Everway 转发私有地址→AI 批量归集确认单）
+- **做什么**：粘贴区多封确认邮件（分隔符/多段）→ 逐段复用 email_import 解析 → 候选合并去重（与 screenshot 批量 OCR 合并同构）；**私有邮箱归集需邮件基础设施，明确不做**
+- **可测验收**：评估记录；可行则最小版 + 测试；不可行维持单条粘贴
+- **规模 / 夜间拆分**：M（可 2 夜）
+- **依赖**：email_import 单条解析内核在案
+- **主要风险 / 关闭条件**：零凭证边界；多封批次解析正确性与去重
+
+### 4. task-geo-anchor-sanity-eval（候选评估·backend）
+- **类型 / 安全区**：backend / 地理真实性（Rhyme 差评群线）
+- **证据出处**：`docs/nightly/competitive-analysis/2026-11-17.md` §3.1（Dallas 起点被拉 8 小时外 / Costa Brava→巴黎 / Azores→大陆；day_optimizer 无行程级地理一致性检查）
+- **做什么**：dest 城市中心为锚 + haversine 离群阈值（>80km 且非交通占位/非多城段）→ plan warning + 质检 trace（basis=rule_based）+ 修订重算；与 time/weather 校验同构
+- **可测验收**：评估记录；可行则最小版 + 测试（命中/未命中/交通占位豁免/多城段豁免四路径）
+- **规模 / 夜间拆分**：M（可 2 夜）
+- **依赖**：destinations 知识库在案
+- **主要风险 / 关闭条件**：误报率（多城段豁免）；不可行记降级
+
+### 5. task-decision-drop-reason-eval（候选评估·backend+frontend）
+- **类型 / 安全区**：backend+frontend / 决策透明度（SearchSpot 线）
+- **证据出处**：`docs/nightly/competitive-analysis/2026-11-17.md` §3.2（SearchSpot「250→50→12→4 + 为什么被淘汰」）
+- **做什么**：候选/淘汰时附 `drop_reason`（rule_based：超预算/距离过远/类目不匹配/容量已满）→ 行程卡或 QA 卡透出「备选与淘汰理由」折叠区；**方案 B（LLM 生成理由）防编造口径明确不做**
+- **可测验收**：评估记录；可行则最小版 + 测试；不可行记降级
+- **规模 / 夜间拆分**：M（可 2 夜）
+- **依赖**：候选池筛选链路在案
+- **主要风险 / 关闭条件**：drop_reason 需可追溯、不编造；后端先行、前端视窗口
+
+### 6. task-dietary-filter-chips-eval（候选评估·frontend）
+- **类型 / 安全区**：frontend / 结构化输入（Wonderplan 线）
+- **证据出处**：`docs/nightly/competitive-analysis/2026-11-18.md` §三 G1（Wonderplan Halal/Vegan/素食结构化表单过滤器）
+- **做什么**：PlanWizard 增结构化饮食 chips（素食/清真/海鲜忌口等）→ 复用 prompts.py L148-150 口味偏好 freeform 转换预填；零后端大改 + i18n 键
+- **可测验收**：build 通过 + i18n + （若需要）测试
+- **规模 / 夜间拆分**：S
+- **依赖**：无
+- **主要风险 / 关闭条件**：零后端大改；不可行记降级
 
 ## §2 候选池（未入队；满足触发条件后再晋升）
 
@@ -47,19 +100,13 @@
 | P2 | `task-schedule-overflow-cta` | 有真实过载行程样本 | 日卡 overflow 目前只有 tooltip，无「让 AI 压缩该日」动作 |
 | 用户动作 | `task-share-target-android-e2e` | 有 Android 设备 | Android Chrome 安装 PWA 后实测 TikTok → 随行；非夜间任务 |
 | 观察 | `task-gallery-cold-start-2` | 真实发布 ≥20 条 | 内容量前置；届时再启 gallery-community-v3 |
-| **P0（to-C）** | **`task-launch-deploy`** | **2026-11-14 决裁：to-C 上线验证主线** | **香港轻量上线 + 空库 + 最小埋点 5 事件 + 14 天判定线（20/5/2）；详见 `docs/plans/2026-11-15-core-value-launch.md`；W1 启动时晋升 §1** |
 | P2 | `task-open-slot-eval` | 2026-11-15 竞品（Butter Agent open slots） | 开放时段占位（如「2-4pm 随意」）结构化表示；完整评估/证据见 docs/nightly/competitive-analysis/2026-11-15.md §3.1 |
 | P2 | `task-multicity-optimizer-eval` | 2026-11-15 竞品（Fortrip Transport Optimizer） | 城市级重排/交通组合优化动作；task-multi-city-segments 已有排程底座，缺城市级优化入口；证据见 competitive-analysis/2026-11-15.md §3.2 |
 | P2 | `task-price-watch-mini-eval` | 2026-11-15 竞品（Stardrift Pro 盯价 / Mindtrip PTA） | 零凭证中间档：对用户已录入预订金额做台账+变更提醒，不接外部实时价；维持 task-price-alert-eval 既有降级结论不动摇；证据见 §3.3 |
 | P2 | `task-paste-any-plan-eval` | 2026-11-15 竞品（Butter paste-a-plan） | 粘贴整段已有行程计划 → 天/时间/地点骨架识别 → 勾选并入；与 email-import 零凭证粘贴版同构；证据见 §3.4 |
 | P2 | `content-planning-after-generation` | 2026-11-15 竞品（三家新入局者全部主打规划后链路） | 文章 16《生成之后》：分水岭移到规划后链路；接 15 文《收购季》；证据见 §3.5 |
-| P2 | `task-geo-anchor-sanity-eval` | 2026-11-17 竞品（Roamy/Rhyme 地理翻车差评群） | 目的地地理锚定 + 离群站点检测（dest 中心锚 + haversine 阈值 → plan warning，basis=rule_based）；证据见 competitive-analysis/2026-11-17.md §3.1 |
-| P2 | `task-decision-drop-reason-eval` | 2026-11-17 竞品（SearchSpot decision-first） | 候选淘汰理由透出（250→50→12→4 + 为什么被淘汰）；证据见 §3.2 |
 | P2 | `task-hotel-switch-conflict-eval` | 2026-11-17 竞品（Rhyme 同日换酒店差评） | 同日双酒店 overlap 表达与冲突检查；证据见 §3.3 |
 | P2 | `content-acquisition-season-2` | 2026-11-17 竞品（OpenAI acqui-hire Odessia + Expedia $676M）+ 2026-11-18 证据升级（Layla 收购后产品两转向 + 官方对比文市场三分层 Plan-only/Partial booking/Booked with human + 营销口径打架 5M 用户 vs 1.1M+ trips） | 文章 17《收购季第二波》：并购从收编品牌到收编能力；接 15/16 文；证据见 competitive-analysis/2026-11-17.md §3.4 + 2026-11-18.md §三 G2 |
-| P2 | `task-dietary-filter-chips-eval` | 2026-11-18 竞品（Wonderplan Halal/Vegan/素食结构化表单过滤器，comparisonmath） | 结构化饮食偏好 chips（素食/清真/海鲜忌口等）→ 复用 prompts.py L148-150 既有口味偏好 freeform 转换，PlanWizard 预填为关键词；零后端大改；证据见 competitive-analysis/2026-11-18.md §三 G1 |
-| P2 | `task-free-cancel-deadline-eval` | 2026-11-20 竞品（Everway「reminds you before free cancellation ends」） | TripBooking 增 free_cancel_deadline（可选，回填确认单时录入）→ bookings 列表/节奏卡 days_until 倒计时（复用 11-12 台账倒计时）+ 截止前 N 天行程内事件提醒（复用 trip_events 链路）；零凭证；证据见 competitive-analysis/2026-11-20.md §三 G1 |
-| P2 | `task-confirmation-batch-import-eval` | 2026-11-20 竞品（Everway 转发私有地址→AI 批量归集确认单） | 多封确认邮件批量粘贴（分隔符/多段）→ 段段复用 email_import 解析 → 候选合并去重（与 screenshot 批量 OCR 合并同构）；私有邮箱归集需邮件基础设施明确不做；证据见 competitive-analysis/2026-11-20.md §三 G2 |
 | P3 | `task-visa-rules-eval` | 2026-11-20 竞品（Everway 按旅行者检查签证/护照规则） | 静态规则库（中国护照免签/落地签/电子签）评估 + 数据源矩阵（静态表维护成本 vs 官方 API 需凭证）；与 open-hours-real-eval 同构；大概率记降级关单但需正式评估记录；证据见 competitive-analysis/2026-11-20.md §三 G3 |
 | P2 | `task-mcp-export-eval` | 2026-11-20 竞品（Everway 提供 MCP 连 Claude/ChatGPT/Cursor 查行程总花费） | MCP 只读薄壳包既有 API（get_my_trips/get_trip_overview/export/property_qa，10-28 chat_trip_tools 内核已在）+ README 自托管说明；零新后端逻辑；风险：MCP 生态演进 + 运行基础设施；证据见 competitive-analysis/2026-11-20.md §三 G4 |
 | P2 | `content-google-maps-ask-maps` | 2026-11-20 竞品（Google Ask Maps 11-16 官宣欧洲 30 国 + 豆包找店 11-16 + 携程 Trip.Planner 11-19 峰会） | 文章 18《地图就是规划器？》：规划被嵌入地图/对话/OTA 主流程（平台挤压第三波，接 15/16/17 文）；独立层剩「规划后链路深度 + 中立 + 免费」+ Everway 行前整理新缝隙；证据见 competitive-analysis/2026-11-20.md §三 G5 |
