@@ -42,6 +42,8 @@ const candidates = ref([]) // { _checked, name, stop_type, description, estimate
 const bookings = ref([])
 const flaggedLines = ref([])
 const linkResult = ref(null)
+// 批量去重丢弃数（task-confirmation-batch-import-eval）
+const droppedDedup = ref(0)
 
 const trips = ref([])
 const targetTripId = ref('')
@@ -226,7 +228,8 @@ async function parse() {
     if (tab.value === 'link') {
       res = await api.importLink({ url: linkInput.value.trim() })
     } else if (tab.value === 'email') {
-      res = await api.importEmail({ text: textInput.value })
+      // 批量：一次粘贴多封（后端自动分段+去重）；单条路径零变化
+      res = await api.importEmail({ text: textInput.value, batch: true })
     } else if (tab.value === 'social') {
       res = await api.importSocial({ text: textInput.value })
     } else if (tab.value === 'byo') {
@@ -265,6 +268,7 @@ async function copyByoPrompt() {
 function applyResult(res) {
   candidates.value = (res.candidates || []).map((c) => ({ ...c, _checked: true }))
   bookings.value = (res.bookings || []).map((b) => ({ ...b, _checked: true }))
+  droppedDedup.value = res.dropped_lines || 0
   flaggedLines.value = res.flagged_lines || []
   linkResult.value = res.extracted !== undefined ? res : null
   // 保留已选目标（详情页预选当前行程）；仅未选时默认第一条
@@ -472,11 +476,14 @@ async function commit() {
       <div v-for="(b, i) in bookings" :key="i" class="booking-row">
         <el-checkbox v-model="b._checked" />
         <el-tag size="small" :type="bookingTagType(b.kind)">{{ t('importDialog.bookingKind' + (b.kind[0].toUpperCase() + b.kind.slice(1))) }}</el-tag>
+        <!-- 批量来源段标注（task-confirmation-batch-import-eval：多封合并） -->
+        <el-tag v-if="b.source_segment && bookings.length > 1" size="small" type="info" effect="plain">#{{ b.source_segment }}</el-tag>
         <span class="booking-name">{{ b.name || '-' }}</span>
         <span v-if="b.code" class="booking-code">{{ b.code }}</span>
         <span v-if="b.datetime" class="booking-date">{{ b.datetime }}</span>
         <span v-if="b.amount != null" class="booking-amount">{{ b.currency }} {{ b.amount }}</span>
       </div>
+      <p v-if="droppedDedup > 0" class="dedup-hint">{{ t('importDialog.batchDedupHint', { n: droppedDedup }) }}</p>
       <p class="hint">{{ t('importDialog.bookingMergeHint') }}</p>
       <div class="booking-merge-row">
         <el-select v-model="targetTripId" filterable :placeholder="t('importDialog.selectTrip')" size="small" style="min-width: 220px">

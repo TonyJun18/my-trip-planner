@@ -220,7 +220,7 @@ export default {
     tabEmail: 'Booking Email',
     tabSocial: 'Social Post',
     notePlaceholder: 'Paste a travel guide / note text, e.g.\n"Day 1: walk around West Lake, then snack street in the evening; Day 2: Lingyin Temple…"',
-    emailPlaceholder: 'Paste a booking confirmation email (airline / hotel / activity) to extract bookings and stop candidates',
+    emailPlaceholder: 'Paste booking confirmation email(s) (multiple forwarded messages auto-detected; airline / hotel / activity), auto-extract booking entries and stop candidates',
     socialPlaceholder: 'Paste a social share caption + link (Xiaohongshu / Douyin / IG / TikTok) to extract place candidates; links are only recognized by platform, never fetched',
     linkPlaceholder: 'Paste a public share link (Xiaohongshu / Mafengwo / Ctrip, etc.)',
     // Xiaohongshu "copy the homework" guide (anti-scraping is not bypassed — paste the body instead)
@@ -241,6 +241,7 @@ export default {
     bookingKindHotel: 'Hotel',
     bookingKindActivity: 'Activity',
     bookingMergeHint: 'Pick entries to add to the ledger; they stay "processing" until you backfill the real credential.',
+    batchDedupHint: '{n} duplicate(s) auto-merged (same code / same content); earliest kept.',
     candidateTitle: 'Stop candidates',
     flaggedTitle: 'Stripped instruction-like / suspicious lines (not added)',
     linkFallback: 'Link extraction failed; saved as inspiration link',

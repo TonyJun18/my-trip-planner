@@ -220,7 +220,7 @@ export default {
     tabEmail: '预订邮件',
     tabSocial: '社交分享',
     notePlaceholder: '粘贴攻略 / 种草笔记文本，例如：\n"第一天去西湖，绕湖走一圈，傍晚去河坊街吃小吃；第二天灵隐寺……"',
-    emailPlaceholder: '粘贴预订确认邮件原文（航司 / 酒店 / 活动），自动提取预订条目与站点候选',
+    emailPlaceholder: '粘贴预订确认邮件原文（可一次粘贴多封，转发分隔自动识别；航司 / 酒店 / 活动），自动提取预订条目与站点候选',
     socialPlaceholder: '粘贴社交分享文案（小红书 / 抖音 / IG / TikTok 的 caption + 分享链接），自动提取地点候选；链接仅识别来源平台，不会访问',
     linkPlaceholder: '粘贴公开分享链接（小红书 / 马蜂窝 / 携程等）',
     // 小红书「抄作业」引导（task：圆周旅迹招牌动作，反爬不可破 → 引导粘贴正文）
@@ -241,6 +241,7 @@ export default {
     bookingKindHotel: '酒店',
     bookingKindActivity: '活动',
     bookingMergeHint: '勾选要并入台账的条目；并入后为「处理中」，回填真实凭证后才会确认。',
+    batchDedupHint: '已自动合并 {n} 条重复（同确认码 / 同内容），保留最早一条。',
     candidateTitle: '站点候选',
     flaggedTitle: '已剥离的指令型/可疑内容（不进入候选）',
     linkFallback: '链接提取失败，已收藏为灵感链接',
