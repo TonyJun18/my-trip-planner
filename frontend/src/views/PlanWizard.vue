@@ -142,6 +142,7 @@ const form = reactive({
   travelers: 2,
   budget: 3000,
   preferences: ['food', 'nature'],
+  dietary: ['none'],
   trip_type: 'leisure',
   pace: 'balanced',
   provider: 'auto',
@@ -248,6 +249,43 @@ function togglePref(p) {
   else form.preferences.push(p.key)
 }
 
+// 饮食偏好：内部存稳定 key（语言切换不丢），none 与具体项互斥
+const dietaryKeys = ['vegetarian', 'halal', 'no-seafood', 'no-pork', 'gluten-free', 'none']
+const dietaryLabelKeyMap = {
+  vegetarian: 'dietaryVegetarian',
+  halal: 'dietaryHalal',
+  'no-seafood': 'dietaryNoSeafood',
+  'no-pork': 'dietaryNoPork',
+  'gluten-free': 'dietaryGlutenFree',
+  none: 'dietaryNone',
+}
+const dietaryEmoji = {
+  vegetarian: '🥬',
+  halal: '🕌',
+  'no-seafood': '🦐',
+  'no-pork': '🐖',
+  'gluten-free': '🌾',
+  none: '✅',
+}
+const dietaryOptions = computed(() => dietaryKeys.map((k) => ({
+  key: k,
+  label: t(`planWizard.${dietaryLabelKeyMap[k]}`),
+  emoji: dietaryEmoji[k],
+})))
+
+function toggleDietary(k) {
+  if (k === 'none') {
+    form.dietary = ['none']
+    return
+  }
+  const picked = form.dietary.filter((x) => x !== 'none')
+  const i = picked.indexOf(k)
+  if (i >= 0) picked.splice(i, 1)
+  else picked.push(k)
+  // 具体项全取消 → 恢复 none（不留空态）
+  form.dietary = picked.length ? picked : ['none']
+}
+
 // 仪表盘样预算滑块（label 走 i18n）
 const budgetPresets = [
   { labelKey: 'budgetEconomy', value: 1500 },
@@ -341,6 +379,8 @@ async function submit() {
       // 偏好传稳定 key（i18n 方案 A：后端 preference_keys_to_keywords 按 key 解析，
       // 不再依赖当前语言 label，语言切换不破坏提交契约）
       preferences: form.preferences,
+      // 饮食偏好：内部 key → 过滤 none 后提交（none 不产生关键词）
+      dietary: form.dietary.filter((k) => k !== 'none'),
       questions: answeredQuestions(),
       // 显式传当前界面语言（i18n 方案 A：后端按此生成对应语种行程文案；
       // 不传时由 Accept-Language 兜底）
@@ -752,6 +792,21 @@ function goDetail() {
                 {{ p.label }}
               </button>
             </div>
+          </div>
+
+          <!-- 饮食偏好（结构化 chips：none 默认，与具体项互斥） -->
+          <div class="field">
+            <label class="field-label">{{ $t('planWizard.dietaryGroupTitle') }}</label>
+            <div class="pref-list">
+              <button v-for="d in dietaryOptions" :key="d.key"
+                      type="button" class="chip pref" :class="{ picked: form.dietary.includes(d.key) }"
+                      @click="toggleDietary(d.key)">
+                <span class="pref-emoji">{{ d.emoji }}</span>
+                <span class="pref-check" v-if="form.dietary.includes(d.key)">✓</span>
+                {{ d.label }}
+              </button>
+            </div>
+            <div class="tt-tip">{{ $t('planWizard.dietaryHint') }}</div>
           </div>
         </div>
 
