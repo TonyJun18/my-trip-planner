@@ -827,6 +827,11 @@ const servicingProps = computed(() => ({
 // 备选方案预算（服务端已按站点汇总，与 budget_service 同构）
 const planBBudget = computed(() => planB.value?.budget || null)
 const planBTotal = computed(() => planBBudget.value?.total_estimated || 0)
+// 备选与淘汰理由（task-decision-drop-reason-eval）：solver 站点淘汰 + plan_b 取舍
+const planDrops = computed(() => [
+  ...(plan.value?.solver_meta?.drops || []),
+  ...((planB.value?.drops) || []),
+])
 
 // ── 批量生成日程（按日期范围） ─────────────────────────
 const genDaysVisible = ref(false)
@@ -1116,6 +1121,7 @@ onBeforeUnmount(() => {
               :plan-options="planOptions"
               :plan-b-budget="planBBudget"
               :plan-b-total="planBTotal"
+              :drops="planDrops"
               :revise-msg="reviseMsg"
               :revising="revising"
               :revise-error="reviseError"
@@ -1197,6 +1203,7 @@ onBeforeUnmount(() => {
                 :plan-options="planOptions"
                 :plan-b-budget="planBBudget"
                 :plan-b-total="planBTotal"
+                :drops="planDrops"
                 :hotel-candidates="hotelCandidates"
                 :servicing-props="servicingProps"
                 :booking-badge="bookingBadge"

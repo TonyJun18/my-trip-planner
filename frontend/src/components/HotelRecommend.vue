@@ -62,6 +62,19 @@ function hotelPriceText(h) {
   return t('hotel.priceQuote')
 }
 
+// 酒店候选淘汰理由对照（task-decision-drop-reason-eval）：入选项展示其余
+// 候选为何被淘汰（小字理由行 + rule_based 标注）；无 drop_reasons 不显示。
+// 后端 reason_i18n_key（dropReason.budgetOver）→ 前端 i18n 键（tripDetail.dropReasonBudgetOver）
+function hotelDropText(d) {
+  const key = d?.reason_i18n_key || ''
+  if (key && key.startsWith('dropReason.')) {
+    const suffix = key.split('.')[1] || ''
+    const k = suffix ? `tripDetail.dropReason${suffix[0].toUpperCase()}${suffix.slice(1)}` : ''
+    if (k && t(k) !== k) return t(k)
+  }
+  return d?.reason_code || key
+}
+
 // 高德 POI 评分（price-realism：_normalize_hotels 透传 rating）。
 // 只认 0 < r <= 5 的值——缺失/0/越界一律不显示，绝不编造分数（与后端「诚实口径」一致）。
 function hotelRating(h) {
@@ -133,6 +146,17 @@ async function confirmArrange() {
           <span class="hotel-price">{{ hotelPriceText(h) }}</span>
         </div>
         <div v-if="h.description" class="hotel-desc">{{ h.description }}</div>
+        <!-- 淘汰理由对照（task-decision-drop-reason-eval）：入选项展示其余候选为何被淘汰 -->
+        <div v-if="h.drop_reasons && h.drop_reasons.length" class="hotel-drops">
+          <div v-for="(dr, di) in h.drop_reasons.slice(0, 3)" :key="di" class="hotel-drop">
+            <span class="hotel-drop-name">{{ dr.name }}</span>
+            <span class="hotel-drop-reason">{{ hotelDropText(dr) }}</span>
+          </div>
+          <div v-if="h.drop_reasons.length > 3" class="hotel-drop-more">
+            {{ t('hotel.dropMore', { n: h.drop_reasons.length - 3 }) }}
+          </div>
+          <div class="hotel-drop-basis">{{ t('hotel.dropBasis') }}</div>
+        </div>
         <div class="hotel-actions">
           <el-button v-if="h.source_url" link type="primary" tag="a" :href="h.source_url" target="_blank" rel="noopener">
             {{ t('hotel.viewDetail') }} <el-icon style="margin-left: 2px"><TopRight /></el-icon>
@@ -204,5 +228,16 @@ async function confirmArrange() {
 .hotel-addr .el-icon { font-size: 13px; color: var(--faint); flex-shrink: 0; }
 .hotel-price { font-weight: 600; color: var(--ink-2); flex-shrink: 0; }
 .hotel-desc { margin-top: 6px; font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+/* 淘汰理由对照（task-decision-drop-reason-eval） */
+.hotel-drops {
+  margin-top: 8px; padding: 7px 9px; border: 1px dashed var(--line);
+  border-radius: var(--radius-sm); background: rgba(0,0,0,0.015);
+  display: flex; flex-direction: column; gap: 3px;
+}
+.hotel-drop { display: flex; align-items: baseline; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.hotel-drop-name { font-weight: 600; color: var(--ink-2); flex-shrink: 0; }
+.hotel-drop-reason { flex: 1; }
+.hotel-drop-more { font-size: 11px; color: var(--faint); }
+.hotel-drop-basis { font-size: 10.5px; color: var(--faint); border: 1px solid var(--line); border-radius: 99px; align-self: flex-start; padding: 0 6px; line-height: 15px; }
 .hotel-actions { margin-top: 6px; display: flex; justify-content: flex-end; gap: 8px; }
 </style>

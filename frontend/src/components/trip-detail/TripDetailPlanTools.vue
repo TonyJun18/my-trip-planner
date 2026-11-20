@@ -1,5 +1,7 @@
 <script setup>
-import { MagicStick, RefreshRight, Wallet, List, Plus, Minus, Edit, WarningFilled, CircleCheck, Loading, DataAnalysis } from '@element-plus/icons-vue'
+import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { MagicStick, RefreshRight, Wallet, List, Plus, Minus, Edit, WarningFilled, CircleCheck, Loading, DataAnalysis, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 
 /**
  * 规划工具条（主路径）：AI 调整行程 + 行程备选方案。
@@ -17,13 +19,19 @@ import { MagicStick, RefreshRight, Wallet, List, Plus, Minus, Edit, WarningFille
  * 收敛原则：
  * - 同一张卡内两段，中间虚线分隔；不做折叠（折叠会让主操作又藏起来）
  * - 历史状态（loading / error / 成功摘要 / diff / 质检）沿用原样式，避免老用户重新学习
+
+ * 备选与淘汰理由（task-decision-drop-reason-eval）：drops 折叠区默认收起，
+ * 无 drops 时不渲染（诚实：不展示「没有淘汰」）。
  */
-defineProps({
+const { t } = useI18n()
+const props = defineProps({
   planB: { type: Object, default: null },
   activePlan: { type: String, default: 'main' },
   planOptions: { type: Array, default: () => [] },
   planBBudget: { type: Object, default: null },
   planBTotal: { type: Number, default: 0 },
+  // 备选与淘汰理由（task-decision-drop-reason-eval）：被淘汰的站点候选 + 理由
+  drops: { type: Array, default: () => [] },
   // useRevise 状态原样透传（所有权仍在 orchestrator）
   reviseMsg: { type: String, default: '' },
   revising: { type: Boolean, default: false },
@@ -46,6 +54,22 @@ function onReviseClick() {
 function onPlanChange(v) {
   if (v === 'plan_b') emit('tool-open', 'plan_b')
   emit('plan-change', v)
+}
+
+// ── 备选与淘汰理由（task-decision-drop-reason-eval）──
+// 聚合 solver_meta.drops（站点候选淘汰）+ plan_b 变体 drops（备选取舍）。
+// 无 drops → 整区隐藏（诚实：不展示「没有淘汰」）。
+const allDrops = computed(() => props.drops || [])
+const dropsOpen = ref(false)
+function dropReasonText(d) {
+  const key = d?.reason_i18n_key || ''
+  if (key && key.startsWith('dropReason.')) {
+    const suffix = key.split('.')[1] || ''
+    // dropReason.budgetOver → tripDetail.dropReasonBudgetOver（后端机器键 → 前端 i18n 键）
+    const k = suffix ? `tripDetail.dropReason${suffix[0].toUpperCase()}${suffix.slice(1)}` : ''
+    return k && t(k) !== k ? t(k) : (d?.reason_code || key)
+  }
+  return d?.reason_code || key
 }
 </script>
 
@@ -164,6 +188,25 @@ function onPlanChange(v) {
       </template>
       <p v-else class="pt-planb-idle">{{ $t('tripDetail.planBHint') }}</p>
     </div>
+
+    <!-- ── 备选与淘汰理由（默认收起；无 drops 不渲染） ── -->
+    <div v-if="allDrops.length" class="pt-block pt-drops">
+      <button type="button" class="pt-drops-toggle" @click="dropsOpen = !dropsOpen">
+        <el-icon class="pt-title-icon" style="margin-right: 6px"><List /></el-icon>
+        <span class="pt-drops-title">{{ $t('tripDetail.dropsTitle') }}</span>
+        <span class="pt-drops-count">{{ allDrops.length }}</span>
+        <el-icon class="pt-drops-arrow" :class="{ open: dropsOpen }" style="margin-left: auto">
+          <component :is="dropsOpen ? 'ArrowUp' : 'ArrowDown'" />
+        </el-icon>
+      </button>
+      <div v-if="dropsOpen" class="pt-drops-body">
+        <div v-for="(d, i) in allDrops" :key="i" class="pt-drops-item">
+          <span class="pt-drops-name">{{ d.name }}</span>
+          <span class="pt-drops-reason">{{ dropReasonText(d) }}</span>
+          <span class="pt-drops-basis">{{ $t('tripDetail.dropsBasis') }}</span>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -240,6 +283,32 @@ function onPlanChange(v) {
 .pt-diff-text { line-height: 1.45; }
 .pt-diff-empty { font-size: 12.5px; color: var(--faint); padding: 6px 8px; background: rgba(0, 0, 0, 0.02); border-radius: var(--radius-sm); }
 .pt-diff-more { margin-top: 6px; font-size: 12px; color: var(--faint); padding: 4px 8px; border-top: 1px dashed var(--line); }
+
+/* ── 备选与淘汰理由（task-decision-drop-reason-eval）── */
+.pt-drops-toggle {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  background: none; border: none; cursor: pointer; padding: 2px 0;
+  font: inherit; color: var(--ink); text-align: left;
+}
+.pt-drops-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.pt-drops-count {
+  font-size: 11px; color: var(--faint); background: rgba(0,0,0,0.05);
+  border-radius: 99px; padding: 0 6px; line-height: 16px;
+}
+.pt-drops-arrow { font-size: 13px; color: var(--faint); transition: transform 0.2s; }
+.pt-drops-arrow.open { transform: rotate(180deg); }
+.pt-drops-body { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.pt-drops-item {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 12.5px; padding: 5px 8px; border-radius: var(--radius-sm);
+  background: rgba(0,0,0,0.025);
+}
+.pt-drops-name { font-weight: 600; color: var(--ink-2); flex-shrink: 0; }
+.pt-drops-reason { color: var(--muted); flex: 1; }
+.pt-drops-basis {
+  font-size: 11px; color: var(--faint); flex-shrink: 0;
+  border: 1px solid var(--line); border-radius: 99px; padding: 0 6px; line-height: 16px;
+}
 
 .pt-quality { margin-top: 10px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 12px; }
 .pt-quality-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }

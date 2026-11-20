@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { MagicStick, DataLine, Suitcase, RefreshRight, Clock, DataAnalysis, List, Plus, Minus, Edit, Wallet, WarningFilled, CircleCheck, Loading } from '@element-plus/icons-vue'
 import CollapsibleSection from '@/components/CollapsibleSection.vue'
 import QualityCard from '@/components/QualityCard.vue'
@@ -36,6 +37,8 @@ const props = defineProps({
   planOptions: { type: Array, default: () => [] },
   planBBudget: { type: Object, default: null },
   planBTotal: { type: Number, default: 0 },
+  // 备选与淘汰理由（task-decision-drop-reason-eval）：被淘汰的站点候选 + 理由
+  drops: { type: Array, default: () => [] },
   hotelCandidates: { type: Array, default: () => [] },
   servicingProps: { type: Object, default: () => ({}) },
   bookingBadge: { type: String, default: '' },
@@ -66,9 +69,22 @@ const emit = defineEmits([
   'plan-change', 'revise', 'revise-input', 'changed', 'arranged', 'tool-open',
 ])
 
+const { t } = useI18n()
 const planBDisplay = computed(() => props.planB)
 const timeGateIssues = computed(() => props.plan?.time_gate?.issues || [])
 const quality = computed(() => props.plan?.quality || null)
+
+// 备选与淘汰理由 i18n 渲染（task-decision-drop-reason-eval）
+function dropReasonText(d) {
+  const key = d?.reason_i18n_key || ''
+  if (key && key.startsWith('dropReason.')) {
+    const suffix = key.split('.')[1] || ''
+    // dropReason.budgetOver → tripDetail.dropReasonBudgetOver（后端机器键 → 前端 i18n 键）
+    const k = suffix ? `tripDetail.dropReason${suffix[0].toUpperCase()}${suffix.slice(1)}` : ''
+    return k && t(k) !== k ? t(k) : (d?.reason_code || key)
+  }
+  return d?.reason_code || key
+}
 
 // 面板存在性判定（keys 为 null 时全部渲染）
 function has(key) {
@@ -210,6 +226,15 @@ function isHoisted(key) {
               <span v-if="planBBudget.by_type?.hotel" class="planb-budget-sub">
                 {{ $t('common.typeHotel') }} ¥{{ planBBudget.by_type.hotel }}
               </span>
+            </div>
+            <!-- 备选与淘汰理由（task-decision-drop-reason-eval）；无 drops 不渲染 -->
+            <div v-if="props.drops.length" class="planb-drops">
+              <div class="planb-drops-title">{{ $t('tripDetail.dropsTitle') }}</div>
+              <div v-for="(d, i) in props.drops" :key="i" class="planb-drops-item">
+                <span class="planb-drops-name">{{ d.name }}</span>
+                <span class="planb-drops-reason">{{ dropReasonText(d) }}</span>
+                <span class="planb-drops-basis">{{ $t('tripDetail.dropsBasis') }}</span>
+              </div>
             </div>
             <div class="planb-hint">{{ $t('tripDetail.planBHint') }}</div>
           </div>
@@ -527,6 +552,12 @@ function isHoisted(key) {
 .planb-meta { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .planb-label { font-size: 13px; font-weight: 700; color: var(--brand); background: var(--brand-soft); padding: 3px 10px; border-radius: var(--radius-full); }
 .planb-desc { font-size: 13px; color: var(--ink-2); }
+.planb-drops { margin-top: 10px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius-md); padding: 8px 12px; }
+.planb-drops-title { font-size: 12px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; }
+.planb-drops-item { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; color: var(--ink-2); padding: 3px 0; }
+.planb-drops-name { font-weight: 600; flex-shrink: 0; }
+.planb-drops-reason { color: var(--muted); flex: 1; }
+.planb-drops-basis { font-size: 11px; color: var(--faint); flex-shrink: 0; border: 1px solid var(--line); border-radius: 99px; padding: 0 6px; line-height: 16px; }
 .planb-deltas { margin-top: 10px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius-md); padding: 8px 12px; }
 .planb-delta { display: flex; align-items: flex-start; gap: 4px; font-size: 13px; color: var(--ink-2); line-height: 1.5; padding: 4px 0; }
 .planb-delta .el-icon { flex-shrink: 0; margin-top: 3px; }

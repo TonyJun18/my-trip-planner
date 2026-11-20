@@ -766,6 +766,15 @@ export default {
     planBTitle: 'Alternative Itinerary',
     planBBudgetLabel: 'Alt budget ~',
     planBHint: 'The alternative is for preview/comparison only — switching won\'t change your current trip. To adopt it, ask AI to adjust toward it, or edit manually.',
+    // ── Drop reasons (task-decision-drop-reason-eval) ──
+    dropsTitle: 'Alternatives & Drop Reasons',
+    dropsBasis: 'Rule-based',
+    dropsEmpty: 'No drop reasons',
+    dropReasonBudgetOver: 'Over budget',
+    dropReasonDistanceTooFar: 'Too far from anchor',
+    dropReasonCategoryMismatch: 'Category mismatch',
+    dropReasonCapacityFull: 'Day capacity full',
+    dropReasonPacingConflict: 'Pacing conflict (too rushed)',
     // ── PWA offline mode ──
     offlineMode: 'Offline mode',
     offlineModeHint: 'Showing a local cached snapshot. Refresh when back online to see the latest changes.',
@@ -981,6 +990,9 @@ export default {
     priceFrom: 'from ¥{cost}',
     ratingTooltip: 'Amap POI rating (aggregated display, not this site’s user ratings)',
     basisNote: 'Ratings come from Amap POIs; room rates are city category reference estimates, not live prices — check the booking platform for the current rate.',
+    // Drop reasons comparison (task-decision-drop-reason-eval)
+    dropBasis: 'Rule-based',
+    dropMore: '{n} more dropped',
   },
   // ── Packing list (PackingList · pure frontend, zero credential) ──
   packing: {

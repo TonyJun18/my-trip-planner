@@ -766,6 +766,15 @@ export default {
     planBTitle: '行程备选方案',
     planBBudgetLabel: '备选预算约',
     planBHint: '备选方案仅作对比预览，切换不会改动当前行程；想采用时，可让 AI 参考备选调整，或手动编辑。',
+    // ── 备选与淘汰理由（task-decision-drop-reason-eval） ──
+    dropsTitle: '备选与淘汰理由',
+    dropsBasis: '规则库判定',
+    dropsEmpty: '无可展示理由',
+    dropReasonBudgetOver: '超出预算档',
+    dropReasonDistanceTooFar: '距锚点过远',
+    dropReasonCategoryMismatch: '类目不匹配偏好',
+    dropReasonCapacityFull: '当日容量已满',
+    dropReasonPacingConflict: '节奏冲突（行程太赶）',
     // ── PWA 离线模式 ──
     offlineMode: '离线模式',
     offlineModeHint: '当前展示的是本地缓存的行程快照，最新修改请联网后刷新查看',
@@ -979,6 +988,9 @@ export default {
     priceFrom: '¥{cost} 起',
     ratingTooltip: '高德 POI 评分（聚合展示口径，非本站用户评分）',
     basisNote: '评分来自高德 POI；房费为城市类目参考价估算，不是实时房价，请以预订平台实时价为准。',
+    // 淘汰理由对照（task-decision-drop-reason-eval）
+    dropBasis: '规则库判定',
+    dropMore: '还有 {n} 家被淘汰',
   },
   // ── 打包清单（PackingList · 纯前端零凭证） ────────────────
   packing: {
