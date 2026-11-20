@@ -33,64 +33,19 @@
 - 每夜竞品分析新增任务只能进 §2 候选池，由用户或队列腾位后晋升。
 - `task-` slug 只出现在 §1（可执行）与 §3（已完成/已关闭），避免重复提取。
 
-## §1 可执行队列（6 / 6）
+## §1 可执行队列（代码 6 / 6；1 条待外部）
 
 > 2026-11-20：由 §2 候选池晋升 6 条（验证顺序：P0 上线主线 → Everway 行前链 → 地理真实性 → 决策透明 → 结构化输入；详见 docs/nightly/competitive-needs-to-verify-2026-11-20.md）。
 > 执行方式：每条「评估 → 可行最小版+测试 / 不可行降级关单」，评估记录入 docs/nightly/evaluations/，完成后移入 §3。
+> 2026-11-21：6 条代码侧全部落地（free-cancel / batch-import / geo-sanity / drop-reason / dietary / 漏斗埋点）；前 5 条已移入 §3，上线主线仅剩服务器/域名/14 天结算等外部动作。
 
-### 1. task-launch-deploy（P0 to-C 上线验证主线）
+### 1. task-launch-deploy（P0 to-C 上线验证主线 · 代码部分完成，待服务器）
 - **类型 / 安全区**：docs+backend+frontend / 上线部署
 - **证据出处**：2026-11-14 决裁：to-C 上线验证主线；`docs/plans/2026-11-15-core-value-launch.md`
-- **做什么**：香港轻量上线 + 空库 + 最小埋点 5 事件 + 14 天判定线（20/5/2）
-- **可测验收**：上线可达 + 埋点 5 事件落库 + 判定线取数
-- **规模 / 夜间拆分**：L（**不直接入队本夜，W1 启动时晋升**）
-- **依赖**：docker-compose 部署栈已就绪
-- **主要风险 / 关闭条件**：to-C 发布是独立主线，不参与本夜竞品需求验证
-
-### 2. task-free-cancel-deadline-eval（候选评估·backend）
-- **类型 / 安全区**：backend / 行前整理链（Everway 线）
-- **证据出处**：`docs/nightly/competitive-analysis/2026-11-20.md` §三 G1（Everway「reminds before free cancellation ends」，PH 11 月中旬）
-- **做什么**：TripBooking 增 `free_cancel_deadline`（可选，回填确认单时录入）→ bookings 列表/节奏卡 days_until 倒计时（复用 11-12 台账倒计时模式）+ 截止前 N 天行程内事件提醒（复用 trip_events 链路）
-- **可测验收**：评估记录；可行则最小版 + 测试（录入/倒计时/到期不产出/不编造四路径）
-- **规模 / 夜间拆分**：M（可 2 夜）
-- **依赖**：TripBooking 状态机、booking_rhythm、trip_events 均在案
-- **主要风险 / 关闭条件**：零凭证约束；不可行记降级关单（维持现有「入住前 7 天建议复核」静态规则）
-
-### 3. task-confirmation-batch-import-eval（候选评估·backend）
-- **类型 / 安全区**：backend / 行前整理链（Everway 线）
-- **证据出处**：`docs/nightly/competitive-analysis/2026-11-20.md` §三 G2（Everway 转发私有地址→AI 批量归集确认单）
-- **做什么**：粘贴区多封确认邮件（分隔符/多段）→ 逐段复用 email_import 解析 → 候选合并去重（与 screenshot 批量 OCR 合并同构）；**私有邮箱归集需邮件基础设施，明确不做**
-- **可测验收**：评估记录；可行则最小版 + 测试；不可行维持单条粘贴
-- **规模 / 夜间拆分**：M（可 2 夜）
-- **依赖**：email_import 单条解析内核在案
-- **主要风险 / 关闭条件**：零凭证边界；多封批次解析正确性与去重
-
-### 4. task-geo-anchor-sanity-eval（候选评估·backend）
-- **类型 / 安全区**：backend / 地理真实性（Rhyme 差评群线）
-- **证据出处**：`docs/nightly/competitive-analysis/2026-11-17.md` §3.1（Dallas 起点被拉 8 小时外 / Costa Brava→巴黎 / Azores→大陆；day_optimizer 无行程级地理一致性检查）
-- **做什么**：dest 城市中心为锚 + haversine 离群阈值（>80km 且非交通占位/非多城段）→ plan warning + 质检 trace（basis=rule_based）+ 修订重算；与 time/weather 校验同构
-- **可测验收**：评估记录；可行则最小版 + 测试（命中/未命中/交通占位豁免/多城段豁免四路径）
-- **规模 / 夜间拆分**：M（可 2 夜）
-- **依赖**：destinations 知识库在案
-- **主要风险 / 关闭条件**：误报率（多城段豁免）；不可行记降级
-
-### 5. task-decision-drop-reason-eval（候选评估·backend+frontend）
-- **类型 / 安全区**：backend+frontend / 决策透明度（SearchSpot 线）
-- **证据出处**：`docs/nightly/competitive-analysis/2026-11-17.md` §3.2（SearchSpot「250→50→12→4 + 为什么被淘汰」）
-- **做什么**：候选/淘汰时附 `drop_reason`（rule_based：超预算/距离过远/类目不匹配/容量已满）→ 行程卡或 QA 卡透出「备选与淘汰理由」折叠区；**方案 B（LLM 生成理由）防编造口径明确不做**
-- **可测验收**：评估记录；可行则最小版 + 测试；不可行记降级
-- **规模 / 夜间拆分**：M（可 2 夜）
-- **依赖**：候选池筛选链路在案
-- **主要风险 / 关闭条件**：drop_reason 需可追溯、不编造；后端先行、前端视窗口
-
-### 6. task-dietary-filter-chips-eval（候选评估·frontend）
-- **类型 / 安全区**：frontend / 结构化输入（Wonderplan 线）
-- **证据出处**：`docs/nightly/competitive-analysis/2026-11-18.md` §三 G1（Wonderplan Halal/Vegan/素食结构化表单过滤器）
-- **做什么**：PlanWizard 增结构化饮食 chips（素食/清真/海鲜忌口等）→ 复用 prompts.py L148-150 口味偏好 freeform 转换预填；零后端大改 + i18n 键
-- **可测验收**：build 通过 + i18n + （若需要）测试
-- **规模 / 夜间拆分**：S
-- **依赖**：无
-- **主要风险 / 关闭条件**：零后端大改；不可行记降级
+- **已完成（代码）**：`analytics_events` 表 + 迁移（b2c3d4e5f6a8）、`POST /analytics/events` 的 `dedicated: true` 落库分支（5 事件白名单 / 匿名可记录 / 既有意图零回归）、前端五处打点（page_view/register/plan_submitted/plan_completed/share_created）、`backend/scripts/launch_judgment.py` 判定线取数脚本。
+- **待外部**：香港轻量 + 域名 + HTTPS + 空库初始化 + 生产安全四项 + 朋友内测 / 内容运营 + 第 14 天结算。
+- **可测验收**：代码侧 `tests/test_analytics_funnel.py`（6 例）+ 前端 build / i18n 全绿；上线可达与判定线真实取数待部署后执行。
+- **关闭条件**：部署完成且 14 天判定线结算后归档（归档前 change 保持 open）。
 
 ## §2 候选池（未入队；满足触发条件后再晋升）
 
@@ -123,6 +78,12 @@
 ## §3 关闭与不排期决策记录
 
 > 每条必须含「决策 / 理由 / 重开条件」；`- [~]` 不会被 night-start 提取。
+
+- [x] task-free-cancel-deadline-eval: 已完成——`TripBooking.free_cancel_deadline`（可空 DATE + 迁移 `a1b2c3d4e5f7`）+ bookings 列表 `cancel_deadline_days` 倒计时 + 截止前 3 天确定性提醒纯函数（幂等，(today, today+3] 窗口）+ `booking.*` 三事件注册；前端 BookingPanel 三态徽标 + 回填截止日字段 + i18n 双侧；commits `c35b4c3` / `663c6d6`，专项 7 例 + 全套 1231 绿（TZ=UTC）。
+- [x] task-confirmation-batch-import-eval: 已完成——`parse_email_batch` 转发分隔分段解析 + 合并去重（有码 provider+order_no / 无码 kind+title+amount）+ `source_segment` 来源标注 + 单条 batch 端点兼容；前端邮件 Tab 自动 batch、来源徽标、去重提示 + i18n；commits `61d3584` / `f3604ef`，专项 + 全套 1231 绿（TZ=UTC）。
+- [x] task-geo-anchor-sanity-eval: 已完成——`geo_sanity.check_plan_geo_gate` 纯函数（稳健质心锚定 + 80km 离群 + 交通占位豁免 + 多城段分组 + <3 站沉默）+ FinalizePlanStep/revise/property_qa/quality-report 接入（GATE_KEYS 五→六类）+ 前端 WS 徽标 / i18n；commits `f36221e` / `bbc900a`，geo 9 例 + 流水线 15 例 + 全套 1231 绿（TZ=UTC）。
+- [x] task-decision-drop-reason-eval: 已完成——`drop_reason_service.compute_drop_reasons` 五类确定性理由（复用既有阈值、数据不足沉默）+ `solver_meta.drops` 审计 + plan_b 变体 drops + hotel `drop_reasons` 对照 + 前端「备选与淘汰理由」折叠区/酒店小字行 + i18n；commits `cf972b3` / `36aea87` / `35deb33`，drop 18 例 + 全套 1231 绿（TZ=UTC）。
+- [x] task-dietary-filter-chips-eval: 已完成——PlanWizard 结构化饮食 chips（素食/清真/海鲜忌口/不吃猪肉/无麸质/none，none 默认且互斥）+ `PlanRequest.dietary` + `dietary_keys_to_keywords` / `merge_food_preferences` 并入餐饮检索偏好（去重保序，none 零变化）+ i18n 双侧；commits `87a4fc5` / `36ff1c4`，`tests/test_dietary_chips.py` 10 passed + 全套 1231 绿（TZ=UTC）；真机 LLM 输出验证待部署环境。
 
 - [x] task-home-feed-live: 已完成——LandingPage 灵感主区静态 showcase → 城市模板行（getCityTemplates 23 卡，cold-start 稳）+ 模板深链预填 `/plan?dest=杭州&budget=3000`（PlanWizard 补读 route.query，只预填 dest+budget、不臆造日期，登录回跳经守卫 redirect 保留 query）；底部真实画廊 teaser 保留两入口并存；commit 见 feature/content-discovery-layer（2026-11-14 晚，全套 1159 绿 + build 5.05s + i18n 1275×2）。
 - [x] task-gallery-like-mini: 已完成（经评估立项）——独立 `gallery_likes` 表（trip_id+user_id 唯一幂等 toggle、owner 不可自赞 403）+ POST/DELETE `/trips/gallery/{id}/like`（返回 {liked, like_count}）+ 画廊列表附加 like_count/liked（viewer 登录态）+ GalleryCard ❤ 按钮（乐观更新失败回滚、未登录引导登录、本地状态独立于评分）；不参与 hot 排序、与 ✓/★/去过三信号并排；测试 7 例 + 全套 1159 绿。
