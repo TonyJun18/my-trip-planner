@@ -1115,6 +1115,7 @@ export default {
       repeat_gate: 'Duplicate stops',
       weather_gate: 'Weather aware',
       dynamic_facts: 'Date exceptions',
+      geo_gate: 'Geo consistency',
     },
   },
   // ── City display names (submitted to backend as Chinese contract values, see zh→value maps) ──

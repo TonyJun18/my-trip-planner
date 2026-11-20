@@ -28,6 +28,7 @@ GATE_KEYS: tuple[str, ...] = (
     "repeat_gate",
     "weather_gate",
     "dynamic_facts",
+    "geo_gate",
 )
 
 

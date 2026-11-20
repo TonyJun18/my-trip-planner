@@ -650,6 +650,35 @@ class FinalizePlanStep(PipelineStep):
             "issues": repeat_gate.get("issues") or [],
         })
 
+        # ── GeoSanity：地理一致性质检（2026-11-20 geo-anchor-sanity）──
+        # 以行程内站点坐标质心为锚，检测离群站点（物理上远离行程主体）。
+        # 与 TimeGate 同构：只报告不阻断；数据不足（<3 有坐标站）→ 沉默。
+        from app.services.geo_sanity import check_plan_geo_gate
+
+        geo_gate = check_plan_geo_gate(plan, locale=locale)
+        plan["geo_gate"] = {
+            **{k: v for k, v in geo_gate.items() if k != "issues"},
+            "issues": geo_gate.get("issues") or [],
+            "basis": "rule_based",
+        }
+        for iss in geo_gate.get("issues") or []:
+            plan.setdefault("warnings", []).append(
+                t(locale, "plan.warning.geogate", message=iss.get("message") or "",
+                  extra=(t(locale, "plan.warning.geogate.sugg", suggestion=iss.get("suggestion")) if iss.get("suggestion") else ""))
+            )
+        if geo_gate.get("issues"):
+            _append_trace({
+                "agent": "GeoSanity",
+                "action": "check_geo",
+                "observation": t(locale, "plan.trace.geogate.warn", n=geo_gate.get("warning_count", 0)),
+                "status": "warning",
+            })
+        A._fire_artifact("geo_gate", {
+            "passed": geo_gate.get("passed"),
+            "warning_count": geo_gate.get("warning_count", 0),
+            "issues": geo_gate.get("issues") or [],
+        })
+
         # ── SolverGate：确定性求解（任务floattrip-borrow Story 4）──
         # LLM 候选 → 规则排序 + 时间/距离硬约束校验 + 有限修复。
         # 产出 plan.solver_meta（排序依据/校验结果/修复记录）；不通过 → warnings

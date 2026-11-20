@@ -560,6 +560,47 @@ async def _enforce_driving_constraints(trip: Trip, *, locale: str = "zh-CN") -> 
     )
 
 
+def build_recompute_gates(days: list[dict[str, Any]], locale: str = "zh-CN") -> dict[str, Any]:
+    """修订后重算质检 gate（纯函数）：time_gate / dynamic_facts / repeat_gate / geo_gate。
+
+    与修订主流程共享同一规则库（同源纯函数），任何修订路径都能拿到一致的新 gate；
+    geo_gate 复用地里一致性质检（质心锚定 + 离群检测），移除离群站后重算即消除 warning。
+    weather_gate 需要 plan.weather 快照（修订不重取预报），不在本函数内计算。
+    """
+    locale = normalize_locale(locale)
+    from app.services.geo_sanity import check_plan_geo_gate
+    from app.services.repeat_detector import check_plan_repeat_gate
+    from app.services.time_validation import check_plan_time_gate
+    from app.services.dynamic_facts import check_plan_dynamic_facts
+
+    time_gate = check_plan_time_gate({"days": days})
+    dyn_facts = check_plan_dynamic_facts({"days": days})
+    repeat_gate = check_plan_repeat_gate({"days": days})
+    geo_gate = check_plan_geo_gate({"days": days}, locale=locale)
+    return {
+        "time_gate": {
+            **{k: v for k, v in time_gate.items() if k != "issues"},
+            "issues": time_gate.get("issues") or [],
+            "basis": "rule_based",
+        },
+        "dynamic_facts": {
+            **{k: v for k, v in dyn_facts.items() if k != "issues"},
+            "issues": dyn_facts.get("issues") or [],
+            "basis": "rule_based",
+        },
+        "repeat_gate": {
+            **{k: v for k, v in repeat_gate.items() if k != "issues"},
+            "issues": repeat_gate.get("issues") or [],
+            "basis": "rule_based",
+        },
+        "geo_gate": {
+            **{k: v for k, v in geo_gate.items() if k != "issues"},
+            "issues": geo_gate.get("issues") or [],
+            "basis": "rule_based",
+        },
+    }
+
+
 async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
     """修订后由代码重算 TripPlan.plan_data.budget（有快照则同步更新）。"""
     from app.services.budget_service import compute_budget
@@ -586,20 +627,13 @@ async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
     new_days = _plan_snapshot(trip)["days"]
     driving = await check_plan_driving_async({"days": new_days})
 
-    # 时间校验（TimeGate）随修订重算：闭馆到达/单日过满提示同步刷新
-    from app.services.time_validation import check_plan_time_gate
-
-    time_gate = check_plan_time_gate({"days": new_days})
-
-    # 动态事实校验（DynamicFacts）随修订重算：周一闭馆/免费日/节假日提示同步刷新
-    from app.services.dynamic_facts import check_plan_dynamic_facts
-
-    dyn_facts = check_plan_dynamic_facts({"days": new_days})
-
-    # 重复站点查重（RepeatGate）随修订重算：同一地点重复安排提示同步刷新
-    from app.services.repeat_detector import check_plan_repeat_gate
-
-    repeat_gate = check_plan_repeat_gate({"days": new_days})
+    # 质检 gate 随修订重算（time_gate / dynamic_facts / repeat_gate / geo_gate）：
+    # 闭馆到达/单日过满/日期特例/重复站点/地理离群提示同步刷新（同源纯函数）
+    gates = build_recompute_gates(new_days)
+    time_gate = gates["time_gate"]
+    dyn_facts = gates["dynamic_facts"]
+    repeat_gate = gates["repeat_gate"]
+    geo_gate = gates["geo_gate"]
 
     # 天气校验（WeatherGate）随修订重算：雨天/酷暑提示同步刷新
     # （plan.weather 快照在修订时不重取——预报时效短，修订只是站点级调整，
@@ -659,6 +693,11 @@ async def _recompute_budget(db: AsyncSession, trip: Trip) -> None:
             "repeat_gate": {
                 **{k: v for k, v in repeat_gate.items() if k != "issues"},
                 "issues": repeat_gate.get("issues") or [],
+                "basis": "rule_based",
+            },
+            "geo_gate": {
+                **{k: v for k, v in geo_gate.items() if k != "issues"},
+                "issues": geo_gate.get("issues") or [],
                 "basis": "rule_based",
             },
             "weather_gate": {

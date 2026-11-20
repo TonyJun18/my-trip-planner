@@ -1113,6 +1113,7 @@ export default {
       repeat_gate: '重复站点',
       weather_gate: '天气感知',
       dynamic_facts: '日期特例',
+      geo_gate: '地理一致性',
     },
   },
   // ── 城市显示名（提交给后端时用中文契约值，见各组件 zh→value 映射） ──
