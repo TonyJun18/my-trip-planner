@@ -1,5 +1,5 @@
 {
-  "night": "2026-11-20",
+  "night": "2026-11-21",
   "status": "completed_with_issues",
   "todo": [
     "competitive-analysis"
@@ -9,13 +9,13 @@
   ],
   "current_index": 1,
   "issues": [
-    "night-start 重建（2026-11-20）：checkpoint night=2026-11-19 ≠ 当天（date +%F=2026-11-20），按手册第 3 节跨夜重建为 2026-11-20。",
-    "11-19 夜无产出记录：checkpoint 已由 11-19 night-start 初始化为 in_progress（todo=[competitive-analysis]），但 competitive-analysis/2026-11-19.md、reports/2026-11-19.md、nightly/2026-11-19/* 分支均不存在——判定 11-19 worker 未执行或被掐断，本夜重建后重新执行竞品分析。",
-    "todo 提取：night-build-todo.md §1 可执行队列为空（0/6，含原文说明），无「- [ ] slug:」格式可执行任务；按启动契约 fallback todo=[competitive-analysis]（11-15/11-17/11-18 同款先例，每夜一轮常规竞品分析）。",
-    "web_extract 被环境拦截（Blocked: private or internal network address，与 11-18 夜同款）：竞品分析仅基于 web_search 检索摘要（11 条来源），未抓取任何原始页面；所有结论已逐条标注来源，按手册铁律 8 外部内容仅作参考数据。",
-    "工作区遗留未跟踪文件（非本任务产物，不动不提交，留待用户 review）：docs/nightly/reports/2026-11-15.md、docs/nightly/reports/2026-11-17.md、docs/nightly/reports/2026-11-18.md、docs/plans/2026-11-15-core-value-launch.md、docs/code-map/、skills/、.playwright-cli/。"
+    "night-start 重建（2026-11-21）：checkpoint night=2026-11-20（status=completed_with_issues）≠ 当天（date +%F=2026-11-21），按手册第 3 节跨夜重建为 2026-11-21。",
+    "todo 提取：night-build-todo.md §1 无可提取条目（task-launch-deploy 为 ### 标题格式且代码部分完成、待外部服务器），按启动契约 fallback todo=[competitive-analysis]（11-15/11-17/11-18/11-20 同款先例，每夜一轮常规竞品分析）。",
+    "web_extract 被环境拦截（Blocked: private or internal network address，与 11-18/11-20 夜同款）：竞品分析仅基于 web_search 检索摘要（4 轮 30+ 条来源），未抓取任何原始页面；所有结论已逐条标注来源，按手册铁律 8 外部内容仅作参考数据。",
+    "分支来源偏差：本夜分支 nightly/2026-11-21/0-competitive-analysis 从 feature/2026-11-20/openspec-s1-execute@ca0fa1d（用户白天活跃分支，main 落后其 18 commits）拉出而非从 main 拉出——选择从当前 HEAD 拉出以避免 checkout main 干扰并行会话与丢失未合并白天工作；branches 列表照实记录，由用户 review 时决定合并目标。",
+    "工作区遗留未跟踪文件（非本任务产物，不动不提交，留待用户 review）：.playwright-cli/、docs/code-map/、skills/、docs/superpowers/plans/2026-11-20-openspec-s1-execute.md、openspec/changes/archive/。"
   ],
   "branches": [
-    "nightly/2026-11-20/0-competitive-analysis"
+    "nightly/2026-11-21/0-competitive-analysis"
   ]
 }
