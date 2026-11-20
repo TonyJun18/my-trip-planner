@@ -168,6 +168,9 @@ class EmailBooking:
     amount: float | None = None
     currency: str = "CNY"
     source_lines: list[int] = field(default_factory=list)
+    # 批量导入（task-confirmation-batch-import-eval）：来源段号（1-based）；
+    # 单条导入恒为 1。
+    source_segment: int = 1
 
     def ensure(self, **kw) -> None:
         """仅填充尚未设置的可选字段（先到先得，不覆盖已有值）。"""
@@ -312,4 +315,100 @@ def parse_email(text: str) -> EmailImportResult:
 
     current = _flush(current, result)
     result.candidates = list(seen_candidates.values())
+    return result
+
+
+# ── 批量导入（task-confirmation-batch-import-eval：多封合并归集） ──
+# 转发分隔符：Gmail (`--- Forwarded message ---`) / Outlook (`---------- Forwarded message ----------`)
+# 变体；兜底：三连空行 + 行首「发件人|From:」。
+_FWD_DASH_RE = re.compile(r"^-{3,}\s*Forwarded?\s+message\s*-{3,}$", re.IGNORECASE)
+_FWD_UNDERSCORE_RE = re.compile(r"^_{3,}\s*Forwarded?\s+message\s*_+$", re.IGNORECASE)
+_FROM_LINE_RE = re.compile(r"^(发件人|From)\s*[:：]", re.IGNORECASE)
+
+
+def _split_segments(text: str) -> list[str]:
+    """把多封确认邮件文本切成段（确定性规则，无分隔符 → 单段整篇）。"""
+    if not text or not text.strip():
+        return []
+    lines = text.splitlines()
+    segments: list[str] = []
+    current: list[str] = []
+    blank_run = 0
+
+    def flush() -> None:
+        nonlocal current
+        seg = "\n".join(current).strip()
+        if seg:
+            segments.append(seg)
+        current = []
+
+    for raw in lines:
+        line = raw.strip()
+        if _FWD_DASH_RE.match(line) or _FWD_UNDERSCORE_RE.match(line):
+            flush()
+            blank_run = 0
+            continue
+        if _FROM_LINE_RE.match(line):
+            # 兜底：发件人行起点（前面至少有一个空行才切——防止误切正文里的「From:」）
+            if blank_run >= 2:
+                flush()
+            blank_run = 0
+            current.append(line)
+            continue
+        if not line:
+            blank_run += 1
+            current.append(line)
+            continue
+        blank_run = 0
+        current.append(line)
+    flush()
+    return segments
+
+
+def _dedup_bookings(bookings: list["EmailBooking"]) -> tuple[list["EmailBooking"], int]:
+    """批量结果去重：有码（kind+code）幂等；无码用弱指纹（kind+name+amount）。
+
+    返回 (去重后列表, 丢弃数)。宁可漏合不误合（误合并会吞掉真实订单）。
+    """
+    seen: set[tuple] = set()
+    kept: list[EmailBooking] = []
+    dropped = 0
+    for b in bookings:
+        if b.code:
+            key = ("code", b.kind, b.code.strip().upper())
+        else:
+            key = ("no-code", b.kind, (b.name or "").strip().lower(), b.amount)
+        if key in seen:
+            dropped += 1
+            continue
+        seen.add(key)
+        kept.append(b)
+    return kept, dropped
+
+
+def parse_email_batch(text: str) -> EmailImportResult:
+    """多封确认邮件批量解析（task-confirmation-batch-import-eval）。
+
+    - 按转发分隔符/发件人行 切成多段，逐段复用 ``parse_email``；
+    - 空段容错跳过；无分隔符 → 整段一封（与单条路径等价零破坏）；
+    - 合并后按（有码 kind+code / 无码 kind+name+amount）去重，
+      dropped_lines 扩展语义：含「因去重丢弃的条目数」；
+    - 每条 booking 携带 source_segment（1-based 段号）。
+    """
+    segments = _split_segments(text)
+    if not segments:
+        return EmailImportResult()
+
+    result = EmailImportResult()
+    for idx, seg in enumerate(segments, start=1):
+        parsed = parse_email(seg)
+        for b in parsed.bookings:
+            b.source_segment = idx
+            result.bookings.append(b)
+        result.candidates.extend(parsed.candidates)
+        result.flagged_lines.extend(parsed.flagged_lines)
+        result.dropped_lines += parsed.dropped_lines
+
+    result.bookings, dedup_dropped = _dedup_bookings(result.bookings)
+    result.dropped_lines += dedup_dropped
     return result

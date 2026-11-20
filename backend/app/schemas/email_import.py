@@ -17,9 +17,12 @@ class EmailImportRequest(BaseModel):
     """用户粘贴的预订确认邮件文本。
 
     外部内容按敌意输入处理：服务层会剥离指令型行并标记，绝不把文本当指令。
+    ``batch``（task-confirmation-batch-import-eval）：true 时按转发分隔符切段
+    多封解析并合并去重；false/缺省保持单条行为。
     """
 
-    text: str = Field(min_length=1, max_length=MAX_EMAIL_TEXT_LENGTH, description="预订确认邮件原文")
+    text: str = Field(min_length=1, max_length=MAX_EMAIL_TEXT_LENGTH, description="预订确认邮件原文（可含多封转发）")
+    batch: bool = Field(default=False, description="true=多封批量解析（转发分隔自动识别+去重）")
 
 
 class EmailBookingOut(BaseModel):
@@ -35,6 +38,7 @@ class EmailBookingOut(BaseModel):
     amount: float | None = None
     currency: str = "CNY"
     source_lines: list[int] = Field(default_factory=list, description="来源行号（1-based）")
+    source_segment: int = Field(default=1, description="批量导入来源段号（1-based）")
 
 
 class EmailFlaggedLineOut(BaseModel):

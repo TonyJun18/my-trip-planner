@@ -26,7 +26,7 @@ from app.schemas.email_import import (
     EmailImportRequest,
     EmailImportResultOut,
 )
-from app.services.email_import import parse_email
+from app.services.email_import import parse_email, parse_email_batch
 from app.services.note_import import NoteStopCandidate
 
 router = APIRouter()
@@ -61,7 +61,7 @@ async def import_email(
     - 返回预订条目（航班/酒店/活动，含确认码/日期/金额）与候选清单；
     - 需要登录（与行程管理一致）；text 超长（>20000 字符）由请求校验 422 拒绝。
     """
-    result = parse_email(data.text)
+    result = parse_email_batch(data.text) if data.batch else parse_email(data.text)
     return EmailImportResultOut(
         bookings=[
             EmailBookingOut(
@@ -72,6 +72,7 @@ async def import_email(
                 amount=b.amount,
                 currency=b.currency,
                 source_lines=b.source_lines,
+                source_segment=b.source_segment,
             )
             for b in result.bookings
         ],
