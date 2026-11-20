@@ -567,3 +567,65 @@ def preference_keys_to_keywords(locale: str, prefs: list[str]) -> list[str]:
             kw = PREFERENCE_KEYWORDS.get("zh-CN", {}).get(k)
         out.append(kw if kw is not None else k)
     return out
+
+
+# ═══════════════════════════════════════════════════════════
+# 饮食偏好（task-dietary-filter-chips-eval）：结构化 chips key → 检索关键词
+# ═══════════════════════════════════════════════════════════
+# 与 PREFERENCE_KEYWORDS 同构：key 语言无关，关键词随语种。none 不产生关键词。
+DIETARY_KEYWORDS: dict[str, dict[str, str]] = {
+    "zh-CN": {
+        "vegetarian": "素食",
+        "halal": "清真",
+        "no-seafood": "不吃海鲜",
+        "no-pork": "不吃猪肉",
+        "gluten-free": "无麸质",
+    },
+    "en-US": {
+        "vegetarian": "vegetarian",
+        "halal": "halal",
+        "no-seafood": "no seafood",
+        "no-pork": "no pork",
+        "gluten-free": "gluten-free",
+    },
+}
+
+
+def dietary_keys_to_keywords(locale: str, keys: list[str]) -> list[str]:
+    """把结构化饮食偏好 key 解析成检索关键词（none 不产生关键词）。
+
+    - 已知 key → 对应语种关键词
+    - 未知 key → 原样保留（不翻译、不猜测，与 preference_keys_to_keywords 同构）
+    """
+    table = DIETARY_KEYWORDS.get(locale) or DIETARY_KEYWORDS["zh-CN"]
+    out: list[str] = []
+    for k in keys or []:
+        if not k or not str(k).strip():
+            continue
+        key = str(k).strip()
+        if key == "none":
+            continue  # none 语义 = 无特别偏好，不污染检索
+        kw = table.get(key)
+        if kw is None and locale != "zh-CN":
+            kw = DIETARY_KEYWORDS.get("zh-CN", {}).get(key)
+        out.append(kw if kw is not None else key)
+    return out
+
+
+def merge_food_preferences(
+    food_prefs: list[str],
+    dietary_keys: list[str] | None,
+    locale: str = "zh-CN",
+) -> list[str]:
+    """把饮食关键词并入餐饮偏好（与自由文本同权、去重保序）。
+
+    - 无 dietary / 全 none → 返回原 food_prefs（零变化）
+    - 有具体项 → 追加映射关键词（dict.fromkeys 保序去重）
+    """
+    if not dietary_keys:
+        return list(food_prefs or [])
+    merged = list(food_prefs or [])
+    for kw in dietary_keys_to_keywords(locale, dietary_keys):
+        if kw not in merged:
+            merged.append(kw)
+    return merged

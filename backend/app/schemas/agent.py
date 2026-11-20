@@ -34,6 +34,13 @@ class PlanRequest(BaseModel):
     travelers: int = Field(default=1, ge=1)
     budget: float | None = Field(default=None, ge=0)
     preferences: list[str] = Field(default_factory=list, description="偏好，如 ['美食', '自然风光', '博物馆']")
+    # 结构化饮食偏好（task-dietary-filter-chips-eval）：chips key 形式
+    # （vegetarian/halal/no-seafood/no-pork/gluten-free），映射为餐饮检索关键词
+    # 并入口味偏好（与自由文本同权）；空/缺省 = 无特别偏好，零变化
+    dietary: list[str] | None = Field(
+        default=None, max_length=10,
+        description="结构化饮食偏好 key（vegetarian/halal/no-seafood/no-pork/gluten-free；none 不产生关键词）",
+    )
     questions: list[PlanQuestion] = Field(default_factory=list, max_length=10, description="主动提问 Q&A（人群/节奏/避峰/备选方案），答案并入规划上下文")
     # 行程节奏档（task-pacing-leisure 结构化排程约束，联动 TimeGate 过饱和校验）
     pace: Literal["compact", "balanced", "relaxed"] | None = Field(

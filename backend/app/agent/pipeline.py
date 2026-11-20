@@ -159,12 +159,20 @@ class CollectAgentsStep(PipelineStep):
         # 偏好关键词（语言无关契约；与 agents.py _request_locale 同口径）
         locale = normalize_locale(ctx.request.get("language"))
         pref_keywords = preference_keys_to_keywords(locale, prefs)
+        # 饮食偏好（task-dietary-filter-chips-eval）：chips key → 关键词并入餐饮偏好
+        from app.i18n.prompts import merge_food_preferences
+
+        food_keywords = merge_food_preferences(
+            _food_hints(pref_keywords),
+            ctx.request.get("dietary") or [],
+            locale,
+        )
 
         tasks = {
             "attractions": attraction_agent(city, pref_keywords, request=ctx.request, provider=provider, max_iterations=max_iterations),
             "weather": weather_agent(city),
             "hotels": hotel_agent(city, _accommodation_hints(ctx.request), request=ctx.request, provider=provider, max_iterations=max_iterations),
-            "foods": food_agent(city, _food_hints(pref_keywords), request=ctx.request, provider=provider, max_iterations=max_iterations),
+            "foods": food_agent(city, food_keywords, request=ctx.request, provider=provider, max_iterations=max_iterations),
             "transport": transport_agent(ctx.request.get("departure"), city, date=ctx.request.get("start_date"), provider=provider, max_iterations=max_iterations),
             "discount": discount_agent(city),
             # 机票特价（确定性搜索+抽取；无出发地/失败只降级，不阻塞其余六路）
