@@ -47,6 +47,73 @@ export function trackEvent(name, payload = {}) {
   }
 }
 
+const ANON_SESSION_KEY = 'trip_planner_anon_session'
+
+/**
+ * 匿名会话 id（localStorage 持久；无痕/禁用存储时降级为内存级随机值）。
+ * 漏斗要求「匿名访问也记录」，不依赖登录态。
+ */
+let memoryAnonId = null
+export function getAnonymousSessionId() {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return memoryAnonId
+    let id = localStorage.getItem(ANON_SESSION_KEY)
+    if (!id) {
+      id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+      localStorage.setItem(ANON_SESSION_KEY, id)
+    }
+    return id
+  } catch {
+    if (!memoryAnonId) {
+      memoryAnonId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+    }
+    return memoryAnonId
+  }
+}
+
+/**
+ * 发送落库漏斗事件（dedicated: true）——5 类白名单：
+ * page_view / register / plan_submitted / plan_completed / share_created。
+ * fire-and-forget：所有失败静默，绝不影响业务路径。
+ * @param {string} name 漏斗事件名（后端 FunnelEventName）
+ * @param {object} data { user_id?, trip_id?, payload? }
+ */
+export function trackFunnel(name, data = {}) {
+  try {
+    const token = localStorage.getItem('trip_planner_token')
+    const headers = { 'Content-Type': 'application/json' }
+    if (token) headers.Authorization = `Bearer ${token}`
+    fetch(`${API_BASE}/analytics/events`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        dedicated: true,
+        funnel: {
+          name,
+          anonymous_session_id: getAnonymousSessionId(),
+          ...data,
+        },
+      }),
+      keepalive: true,
+    }).catch(() => {
+      /* 漏斗落库失败静默：不影响业务 */
+    })
+  } catch {
+    /* 同步异常也静默 */
+  }
+}
+
+// 漏斗事件名常量（与后端 FunnelEventName 白名单保持一致）
+export const FUNNEL_EVENTS = {
+  pageView: 'page_view',
+  register: 'register',
+  planSubmitted: 'plan_submitted',
+  planCompleted: 'plan_completed',
+  shareCreated: 'share_created',
+}
+
 // 事件名常量（与后端 app/schemas/analytics.py 白名单保持一致）
 export const ANALYTICS_EVENTS = {
   planningToolOpen: 'planning_tool_open',

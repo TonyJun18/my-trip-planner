@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { trackFunnel, FUNNEL_EVENTS } from '@/api/modules/analytics'
 
 const routes = [
   // 产品门面（未登录可访问）
@@ -29,6 +30,11 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+// 漏斗：每次路由导航记一次访问（匿名也记录，fire-and-forget）
+router.afterEach((to) => {
+  trackFunnel(FUNNEL_EVENTS.pageView, { payload: { path: to.fullPath } })
 })
 
 // 路由守卫：除 /login 外都需要登录

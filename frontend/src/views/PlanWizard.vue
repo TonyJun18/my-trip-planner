@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import * as api from '@/api'
+import { trackFunnel, FUNNEL_EVENTS } from '@/api/modules/analytics'
 import { useAuthStore } from '@/stores/auth'
 import HotelRecommend from '@/components/HotelRecommend.vue'
 import QualityCard from '@/components/QualityCard.vue'
@@ -387,6 +388,7 @@ async function submit() {
       language: String(locale.value || '').replace('_', '-'),
     }
     const task = await api.planTrip(payload)
+    trackFunnel(FUNNEL_EVENTS.planSubmitted, { payload: { task_id: task.task_id } })
     bumpQuotaAfterSubmit()
     startRealtime(task.task_id)
     // 兜底：无论 WS 是否可用，都启动轮询（WS 存活时轮询幂等、开销小）
@@ -440,6 +442,10 @@ function onTaskStatus(task) {
 
 function finishSuccess(task) {
   submitting.value = false
+  trackFunnel(FUNNEL_EVENTS.planCompleted, {
+    trip_id: task.trip_id || undefined,
+    payload: { task_id: task.task_id },
+  })
   result.value = { ...task, trace: task.trace || [] }
   if (!liveState.value && task.events?.length) {
     // 轮询路径（WS 未通）：用服务端持久化 events 重建阶段视图

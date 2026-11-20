@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
+import { trackFunnel, FUNNEL_EVENTS } from '@/api/modules/analytics'
 
 const router = useRouter()
 const route = useRoute()
@@ -59,6 +60,7 @@ async function submit() {
         return
       }
       await auth.register(payload)
+      trackFunnel(FUNNEL_EVENTS.register, { payload: { method: payload.email ? 'email' : 'phone' } })
       ElMessage.success(t('auth.registerSuccess'))
     }
     const redirect = route.query.redirect || '/trips'

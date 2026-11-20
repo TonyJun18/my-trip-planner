@@ -3,6 +3,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as api from '@/api'
+import { trackFunnel, FUNNEL_EVENTS } from '@/api/modules/analytics'
 
 /**
  * 分享 / 收藏 / 画廊 / 受邀编辑权 域。
@@ -23,6 +24,7 @@ export function useTripShareActions({ trip, afterChange } = {}) {
     sharing.value = true
     try {
       const r = await api.createShare(trip.value.id)
+      trackFunnel(FUNNEL_EVENTS.shareCreated, { trip_id: trip.value.id })
       const url = r.share_url
       try {
         await navigator.clipboard.writeText(url)
