@@ -20,6 +20,9 @@ class PlanBVariantOut(BaseModel):
     deltas: list[str] = Field(default_factory=list, max_length=_MAX_DELTAS, description="与主案的差异点列表（供前端对比展示）")
     days: list = Field(default_factory=list, description="备选骨架天数（与 TripPlan.plan_data.days 同构）")
     budget: dict = Field(default_factory=dict, description="备选骨架预算汇总（total_estimated/by_type/currency）")
+    # 备选与淘汰理由（task-decision-drop-reason-eval）：被替换/被移除的站点，
+    # 每条 {name, reason_code, reason_i18n_key, basis="rule_based"}；无淘汰 → 空/缺失
+    drops: list[dict] = Field(default_factory=list, description="被替换/被移除站点的取舍理由（rule_based）")
 
 
 class PlanBOut(BaseModel):

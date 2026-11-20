@@ -225,6 +225,7 @@ class PlanAssembleStep(PipelineStep):
         from app.agent import agents as A
         from app.agent import tools as agent_tools
         from app.agent.agents import (
+            _accommodation_hints,
             _critic_feedback,
             _driving_feedback,
             _has_actionable_issues,
@@ -300,6 +301,25 @@ class PlanAssembleStep(PipelineStep):
                 plan_data=materials.get("transport") and {"transport": materials.get("transport")} or None,
             )
             candidate["hotels"] = _normalize_hotels(materials.get("hotels") or [])
+            # 酒店候选淘汰理由对照（task-decision-drop-reason-eval）：入选项带
+            # drop_reasons（其余候选为何被淘汰），纯审计不改筛选结果；失败静默。
+            try:
+                from app.services.drop_reason_service import attach_hotel_drop_reasons
+
+                candidate["hotels"] = attach_hotel_drop_reasons(
+                    candidate["hotels"],
+                    candidate.get("days") or [],
+                    {
+                        "budget": request.get("budget"),
+                        "days": len(candidate.get("days") or []) or 1,
+                        "travelers": request.get("travelers") or 1,
+                        "accommodation_hints": _accommodation_hints(request),
+                    },
+                )
+            except Exception:  # noqa: BLE001 — 淘汰理由是可丢弃的附加信息，绝不阻断规划
+                from app.agent import agents as _A
+
+                _A.logger.debug("attach_hotel_drop_reasons 失败（已忽略）", exc_info=True)
 
             # 行程草案制品（每代都发；前端「编排阶段」实时展示天数/主题）
             A._fire_artifact("draft", {

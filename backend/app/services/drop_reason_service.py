@@ -38,6 +38,9 @@ DROP_REASON_KEYS: dict[str, str] = {
 # 判定优先级（budget → distance → category → capacity → pacing）
 _REASON_ORDER = ("budget_over", "distance_too_far", "category_mismatch", "capacity_full", "pacing_conflict")
 
+# 酒店档位词（与 budget_service._HOTEL_TIER 同源）：名称含这些词视为「高档定位」
+_LUXURY_TIER_WORDS = ("奢华", "豪华", "五星", "国际", "度假", "精品", "四星", "高档", "商务", "主题")
+
 
 def _coords(stop: dict[str, Any]) -> tuple[float, float] | None:
     lat_raw, lng_raw = stop.get("lat"), stop.get("lng")
@@ -165,3 +168,95 @@ def compute_drop_reasons(
                 })
                 break  # 每个候选只记命中优先级最高的一条理由
     return drops
+
+
+def _norm_hotel_name(name: str | None) -> str:
+    """酒店名归一化（与前端 HotelRecommend.normName 同源）。"""
+    return str(name or "").lower().replace(" ", "").replace("酒店", "").replace("hotel", "")
+
+
+def _hotel_anchor(hotels: list[dict[str, Any]], chosen_names: set[str]) -> tuple[float, float] | None:
+    """已选酒店的坐标均值作为锚（无已选 → None，距离规则沉默）。"""
+    pts = [
+        _coords(h) for h in hotels
+        if _norm_hotel_name(h.get("name")) in chosen_names
+    ]
+    pts = [p for p in pts if p is not None]
+    if not pts:
+        return None
+    return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+
+
+def _hotel_category_mismatch(hotel: dict[str, Any], ctx: dict[str, Any]) -> bool:
+    """酒店类目是否匹配住宿需求：需求含「经济/民宿/青旅/快捷」而候选是高档定位 → 不匹配。"""
+    hints = " ".join(ctx.get("accommodation_hints") or [])
+    wants_budget = any(w in hints for w in ("经济", "民宿", "青旅", "快捷", "连锁", "客栈"))
+    if not wants_budget:
+        return False
+    name = str(hotel.get("name") or "")
+    return any(w in name for w in _LUXURY_TIER_WORDS)
+
+
+def attach_hotel_drop_reasons(
+    hotels: list[dict[str, Any]],
+    days: list[dict[str, Any]],
+    ctx: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """给酒店候选附加淘汰理由对照（入选家展示其余候选为何被淘汰）。
+
+    入选 = 行程 days 里实际安排进日程的酒店站（按名称归一化匹配）。
+    背景：plan.hotels 是一批候选，用户最终只住 1 家；入选项的
+    ``drop_reasons`` 列出其余候选各自的淘汰理由（budget_over /
+    distance_too_far / category_mismatch），让「为什么选它」可对照。
+    无已选酒店 / 无淘汰 → 不附加（诚实沉默）。纯函数，只读不改。
+    """
+    if not hotels or not days:
+        return hotels
+
+    chosen_names = {
+        _norm_hotel_name(s.get("name"))
+        for day in days for s in (day.get("stops") or [])
+        if isinstance(s, dict) and (s.get("type") == "hotel" or s.get("stop_type") == "hotel")
+    }
+    if not chosen_names:
+        return hotels  # 无已选 → 诚实沉默
+
+    anchor = _hotel_anchor(hotels, chosen_names)
+    drop_ctx = {
+        **ctx,
+        "anchor": anchor,
+        "preferred_types": ["hotel"],
+        "days": ctx.get("days") or max(1, len(days)),
+        "travelers": ctx.get("travelers") or 1,
+    }
+
+    chosen = [h for h in hotels if _norm_hotel_name(h.get("name")) in chosen_names]
+    losers = [h for h in hotels if _norm_hotel_name(h.get("name")) not in chosen_names]
+
+    out: list[dict[str, Any]] = []
+    for h in hotels:
+        h = dict(h)  # 浅拷贝，不改输入
+        if _norm_hotel_name(h.get("name")) in chosen_names:
+            # 入选项：对照展示其余候选的淘汰理由
+            reasons: list[dict[str, Any]] = []
+            for loser in losers:
+                # 逐规则判定：budget（超单日人均预算）→ distance（距已选锚点）→ category（需求类目不符）
+                code = None
+                if _hit_budget_over(loser, drop_ctx):
+                    code = "budget_over"
+                elif anchor is not None and _hit_distance_too_far(loser, drop_ctx):
+                    code = "distance_too_far"
+                elif _hotel_category_mismatch(loser, drop_ctx):
+                    code = "category_mismatch"
+                if code is not None:
+                    reasons.append({
+                        "stop_id": str(loser.get("stop_id") or loser.get("name") or ""),
+                        "name": str(loser.get("name") or ""),
+                        "reason_code": code,
+                        "reason_i18n_key": DROP_REASON_KEYS[code],
+                        "basis": "rule_based",
+                    })
+            if reasons:
+                h["drop_reasons"] = reasons
+        out.append(h)
+    return out

@@ -143,12 +143,24 @@ def _relaxed_variant(days: list[dict[str, Any]], locale: str = "zh-CN") -> dict[
             names=moved_names, dst=dst["day_number"],
         )
     ]
+    # 备选与淘汰理由（task-decision-drop-reason-eval）：被移到次日的站点
+    # 原位置被放弃 → pacing_conflict（行程太赶）
+    drops = [
+        {
+            "name": m.get("name", ""),
+            "reason_code": "pacing_conflict",
+            "reason_i18n_key": "dropReason.pacingConflict",
+            "basis": "rule_based",
+        }
+        for m in moves
+    ]
     return {
         "label": t(locale, "planb.relaxed.label"),
         "description": t(locale, "planb.relaxed.description"),
         "deltas": deltas,
         "days": result,
         "budget": _sum_budget(result),
+        "drops": drops,
     }
 
 
@@ -236,13 +248,35 @@ def _curated_variant(days: list[dict[str, Any]], locale: str = "zh-CN") -> dict[
         return None
 
     deltas = removed + [t(locale, "planb.curated.delta.total")]
+    # 备选与淘汰理由（task-decision-drop-reason-eval）：被移除的站点 → pacing_conflict
+    drops = [
+        {
+            "name": _removed_name(delta, locale),
+            "reason_code": "pacing_conflict",
+            "reason_i18n_key": "dropReason.pacingConflict",
+            "basis": "rule_based",
+        }
+        for delta in removed
+    ]
     return {
         "label": t(locale, "planb.curated.label"),
         "description": t(locale, "planb.curated.description"),
         "deltas": deltas,
         "days": result,
         "budget": _sum_budget(result),
+        "drops": drops,
     }
+
+
+def _removed_name(delta: str, locale: str) -> str:
+    """从 drop 文案里提取被移除站点名（归档需要 name 字段）。"""
+    # 文案形如「Day 1 移除「餐厅2」（时间有限时的取舍）」——取第一个「」/「引号里的名字
+    import re
+
+    m = re.search(r"[「『\"']([^」』\"']+)[」』\"']", delta)
+    if m:
+        return m.group(1)
+    return delta[:20]
 
 
 def generate_plan_b_variant(days: list[dict[str, Any]], locale: str = "zh-CN") -> dict[str, Any] | None:

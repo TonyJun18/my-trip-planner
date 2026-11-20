@@ -291,5 +291,55 @@ def solve(plan: dict[str, Any], *, locale: str = "zh-CN") -> dict[str, Any]:
         },
         "repair_rounds": len(repair["repaired"]),
     }
+
+    # ── drops：候选淘汰理由（task-decision-drop-reason-eval，纯审计不改结果）──
+    # 语义（只记录，不改变任何筛选）：
+    # 1. 超预算站（cost > 单日人均预算）→ budget_over（预算档是硬约束，最优先）；
+    # 2. 其余超容量站（当天 >MAX_STOPS_PER_DAY 的尾部溢出）→ capacity_full。
+    # 无淘汰 → 不写 drops 键（诚实：不产出空理由）。
+    from app.services.drop_reason_service import DROP_REASON_KEYS
+    from app.services.time_validation import MAX_STOPS_PER_DAY
+
+    per_day_budget = None
+    n_days = len(plan.get("days") or [])
+    travelers = plan.get("travelers") or 1
+    if plan.get("budget") and n_days > 0 and travelers > 0:
+        per_day_budget = float(plan["budget"]) / n_days / travelers
+
+    day_drops: list[dict[str, Any]] = []
+    for day in plan.get("days") or []:
+        stops = [s for s in (day.get("stops") or []) if isinstance(s, dict)]
+        if not stops:
+            continue
+        if len(stops) <= MAX_STOPS_PER_DAY and per_day_budget is None:
+            continue
+        # ① 超预算站（无论顺序，预算档最优先）
+        for s in stops:
+            cost = s.get("estimated_cost")
+            if per_day_budget is not None and isinstance(cost, (int, float)) and cost > per_day_budget:
+                day_drops.append({
+                    "stop_id": str(s.get("stop_id") or s.get("name") or ""),
+                    "name": str(s.get("name") or ""),
+                    "reason_code": "budget_over",
+                    "reason_i18n_key": DROP_REASON_KEYS["budget_over"],
+                    "basis": "rule_based",
+                })
+        # ② 超容量：尾部溢出站 → capacity_full（跳过已记 budget_over 的）
+        if len(stops) > MAX_STOPS_PER_DAY:
+            recorded = {d["stop_id"] for d in day_drops}
+            for s in stops[MAX_STOPS_PER_DAY:]:
+                sid = str(s.get("stop_id") or s.get("name") or "")
+                if sid in recorded:
+                    continue
+                day_drops.append({
+                    "stop_id": sid,
+                    "name": str(s.get("name") or ""),
+                    "reason_code": "capacity_full",
+                    "reason_i18n_key": DROP_REASON_KEYS["capacity_full"],
+                    "basis": "rule_based",
+                })
+    if day_drops:
+        meta["drops"] = day_drops
+
     plan["solver_meta"] = meta
     return meta
