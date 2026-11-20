@@ -138,6 +138,15 @@ MESSAGES: dict[str, dict[str, str]] = {
         "plan.warning.weathergate": "[天气] {message}{extra}",
         "plan.warning.weathergate.sugg": "（{suggestion}）",
         "plan.trace.weathergate.warn": "天气校验发现 {n} 个提示（雨天/酷暑，预报非事实）",
+        # ── geo_sanity 地理一致性质检（2026-11-20 geo-anchor-sanity）──
+        "geo.summary.pass": "地理一致性校验通过（行程站点分布正常）",
+        "geo.summary.warn": "地理一致性校验发现 {n} 个离群站点",
+        "geo.outlier.message": "「{name}」距行程主体质心约 {km}km，请确认该站是否应保留 / 是否属于另一城市段",
+        "geo.outlier.suggestion": "请确认该站是否应保留，或是否属于另一城市段（可调整到对应城市段行程）",
+        "geo.unknown_stop": "未知站点",
+        "plan.warning.geogate": "[地理一致性] {message}{extra}",
+        "plan.warning.geogate.sugg": "（{suggestion}）",
+        "plan.trace.geogate.warn": "地理一致性校验发现 {n} 个离群站点（规则库）",
         # ── multicity 多城市衔接（task-multi-city-segments）────
         "multicity.summary.single": "单城市行程，无需分段衔接",
         "multicity.summary.pass": "多城市分段 {n} 段，段间交通已插入排程",
@@ -436,6 +445,15 @@ MESSAGES: dict[str, dict[str, str]] = {
         "plan.warning.weathergate": "[Weather] {message}{extra}",
         "plan.warning.weathergate.sugg": " ({suggestion})",
         "plan.trace.weathergate.warn": "Weather check found {n} notes (rain / heat; forecast, not fact)",
+        # ── geo_sanity geographic consistency check (2026-11-20) ──
+        "geo.summary.pass": "Geographic consistency check passed (stops well distributed)",
+        "geo.summary.warn": "Geographic consistency check found {n} outlying stops",
+        "geo.outlier.message": "\"{name}\" is about {km}km from the trip's centroid — please confirm it belongs here / in another city segment",
+        "geo.outlier.suggestion": "Confirm whether this stop should stay, or whether it belongs to another city segment",
+        "geo.unknown_stop": "Unknown stop",
+        "plan.warning.geogate": "[Geo] {message}{extra}",
+        "plan.warning.geogate.sugg": " ({suggestion})",
+        "plan.trace.geogate.warn": "Geographic consistency check found {n} outlying stops (rule-based)",
         # ── multicity ───────────────────────────────────
         "multicity.summary.single": "Single-city trip — no inter-city segments needed",
         "multicity.summary.pass": "Multi-city trip split into {n} segments; transfers added to the schedule",
