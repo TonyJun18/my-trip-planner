@@ -1,3 +1,4 @@
+from app.models.analytics import AnalyticsEvent
 from app.models.base import Base
 from app.models.chat import ChatMessage, ChatSession
 from app.models.flight_deal import FlightDealSnapshot
@@ -30,6 +31,7 @@ from app.models.trip import (
 from app.models.user import User
 
 __all__ = [
+    "AnalyticsEvent",
     "Base",
     "ChatMessage",
     "ChatSession",

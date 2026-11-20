@@ -47,8 +47,34 @@ class AnalyticsEventPayload(BaseModel):
     on: bool | None = None
 
 
-class AnalyticsEventIn(BaseModel):
-    """POST /analytics/events 请求体。"""
+# 漏斗白名单（task-launch-deploy-eval：落库版，与意图埋点分离）
+FunnelEventName = Literal[
+    "page_view",  # 访问
+    "register",  # 注册
+    "plan_submitted",  # 提交规划
+    "plan_completed",  # 完成规划
+    "share_created",  # 创建分享
+]
 
-    name: AnalyticsEventName
+
+class FunnelEventIn(BaseModel):
+    """落库漏斗事件（dedicated: true 分支）。"""
+
+    name: FunnelEventName
+    user_id: str | None = Field(default=None, max_length=36)
+    trip_id: str | None = Field(default=None, max_length=36)
+    anonymous_session_id: str | None = Field(default=None, max_length=64)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class AnalyticsEventIn(BaseModel):
+    """POST /analytics/events 请求体。
+
+    - 既有意图埋点：``{name, payload}``（日志版，不落库）
+    - 漏斗落库：``{dedicated: true, funnel: {...}}``
+    """
+
+    name: AnalyticsEventName | None = None
     payload: AnalyticsEventPayload = AnalyticsEventPayload()
+    dedicated: bool = False
+    funnel: FunnelEventIn | None = None
