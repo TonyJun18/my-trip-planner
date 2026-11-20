@@ -58,6 +58,11 @@
 | P2 | `task-hotel-switch-conflict-eval` | 2026-11-17 竞品（Rhyme 同日换酒店差评） | 同日双酒店 overlap 表达与冲突检查；证据见 §3.3 |
 | P2 | `content-acquisition-season-2` | 2026-11-17 竞品（OpenAI acqui-hire Odessia + Expedia $676M）+ 2026-11-18 证据升级（Layla 收购后产品两转向 + 官方对比文市场三分层 Plan-only/Partial booking/Booked with human + 营销口径打架 5M 用户 vs 1.1M+ trips） | 文章 17《收购季第二波》：并购从收编品牌到收编能力；接 15/16 文；证据见 competitive-analysis/2026-11-17.md §3.4 + 2026-11-18.md §三 G2 |
 | P2 | `task-dietary-filter-chips-eval` | 2026-11-18 竞品（Wonderplan Halal/Vegan/素食结构化表单过滤器，comparisonmath） | 结构化饮食偏好 chips（素食/清真/海鲜忌口等）→ 复用 prompts.py L148-150 既有口味偏好 freeform 转换，PlanWizard 预填为关键词；零后端大改；证据见 competitive-analysis/2026-11-18.md §三 G1 |
+| P2 | `task-free-cancel-deadline-eval` | 2026-11-20 竞品（Everway「reminds you before free cancellation ends」） | TripBooking 增 free_cancel_deadline（可选，回填确认单时录入）→ bookings 列表/节奏卡 days_until 倒计时（复用 11-12 台账倒计时）+ 截止前 N 天行程内事件提醒（复用 trip_events 链路）；零凭证；证据见 competitive-analysis/2026-11-20.md §三 G1 |
+| P2 | `task-confirmation-batch-import-eval` | 2026-11-20 竞品（Everway 转发私有地址→AI 批量归集确认单） | 多封确认邮件批量粘贴（分隔符/多段）→ 段段复用 email_import 解析 → 候选合并去重（与 screenshot 批量 OCR 合并同构）；私有邮箱归集需邮件基础设施明确不做；证据见 competitive-analysis/2026-11-20.md §三 G2 |
+| P3 | `task-visa-rules-eval` | 2026-11-20 竞品（Everway 按旅行者检查签证/护照规则） | 静态规则库（中国护照免签/落地签/电子签）评估 + 数据源矩阵（静态表维护成本 vs 官方 API 需凭证）；与 open-hours-real-eval 同构；大概率记降级关单但需正式评估记录；证据见 competitive-analysis/2026-11-20.md §三 G3 |
+| P2 | `task-mcp-export-eval` | 2026-11-20 竞品（Everway 提供 MCP 连 Claude/ChatGPT/Cursor 查行程总花费） | MCP 只读薄壳包既有 API（get_my_trips/get_trip_overview/export/property_qa，10-28 chat_trip_tools 内核已在）+ README 自托管说明；零新后端逻辑；风险：MCP 生态演进 + 运行基础设施；证据见 competitive-analysis/2026-11-20.md §三 G4 |
+| P2 | `content-google-maps-ask-maps` | 2026-11-20 竞品（Google Ask Maps 11-16 官宣欧洲 30 国 + 豆包找店 11-16 + 携程 Trip.Planner 11-19 峰会） | 文章 18《地图就是规划器？》：规划被嵌入地图/对话/OTA 主流程（平台挤压第三波，接 15/16/17 文）；独立层剩「规划后链路深度 + 中立 + 免费」+ Everway 行前整理新缝隙；证据见 competitive-analysis/2026-11-20.md §三 G5 |
 
 > 2026-11-15 竞品分析（nightly/competitive-analysis/2026-11-15.md）新增 5 项候选（open-slot / multicity-optimizer / price-watch-mini / paste-any-plan / content-16）+ 备注不排期项（credits 经济、确认单图片 OCR、一键结清）。全部先入候选池，由用户/队列腾位后晋升 §1。
 >
