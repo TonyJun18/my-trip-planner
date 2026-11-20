@@ -65,6 +65,12 @@
 | P3 | `task-visa-rules-eval` | 2026-11-20 竞品（Everway 按旅行者检查签证/护照规则） | 静态规则库（中国护照免签/落地签/电子签）评估 + 数据源矩阵（静态表维护成本 vs 官方 API 需凭证）；与 open-hours-real-eval 同构；大概率记降级关单但需正式评估记录；证据见 competitive-analysis/2026-11-20.md §三 G3 |
 | P2 | `task-mcp-export-eval` | 2026-11-20 竞品（Everway 提供 MCP 连 Claude/ChatGPT/Cursor 查行程总花费） | MCP 只读薄壳包既有 API（get_my_trips/get_trip_overview/export/property_qa，10-28 chat_trip_tools 内核已在）+ README 自托管说明；零新后端逻辑；风险：MCP 生态演进 + 运行基础设施；证据见 competitive-analysis/2026-11-20.md §三 G4 |
 | P2 | `content-google-maps-ask-maps` | 2026-11-20 竞品（Google Ask Maps 11-16 官宣欧洲 30 国 + 豆包找店 11-16 + 携程 Trip.Planner 11-19 峰会） | 文章 18《地图就是规划器？》：规划被嵌入地图/对话/OTA 主流程（平台挤压第三波，接 15/16/17 文）；独立层剩「规划后链路深度 + 中立 + 免费」+ Everway 行前整理新缝隙；证据见 competitive-analysis/2026-11-20.md §三 G5 |
+| P2 | `task-cancel-reminder-24h` | 2026-11-21 竞品（Everway「3 days and 24 hours」双时点提醒） | 免费取消提醒补 24h 二次时点：free-cancel-deadline（11-20 落地）当前为 (today, today+3] 单窗口，Everway 明示 3 天 + 24 小时两次提醒；评估最小版双时点纯函数（幂等）+ 复用 booking.* 事件链路；证据见 competitive-analysis/2026-11-21.md §三 G1 |
+| P2 | `task-trip-gap-audit-eval` | 2026-11-21 竞品（Everway MCP skill trip-gap-audit） | 行程缺口确定性审计：空白天/未覆盖的夜/缺返程/段间无衔接均非现有五门质检（time/weather/repeat/dynamic_facts/geo）输出，grep services 无对应服务；评估最小版纯函数读 plan days/stops（零凭证，与 quality_report 同构）→ 缺口清单 warnings + 质检透出；证据见 competitive-analysis/2026-11-21.md §三 G2 |
+| P2 | `task-mcp-export-eval`（证据升级） | 2026-11-21：Everway MCP 开源收敛生态风险（20 工具 + OAuth 2.1 + 5 客户端 + 免费档只读） | 原 11-20 G4 评估不变（薄壳包 chat_trip_tools 只读内核 + README 自托管说明），「MCP 生态演变」风险已被官方开源参考实现收敛，优先级可上调；证据见 competitive-analysis/2026-11-21.md §三 G3 |
+| P2 | `content-platform-takeover-3` | 2026-11-21（Booking Vayo $100M 读收件箱 + Expedia Layla Creator Studio 创作者佣金链） | 18 文《地图就是规划器？》素材加厚或裂 19 文《收件箱就是行程？》：平台挤压从地图/对话/OTA 扩到创作者内容 + 收件箱数据双新通道；代码引用逐条核验（email_import 批量/free-cancel-deadline/六通道/导出）；证据见 competitive-analysis/2026-11-21.md §三 G4 |
+
+> 2026-11-21 竞品分析（nightly/competitive-analysis/2026-11-21.md）新增 4 项候选（cancel-reminder-24h / trip-gap-audit / mcp-export 证据升级 / content-18 或 19 文素材）+ 复核备注（确认单归集战场升温再印证零凭证路线、MCP 开源参考收敛）。全部先入候选池，由用户/队列腾位后晋升 §1。
 
 > 2026-11-15 竞品分析（nightly/competitive-analysis/2026-11-15.md）新增 5 项候选（open-slot / multicity-optimizer / price-watch-mini / paste-any-plan / content-16）+ 备注不排期项（credits 经济、确认单图片 OCR、一键结清）。全部先入候选池，由用户/队列腾位后晋升 §1。
 >
